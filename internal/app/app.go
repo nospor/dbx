@@ -71,8 +71,8 @@ func New(cfg *config.Config) Model {
 		theme:           t,
 		keymap:          DefaultKeyMap(),
 		history:         hist,
-		focus:           PanelEditor,
-		fullscreenPanel: PanelEditor,
+		focus:           PanelExplorer,
+		fullscreenPanel: PanelExplorer,
 		drivers:         make(map[string]db.Driver),
 		explorer:        explorer.New(cfg, t),
 		editor:          editor.New(t),
@@ -80,8 +80,8 @@ func New(cfg *config.Config) Model {
 		palette:         cmdpalette.New(t),
 		spinner:         sp,
 	}
-	m.explorer.SetFocused(false)
-	m.editor.SetFocused(true)
+	m.explorer.SetFocused(true)
+	m.editor.SetFocused(false)
 	m.results.SetFocused(false)
 	return m
 }
@@ -161,7 +161,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "r":
-			if !editorInsert && m.focus != PanelEditor {
+			if !editorInsert {
 				m.setFocus(PanelResults)
 				return m, nil
 			}
@@ -498,6 +498,20 @@ func (m *Model) connectCmd(connID string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
+		// If connection has database(s) configured, use those instead of fetching all
+		if conn.Database != "" {
+			parts := strings.Split(conn.Database, ",")
+			dbs := make([]string, 0, len(parts))
+			for _, p := range parts {
+				if name := strings.TrimSpace(p); name != "" {
+					dbs = append(dbs, name)
+				}
+			}
+			if len(dbs) > 0 {
+				return dbDatabasesMsg{connID: connID, databases: dbs, err: nil}
+			}
+		}
+
 		driver, err := db.New(*conn)
 		if err != nil {
 			return dbDatabasesMsg{connID: connID, err: err}
