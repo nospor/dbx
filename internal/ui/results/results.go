@@ -255,45 +255,64 @@ func (m Model) renderHScrollBar(totalCols int) string {
 		return ""
 	}
 
+	// Count how many columns are currently visible
+	colWidths := m.computeColWidths()
+	visibleColCount := 0
+	used := 0
+	for ci := m.scrollLeft; ci < len(colWidths); ci++ {
+		needed := colWidths[ci]
+		if ci > m.scrollLeft {
+			needed += 3
+		}
+		if used+needed > m.width {
+			break
+		}
+		used += needed
+		visibleColCount++
+	}
+	if visibleColCount < 1 {
+		visibleColCount = 1
+	}
+
+	// If everything fits, no scrollbar needed
+	if visibleColCount >= totalCols {
+		return m.theme.Dimmed.Render("h/l: scroll cols  0/$: first/last col")
+	}
+
 	barWidth := m.width - 2
 	if barWidth < 2 {
 		barWidth = 2
 	}
 
-	// Thumb size proportional to visible fraction
-	visibleFrac := float64(barWidth) / float64(totalCols)
-	if visibleFrac > 1 {
-		visibleFrac = 1
-	}
-	thumbW := int(visibleFrac * float64(barWidth))
+	// Thumb width proportional to visible/total ratio
+	thumbW := barWidth * visibleColCount / totalCols
 	if thumbW < 1 {
 		thumbW = 1
 	}
-
-	// Thumb position
-	scrollFrac := 0.0
-	if totalCols > 1 {
-		scrollFrac = float64(m.scrollLeft) / float64(totalCols-1)
+	if thumbW > barWidth {
+		thumbW = barWidth
 	}
-	thumbPos := int(scrollFrac * float64(barWidth-thumbW))
 
-	track := strings.Repeat("─", barWidth)
-	trackRunes := []rune(track)
-	thumb := []rune(strings.Repeat("█", thumbW))
-	for i, r := range thumb {
-		if thumbPos+i < len(trackRunes) {
-			trackRunes[thumbPos+i] = r
+	// Thumb position: scrollLeft out of (totalCols - visibleColCount) possible positions
+	maxScroll := totalCols - visibleColCount
+	thumbPos := 0
+	if maxScroll > 0 {
+		thumbPos = (barWidth - thumbW) * m.scrollLeft / maxScroll
+	}
+
+	track := []rune(strings.Repeat("─", barWidth))
+	for i := 0; i < thumbW; i++ {
+		if thumbPos+i < len(track) {
+			track[thumbPos+i] = '█'
 		}
 	}
 
 	left := m.theme.Dimmed.Render("◀")
 	right := m.theme.Dimmed.Render("▶")
-	bar := m.theme.Dimmed.Render(string(trackRunes))
+	bar := m.theme.Dimmed.Render(string(track))
+	hint := m.theme.Dimmed.Render(fmt.Sprintf(" col %d/%d  h/l: scroll  0/$: first/last", m.scrollLeft+1, totalCols))
 
-	hint := m.theme.Dimmed.Render(fmt.Sprintf(" h/l: scroll cols  0/$: first/last"))
-	scrollLine := left + bar + right + hint
-
-	return scrollLine
+	return left + bar + right + hint
 }
 
 // Result returns the current query result, or nil.
