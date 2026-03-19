@@ -184,15 +184,16 @@ func (m Model) View() string {
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(hint)
 	}
 
-	// Determine visible slice based on cursor position.
-	visibleLines := m.height - 2 // leave room for title
+	// Match previous inner line budget: was 1 title + (height-2) tree rows (= height-1 rows).
+	// Border title moved outside; keep total inner lines at height-1 so the panel doesn't overflow.
+	visibleLines := m.height - 1
+	if visibleLines < 0 {
+		visibleLines = 0
+	}
 	start := 0
 	if m.cursor >= visibleLines {
 		start = m.cursor - visibleLines + 1
 	}
-
-	title := m.theme.Bold.Render("Explorer")
-	sb.WriteString(title + "\n")
 
 	for i := start; i < len(m.flat) && i < start+visibleLines; i++ {
 		n := m.flat[i]

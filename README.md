@@ -75,6 +75,10 @@ Config is stored in `~/.config/dbx/config.json`:
 | `history.json` | Executed queries (history popup / ctrl+p n) |
 | `query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 
+## Layout
+
+Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] Query Editor`, `[r] Results`. The query editor border also shows the **active connection name** (or id) and **database**, e.g. `· Local PG / myapp`, or `—` when nothing is selected.
+
 ## Keybindings
 
 ### Global

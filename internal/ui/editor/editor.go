@@ -829,14 +829,22 @@ func (m Model) View() string {
 	}
 
 	lines := m.lines()
-	visibleLines := m.height - 3 // title + status bar + border
+	// 1 mode row + (height-3) editor rows = height-2 rows (same as before the border title change).
+	visibleLines := m.height - 3
+	if visibleLines < 1 {
+		visibleLines = 1
+	}
 
 	var sb strings.Builder
 
-	// Title bar
+	// Mode indicator row (panel name + DB live on the app border).
 	modeStr := m.theme.StatusBarMode.Render(" " + m.vim.mode.String() + " ")
-	title := m.theme.StatusBar.Width(m.width - lipgloss.Width(modeStr) - 2).Render("Query Editor")
-	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, modeStr, title) + "\n")
+	restW := m.width - lipgloss.Width(modeStr)
+	if restW < 0 {
+		restW = 0
+	}
+	modeRow := lipgloss.JoinHorizontal(lipgloss.Top, modeStr, lipgloss.NewStyle().Width(restW).Render(""))
+	sb.WriteString(modeRow + "\n")
 
 	// Render visible lines
 	for i := m.scrollTop; i < m.scrollTop+visibleLines; i++ {
@@ -973,7 +981,7 @@ func (m Model) View() string {
 			Render(compSb.String())
 
 		// Position the dropdown below the cursor line
-		cursorScreenRow := m.vim.row - m.scrollTop + 2
+		cursorScreenRow := m.vim.row - m.scrollTop + 1
 		result := sb.String()
 		resultLines := strings.Split(result, "\n")
 		compLines := strings.Split(compBox, "\n")

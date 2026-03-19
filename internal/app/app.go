@@ -816,7 +816,8 @@ func (m Model) View() string {
 
 	if m.fullscreenOn {
 		content := m.renderPanelContent(m.fullscreenPanel)
-		border := m.theme.BorderFocused.Width(m.width - 2).Height(m.height - 3).Render(content)
+		boxed := m.theme.BorderFocused.Width(m.width - 2).Height(m.height - 3).Render(content)
+		border := m.embedPanelTopTitle(boxed, m.panelTitleFor(m.fullscreenPanel), true)
 		return lipgloss.JoinVertical(lipgloss.Left, border, m.renderStatusBar())
 	}
 
@@ -883,6 +884,93 @@ func (m Model) rightColumnWidth() int {
 	return w
 }
 
+func (m Model) panelTitleFor(p Panel) string {
+	switch p {
+	case PanelExplorer:
+		return "[e] Explorer"
+	case PanelEditor:
+		sub := "—"
+		if m.activeConnID != "" {
+			label := m.activeConnID
+			if c := m.findConn(m.activeConnID); c != nil && c.Name != "" {
+				label = c.Name
+			}
+			if m.activeDB != "" {
+				sub = label + " / " + m.activeDB
+			} else {
+				sub = label + " —"
+			}
+		}
+		return "[q] Query Editor · " + sub
+	case PanelResults:
+		return "[r] Results"
+	default:
+		return ""
+	}
+}
+
+func (m Model) styleForPanelTopLine(focused bool) lipgloss.Style {
+	st := m.theme.BorderFocused
+	if !focused {
+		st = m.theme.BorderUnfocused
+	}
+	return lipgloss.NewStyle().Foreground(st.GetBorderTopForeground())
+}
+
+// embedPanelTopTitle replaces the first border line of a lipgloss box with a titled top edge.
+func (m Model) embedPanelTopTitle(boxed, title string, focused bool) string {
+	lines := strings.Split(boxed, "\n")
+	if len(lines) == 0 || title == "" {
+		return boxed
+	}
+	tw := ansi.StringWidth(lines[0])
+	lines[0] = m.renderPanelTopBorderLine(tw, title, focused)
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderPanelTopBorderLine(outerWidth int, title string, focused bool) string {
+	if outerWidth < 3 {
+		return strings.Repeat("─", max(0, outerWidth))
+	}
+	tl := "╭"
+	tr := "╮"
+	sep := "─"
+	mid := outerWidth - ansi.StringWidth(tl) - ansi.StringWidth(tr)
+	if mid < 1 {
+		return m.styleForPanelTopLine(focused).Render(tl + strings.Repeat(sep, max(0, mid)) + tr)
+	}
+	leftPart := sep + " " + title + " "
+	lpw := ansi.StringWidth(leftPart)
+	if lpw > mid {
+		inner := mid - ansi.StringWidth(sep+"  ")
+		if inner < 1 {
+			leftPart = strings.Repeat(sep, mid)
+		} else {
+			tit := title
+			if ansi.StringWidth(tit) > inner {
+				tit = ansi.Truncate(tit, inner, "…")
+			}
+			leftPart = sep + " " + tit + " "
+			lpw = ansi.StringWidth(leftPart)
+		}
+	}
+	fill := mid - lpw
+	if fill < 0 {
+		fill = 0
+	}
+	line := tl + leftPart + strings.Repeat(sep, fill) + tr
+	for ansi.StringWidth(line) < outerWidth {
+		rs := []rune(line)
+		if len(rs) < 2 {
+			break
+		}
+		body := string(rs[:len(rs)-1])
+		corner := string(rs[len(rs)-1:])
+		line = body + sep + corner
+	}
+	return m.styleForPanelTopLine(focused).Render(line)
+}
+
 func (m Model) renderBorderedPanel(p Panel) string {
 	focused := m.focus == p
 	content := m.renderPanelContent(p)
@@ -895,6 +983,7 @@ func (m Model) renderBorderedPanel(p Panel) string {
 	}
 
 	totalH := m.height - 1
+	title := m.panelTitleFor(p)
 	switch p {
 	case PanelExplorer:
 		w := m.width*m.cfg.Layout.ExplorerWidthPct/100 - 2
@@ -902,21 +991,24 @@ func (m Model) renderBorderedPanel(p Panel) string {
 		if w < 0 {
 			w = 0
 		}
-		return borderStyle.Width(w).Height(h).Render(content)
+		boxed := borderStyle.Width(w).Height(h).Render(content)
+		return m.embedPanelTopTitle(boxed, title, focused)
 	case PanelEditor:
 		w := m.rightColumnWidth()
 		h := totalH*m.cfg.Layout.EditorHeightPct/100 - 2
 		if h < 0 {
 			h = 0
 		}
-		return borderStyle.Width(w).Height(h).Render(content)
+		boxed := borderStyle.Width(w).Height(h).Render(content)
+		return m.embedPanelTopTitle(boxed, title, focused)
 	case PanelResults:
 		w := m.rightColumnWidth()
 		h := totalH*(100-m.cfg.Layout.EditorHeightPct)/100 - 2
 		if h < 0 {
 			h = 0
 		}
-		return borderStyle.Width(w).Height(h).Render(content)
+		boxed := borderStyle.Width(w).Height(h).Render(content)
+		return m.embedPanelTopTitle(boxed, title, focused)
 	}
 	return content
 }
