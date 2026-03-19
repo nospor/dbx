@@ -87,23 +87,24 @@ Config is stored in `~/.config/dbx/config.json`:
 | `g` / `G`     | First / last item                     |
 
 ### Editor (Normal mode)
-| Key                 | Action                     |
-| ------------------- | -------------------------- |
-| `i` / `a` / `o`     | Enter insert mode          |
-| `enter`             | Execute query under cursor |
-| `ctrl+p` / `ctrl+n` | Browse history (replace buffer) |
+| Key                 | Action                                |
+| ------------------- | ------------------------------------- |
+| `i` / `a` / `o`     | Enter insert mode                     |
+| `enter`             | Execute query under cursor            |
+| `ctrl+p` / `ctrl+n` | Browse history (replace buffer)       |
 | `backspace`         | History popup: pick a query to append |
-| `dd`                | Delete line                |
-| `gg` / `G`          | Go to top / bottom         |
-| `h/j/k/l`           | Move cursor                |
-| `w` / `b`           | Word forward / backward    |
+| `dd`                | Delete line                           |
+| `gg` / `G`          | Go to top / bottom                    |
+| `h/j/k/l`           | Move cursor                           |
+| `w` / `b`           | Word forward / backward               |
 
 ### Editor (Insert mode)
-| Key          | Action                |
-| ------------ | --------------------- |
-| `esc`        | Return to normal mode |
-| `tab`        | Trigger autocomplete  |
-| `ctrl+enter` | Execute query         |
+| Key             | Action                |
+| --------------- | --------------------- |
+| `esc`           | Return to normal mode |
+| `←` `→` `↑` `↓` | Move cursor (arrows)  |
+| `tab`           | Trigger autocomplete  |
+| `ctrl+enter`    | Execute query         |
 
 ### Results
 | Key       | Action           |

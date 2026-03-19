@@ -238,10 +238,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			case "esc":
 				m.compVisible = false
 				return nil
-			case "tab", "ctrl+n":
+			case "tab", "ctrl+n", "down":
 				m.compCursor = (m.compCursor + 1) % len(m.completions)
 				return nil
-			case "ctrl+p":
+			case "ctrl+p", "up":
 				m.compCursor = (m.compCursor - 1 + len(m.completions)) % len(m.completions)
 				return nil
 			case "enter":
@@ -284,7 +284,41 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 					m.compVisible = true
 				}
 			}
-	case "ctrl+enter", "ctrl+r", "f5":
+		case "left":
+			if m.vim.col > 0 {
+				m.vim.col--
+			} else if m.vim.row > 0 {
+				m.vim.row--
+				if len(lines) > 0 && m.vim.row < len(lines) {
+					m.vim.col = len([]rune(lines[m.vim.row]))
+				}
+			}
+			m.compVisible = false
+		case "right":
+			if len(lines) == 0 {
+				break
+			}
+			runes := []rune(lines[m.vim.row])
+			if m.vim.col < len(runes) {
+				m.vim.col++
+			} else if m.vim.row < len(lines)-1 {
+				m.vim.row++
+				m.vim.col = 0
+			}
+			m.compVisible = false
+		case "up":
+			if m.vim.row > 0 {
+				m.vim.row--
+				m.clampCol(lines)
+			}
+			m.compVisible = false
+		case "down":
+			if m.vim.row < len(lines)-1 {
+				m.vim.row++
+				m.clampCol(lines)
+			}
+			m.compVisible = false
+		case "ctrl+enter", "ctrl+r", "f5":
 		q := m.currentQuery(lines)
 		m.setLines(lines)
 		m.compVisible = false

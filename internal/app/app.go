@@ -469,7 +469,7 @@ func (m *Model) openPalette() {
 	case PanelEditor:
 		title = "Editor Commands"
 		commands = []cmdpalette.Command{
-			{Key: "x", Description: "Execute query (ctrl+enter)", Action: func() tea.Msg { return execQueryFromPaletteMsg{} }},
+			{Key: "x", Description: "Execute query (enter)", Action: func() tea.Msg { return execQueryFromPaletteMsg{} }},
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
