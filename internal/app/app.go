@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/robertn/dbx/internal/config"
 	"github.com/robertn/dbx/internal/db"
@@ -915,7 +916,44 @@ func (m Model) renderHelp() string {
 	)
 }
 
+// spliceOverlayLine composites overlay onto base at startCol without breaking ANSI sequences.
+func spliceOverlayLine(baseLine, overlay string, startCol, totalWidth int) string {
+	ow := lipgloss.Width(overlay)
+	if ow == 0 {
+		return baseLine
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	maxOW := totalWidth - startCol
+	if maxOW < 1 {
+		maxOW = 1
+	}
+	if ow > maxOW {
+		overlay = ansi.Truncate(overlay, maxOW, "…")
+		ow = lipgloss.Width(overlay)
+	}
+
+	baseW := ansi.StringWidth(baseLine)
+	left := ansi.Cut(baseLine, 0, startCol)
+	if lw := ansi.StringWidth(left); lw < startCol {
+		left += strings.Repeat(" ", startCol-lw)
+	}
+
+	right := ansi.Cut(baseLine, startCol+ow, baseW)
+	merged := left + overlay + right
+	mw := ansi.StringWidth(merged)
+	switch {
+	case mw < totalWidth:
+		merged += strings.Repeat(" ", totalWidth-mw)
+	case mw > totalWidth:
+		merged = ansi.Truncate(merged, totalWidth, "")
+	}
+	return merged
+}
+
 func overlayCentered(base, overlay string, width, height int) string {
+	_ = height
 	baseLines := strings.Split(base, "\n")
 	overlayLines := strings.Split(overlay, "\n")
 
@@ -927,7 +965,7 @@ func overlayCentered(base, overlay string, width, height int) string {
 		}
 	}
 
-	startRow := (height - overlayH) / 2
+	startRow := (len(baseLines) - overlayH) / 2
 	startCol := (width - overlayW) / 2
 	if startRow < 0 {
 		startRow = 0
@@ -941,23 +979,13 @@ func overlayCentered(base, overlay string, width, height int) string {
 		if row >= len(baseLines) {
 			break
 		}
-		line := []rune(baseLines[row])
-		for len(line) < startCol+lipgloss.Width(ol) {
-			line = append(line, ' ')
-		}
-		olRunes := []rune(ol)
-		for j, r := range olRunes {
-			pos := startCol + j
-			if pos < len(line) {
-				line[pos] = r
-			}
-		}
-		baseLines[row] = string(line)
+		baseLines[row] = spliceOverlayLine(baseLines[row], ol, startCol, width)
 	}
 	return strings.Join(baseLines, "\n")
 }
 
 func overlayBottomRight(base, overlay string, width, height int) string {
+	_ = height
 	baseLines := strings.Split(base, "\n")
 	overlayLines := strings.Split(overlay, "\n")
 
@@ -968,7 +996,8 @@ func overlayBottomRight(base, overlay string, width, height int) string {
 		}
 	}
 
-	startRow := height - len(overlayLines) - 2
+	// Sit above the status bar (last line of the frame)
+	startRow := len(baseLines) - len(overlayLines) - 1
 	if startRow < 0 {
 		startRow = 0
 	}
@@ -979,21 +1008,10 @@ func overlayBottomRight(base, overlay string, width, height int) string {
 
 	for i, ol := range overlayLines {
 		row := startRow + i
-		if row >= len(baseLines) {
-			break
+		if row < 0 || row >= len(baseLines) {
+			continue
 		}
-		line := []rune(baseLines[row])
-		for len(line) < startCol+lipgloss.Width(ol) {
-			line = append(line, ' ')
-		}
-		olRunes := []rune(ol)
-		for j, r := range olRunes {
-			pos := startCol + j
-			if pos < len(line) {
-				line[pos] = r
-			}
-		}
-		baseLines[row] = string(line)
+		baseLines[row] = spliceOverlayLine(baseLines[row], ol, startCol, width)
 	}
 
 	return strings.Join(baseLines, "\n")
