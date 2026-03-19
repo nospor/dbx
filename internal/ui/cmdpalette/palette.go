@@ -106,15 +106,37 @@ func (m Model) View() string {
 		return ""
 	}
 
+	// Fixed inner width so the box does not jump when j/k changes selection.
+	innerW := lipgloss.Width(m.theme.PaletteTitle.Render(m.title))
+	for _, cmd := range m.commands {
+		key := m.theme.PaletteKey.Render(cmd.Key)
+		desc := m.theme.PaletteItem.Render(cmd.Description)
+		if w := lipgloss.Width(key + "  " + desc); w > innerW {
+			innerW = w
+		}
+		plain := " " + cmd.Key + "  " + cmd.Description
+		if w := lipgloss.Width(plain); w > innerW {
+			innerW = w
+		}
+	}
+	if innerW < 12 {
+		innerW = 12
+	}
+
+	row := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Left)
+
 	var sb strings.Builder
-	sb.WriteString(m.theme.PaletteTitle.Render(m.title) + "\n")
+	sb.WriteString(row.Render(m.theme.PaletteTitle.Render(m.title)) + "\n")
 
 	for i, cmd := range m.commands {
 		key := m.theme.PaletteKey.Render(cmd.Key)
 		desc := m.theme.PaletteItem.Render(cmd.Description)
-		line := key + "  " + desc
+		var line string
 		if i == m.cursor {
-			line = lipgloss.NewStyle().Reverse(true).Render(" "+cmd.Key+"  "+cmd.Description+" ")
+			line = lipgloss.NewStyle().Reverse(true).Width(innerW).Align(lipgloss.Left).Render(
+				" " + cmd.Key + "  " + cmd.Description)
+		} else {
+			line = row.Render(key + "  " + desc)
 		}
 		sb.WriteString(line + "\n")
 	}
