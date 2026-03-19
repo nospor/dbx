@@ -117,8 +117,8 @@ Config is stored in `~/.config/dbx/config.json`:
 | Panel    | Commands                                                                     |
 | -------- | ---------------------------------------------------------------------------- |
 | Explorer | `a` add, `e` edit, `d` delete, `R` refresh, `t` toggle, `f` fullscreen       |
-| Editor   | `x` execute, `c` clear, `f` fullscreen                                       |
-| Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `f` fullscreen |
+| Editor   | `x` execute, `c` clear, `t` toggle explorer, `f` fullscreen                  |
+| Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `f` fullscreen |
 
 ## History
 

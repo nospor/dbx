@@ -310,6 +310,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toggleExplorerMsg:
 		m.explorerHidden = !m.explorerHidden
+		if m.explorerHidden && m.focus == PanelExplorer {
+			m.setFocus(PanelEditor)
+		}
 		m.layoutPanels()
 		return m, nil
 
@@ -472,6 +475,7 @@ func (m *Model) openPalette() {
 		commands = []cmdpalette.Command{
 			{Key: "x", Description: "Execute query (enter)", Action: func() tea.Msg { return execQueryFromPaletteMsg{} }},
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
+			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
 	case PanelResults:
@@ -481,6 +485,7 @@ func (m *Model) openPalette() {
 			{Key: "Y", Description: "Copy row", Action: func() tea.Msg { return copyRowMsg{} }},
 			{Key: "e", Description: "Export CSV", Action: func() tea.Msg { return exportCSVMsg{} }},
 			{Key: "j", Description: "Export JSON", Action: func() tea.Msg { return exportJSONMsg{} }},
+			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
 	}
@@ -811,6 +816,20 @@ func (m Model) renderPanelContent(p Panel) string {
 	return ""
 }
 
+// rightColumnWidth returns the bordered width for editor/results (matches layoutPanels right split).
+func (m Model) rightColumnWidth() int {
+	explorerW := m.width * m.cfg.Layout.ExplorerWidthPct / 100
+	if m.explorerHidden {
+		explorerW = 0
+	}
+	rightW := m.width - explorerW
+	w := rightW - 2
+	if w < 0 {
+		w = 0
+	}
+	return w
+}
+
 func (m Model) renderBorderedPanel(p Panel) string {
 	focused := m.focus == p
 	content := m.renderPanelContent(p)
@@ -832,17 +851,17 @@ func (m Model) renderBorderedPanel(p Panel) string {
 		}
 		return borderStyle.Width(w).Height(h).Render(content)
 	case PanelEditor:
-		w := m.width - m.width*m.cfg.Layout.ExplorerWidthPct/100 - 2
+		w := m.rightColumnWidth()
 		h := totalH*m.cfg.Layout.EditorHeightPct/100 - 2
-		if w < 0 {
-			w = 0
+		if h < 0 {
+			h = 0
 		}
 		return borderStyle.Width(w).Height(h).Render(content)
 	case PanelResults:
-		w := m.width - m.width*m.cfg.Layout.ExplorerWidthPct/100 - 2
+		w := m.rightColumnWidth()
 		h := totalH*(100-m.cfg.Layout.EditorHeightPct)/100 - 2
-		if w < 0 {
-			w = 0
+		if h < 0 {
+			h = 0
 		}
 		return borderStyle.Width(w).Height(h).Render(content)
 	}
@@ -905,9 +924,9 @@ func (m Model) renderHelp() string {
     g/G         First/last row
 
   COMMAND PALETTE (space)
-    Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle  f=fullscreen
-    Editor:     x=execute  c=clear  f=fullscreen
-    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  f=fullscreen
+    Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen
+    Editor:     x=execute  c=clear  t=toggle explorer  f=fullscreen
+    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  f=fullscreen
 
   Press ? or esc to close
 `
