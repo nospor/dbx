@@ -16,6 +16,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
+	if err := config.EnsureDir(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create config dir: %v\n", err)
+		os.Exit(1)
+	}
 
 	model := app.New(cfg)
 

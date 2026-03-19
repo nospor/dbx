@@ -23,18 +23,53 @@ type History struct {
 	path    string
 }
 
-// New loads (or creates) the history file.
+// New loads the history file. If it fails (e.g. corrupt), returns a fresh History with the path.
+// Ensures the file exists (empty []) so it can be written later.
 func New() (*History, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	path := filepath.Join(home, ".config", "dbx", historyFile)
-	h := &History{path: path}
+	h := &History{path: path, entries: []Entry{}}
 	if err := h.load(); err != nil {
-		return nil, err
+		// Corrupt or unreadable — backup and start fresh
+		_ = os.Rename(path, path+".bak")
+		return h, nil
 	}
+	_ = h.EnsureFile()
 	return h, nil
+}
+
+// NewOrEmpty returns a History that never fails. Use when New fails (e.g. UserHomeDir error).
+func NewOrEmpty() *History {
+	h, _ := New()
+	if h != nil {
+		_ = h.EnsureFile()
+		return h
+	}
+	path := ".config/dbx/history.json"
+	if home, err := os.UserHomeDir(); err == nil {
+		path = filepath.Join(home, ".config", "dbx", historyFile)
+	}
+	hist := &History{path: path, entries: []Entry{}}
+	_ = hist.EnsureFile()
+	return hist
+}
+
+// EnsureFile creates the history file with an empty array if it does not exist.
+func (h *History) EnsureFile() error {
+	if err := os.MkdirAll(filepath.Dir(h.path), 0o755); err != nil {
+		return err
+	}
+	_, err := os.Stat(h.path)
+	if err == nil {
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	return os.WriteFile(h.path, []byte("[]"), 0o600)
 }
 
 func (h *History) load() error {
@@ -44,6 +79,9 @@ func (h *History) load() error {
 	}
 	if err != nil {
 		return err
+	}
+	if len(data) == 0 {
+		return nil
 	}
 	return json.Unmarshal(data, &h.entries)
 }
@@ -56,11 +94,26 @@ func (h *History) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(h.path, data, 0o600)
+	// Atomic write: write to temp then rename
+	tmp := h.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, h.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Add appends a query to history and persists to disk.
 func (h *History) Add(connKey, query string) error {
+	if connKey == "" || query == "" {
+		return nil
+	}
+	if h.entries == nil {
+		h.entries = []Entry{}
+	}
 	// Avoid duplicate consecutive entries
 	if len(h.entries) > 0 && h.entries[len(h.entries)-1].Query == query &&
 		h.entries[len(h.entries)-1].ConnKey == connKey {
@@ -80,6 +133,9 @@ func (h *History) Add(connKey, query string) error {
 
 // ForKey returns all history entries for a given connection key, newest first.
 func (h *History) ForKey(connKey string) []Entry {
+	if h.entries == nil {
+		return nil
+	}
 	var result []Entry
 	for i := len(h.entries) - 1; i >= 0; i-- {
 		if h.entries[i].ConnKey == connKey {

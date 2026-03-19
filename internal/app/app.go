@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -61,7 +62,7 @@ type Model struct {
 func New(cfg *config.Config) Model {
 	t := theme.Get(cfg.Theme)
 
-	hist, _ := history.New() // ignore error; history is non-critical
+	hist := history.NewOrEmpty()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -192,14 +193,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case editor.ExecuteQueryMsg:
+		m.setStatus(fmt.Sprintf("Query received (%d chars): %q", len(msg.Query), msg.Query))
 		if msg.Query == "" {
 			return m, nil
 		}
 		m.isLoading = true
 		m.results.SetLoading(true)
+		key := m.connKey()
+		if key == "" {
+			key = "_"
+		}
 		if m.history != nil {
-			key := m.connKey()
-			_ = m.history.Add(key, msg.Query)
+			if err := m.history.Add(key, msg.Query); err != nil {
+				m.setStatus("History save failed: " + err.Error())
+			} else {
+				m.setStatus(fmt.Sprintf("Saved to history [key=%s]", key))
+			}
 		}
 		cmds = append(cmds, m.execQueryCmd(msg.Query))
 		cmds = append(cmds, m.spinner.Tick)
@@ -248,7 +257,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nodes = append(nodes, explorer.NewDatabaseNode(dbName, msg.connID))
 		}
 		m.explorer.SetChildren(msg.connID, "", nodes)
-		return m, nil
+		// Auto-select when connection has exactly one database (loads history, fetches schema)
+		if len(msg.databases) == 1 {
+			cmds = append(cmds, func() tea.Msg {
+				return explorerSelectMsg{node: explorer.NewDatabaseNode(msg.databases[0], msg.connID)}
+			})
+		}
+		return m, tea.Batch(cmds...)
 
 	case dbColumnsMsg:
 		if msg.err != nil {
@@ -467,6 +482,9 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 				queries[i] = e.Query
 			}
 			m.editor.SetHistory(queries)
+			if len(queries) > 0 {
+				m.setStatus(fmt.Sprintf("Loaded %d history entries", len(queries)))
+			}
 		}
 		cmds = append(cmds, m.fetchSchemaCmd(node.ConnID, node.DBName))
 
@@ -842,7 +860,7 @@ func (m Model) renderHelp() string {
 
   EDITOR (Normal mode)
     i/a/o       Enter insert mode
-    ctrl+enter  Execute query under cursor
+    enter       Execute query under cursor
     ctrl+p/n    Browse query history
     dd          Delete line
     gg/G        Go to top/bottom

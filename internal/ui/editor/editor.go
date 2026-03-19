@@ -201,6 +201,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 		switch msg.String() {
+		case "ctrl+p":
+			m.BrowseHistoryPrev()
+			return nil
+		case "ctrl+n":
+			m.BrowseHistoryNext()
+			return nil
 		case "esc":
 			m.vim.mode = ModeNormal
 			m.compVisible = false
@@ -223,11 +229,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 					m.compVisible = true
 				}
 			}
-		case "ctrl+enter":
-			q := m.currentQuery(lines)
-			m.setLines(lines)
-			m.compVisible = false
-			return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
+	case "ctrl+enter", "ctrl+r", "f5":
+		q := m.currentQuery(lines)
+		m.setLines(lines)
+		m.compVisible = false
+		return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
 		case "ctrl+v":
 			if text, err := util.Paste(); err == nil && text != "" {
 				for _, ch := range text {
@@ -329,7 +335,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.vim.pendingD = true
 		}
-	case "ctrl+enter":
+	case "enter", "ctrl+enter", "ctrl+r", "f5":
 		q := m.currentQuery(lines)
 		return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
 	case "ctrl+p":
@@ -562,22 +568,38 @@ func (m *Model) acceptCompletion(lines []string) []string {
 
 // currentQuery returns the query block that the cursor is currently in.
 // Queries are separated by at least one blank line.
+// If the cursor is on a blank line, the block above (if any) is used.
 func (m *Model) currentQuery(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
 	row := m.vim.row
+	if row >= len(lines) {
+		row = len(lines) - 1
+	}
 
-	// Find start of current block (walk up past non-empty lines)
+	// If cursor is on a blank line, use the preceding non-empty block
 	start := row
 	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
 		start--
 	}
-
-	// Find end of current block
 	end := row
 	for end < len(lines)-1 && strings.TrimSpace(lines[end+1]) != "" {
 		end++
 	}
-
-	return strings.TrimSpace(strings.Join(lines[start:end+1], "\n"))
+	q := strings.TrimSpace(strings.Join(lines[start:end+1], "\n"))
+	if q != "" {
+		return q
+	}
+	// Cursor on blank line: find the block above
+	if row > 0 {
+		above := row - 1
+		for above > 0 && strings.TrimSpace(lines[above-1]) != "" {
+			above--
+		}
+		return strings.TrimSpace(strings.Join(lines[above:row], "\n"))
+	}
+	return ""
 }
 
 func (m Model) View() string {

@@ -18,6 +18,15 @@ func configPath() (string, error) {
 	return filepath.Join(home, configDir, configFile), nil
 }
 
+// EnsureDir creates ~/.config/dbx if it does not exist. Call at startup so history can be saved.
+func EnsureDir() error {
+	path, err := configPath()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(filepath.Dir(path), 0o755)
+}
+
 // Load reads the config from disk. Returns defaults if the file does not exist.
 func Load() (*Config, error) {
 	path, err := configPath()

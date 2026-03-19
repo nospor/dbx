@@ -90,7 +90,7 @@ Config is stored in `~/.config/dbx/config.json`:
 | Key                 | Action                     |
 | ------------------- | -------------------------- |
 | `i` / `a` / `o`     | Enter insert mode          |
-| `ctrl+enter`        | Execute query under cursor |
+| `enter`             | Execute query under cursor |
 | `ctrl+p` / `ctrl+n` | Browse history             |
 | `dd`                | Delete line                |
 | `gg` / `G`          | Go to top / bottom         |
@@ -120,4 +120,8 @@ Config is stored in `~/.config/dbx/config.json`:
 
 ## History
 
-Query history is saved per connection/database to `~/.config/dbx/history.json`. Browse with `ctrl+p` (older) and `ctrl+n` (newer) in the editor.
+Query history is saved per connection/database to `~/.config/dbx/history.json`. To use it:
+
+1. **Select a database** in the explorer (expand a connection, then select a database). History is loaded when you select a database.
+2. **Execute a query** — it is saved to history for that connection/database.
+3. **Browse history** with `ctrl+p` (older) and `ctrl+n` (newer) in the editor — works in both Normal and Insert mode.
