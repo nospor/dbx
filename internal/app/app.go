@@ -207,7 +207,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.history.Add(key, msg.Query); err != nil {
 				m.setStatus("History save failed: " + err.Error())
 			} else {
-				m.setStatus(fmt.Sprintf("Saved to history [key=%s]", key))
+				m.setStatus("Saved to history")
+				// Refresh the editor's in-memory history so the popup shows the latest
+				entries := m.history.ForKey(key)
+				queries := make([]string, len(entries))
+				for i, e := range entries {
+					queries[i] = e.Query
+				}
+				m.editor.SetHistory(queries)
 			}
 		}
 		cmds = append(cmds, m.execQueryCmd(msg.Query))

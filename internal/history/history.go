@@ -107,6 +107,8 @@ func (h *History) save() error {
 }
 
 // Add appends a query to history and persists to disk.
+// If the same query already exists for the same connKey, the old entry is removed first
+// so the query always appears at the top (most recent).
 func (h *History) Add(connKey, query string) error {
 	if connKey == "" || query == "" {
 		return nil
@@ -114,11 +116,14 @@ func (h *History) Add(connKey, query string) error {
 	if h.entries == nil {
 		h.entries = []Entry{}
 	}
-	// Avoid duplicate consecutive entries
-	if len(h.entries) > 0 && h.entries[len(h.entries)-1].Query == query &&
-		h.entries[len(h.entries)-1].ConnKey == connKey {
-		return nil
+	// Remove any existing entry with the same connKey+query
+	filtered := h.entries[:0]
+	for _, e := range h.entries {
+		if !(e.ConnKey == connKey && e.Query == query) {
+			filtered = append(filtered, e)
+		}
 	}
+	h.entries = filtered
 	h.entries = append(h.entries, Entry{
 		ConnKey:   connKey,
 		Query:     query,
