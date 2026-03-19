@@ -193,7 +193,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case editor.ExecuteQueryMsg:
-		m.setStatus(fmt.Sprintf("Query received (%d chars): %q", len(msg.Query), msg.Query))
 		if msg.Query == "" {
 			return m, nil
 		}
@@ -214,12 +213,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for i, e := range entries {
 					queries[i] = e.Query
 				}
-				m.editor.SetHistory(queries)
+				m.editor.ReplaceHistoryEntries(queries)
 			}
 		}
 		cmds = append(cmds, m.execQueryCmd(msg.Query))
 		cmds = append(cmds, m.spinner.Tick)
 		return m, tea.Batch(cmds...)
+
+	case editor.DeleteHistoryEntryMsg:
+		if m.history == nil || msg.Query == "" {
+			return m, nil
+		}
+		key := m.connKey()
+		if key == "" {
+			key = "_"
+		}
+		if err := m.history.Remove(key, msg.Query); err != nil {
+			m.setStatus("History delete failed: " + err.Error())
+		} else {
+			m.setStatus("Removed from history")
+		}
+		entries := m.history.ForKey(key)
+		queries := make([]string, len(entries))
+		for i, e := range entries {
+			queries[i] = e.Query
+		}
+		m.editor.ReplaceHistoryEntries(queries)
+		return m, nil
 
 	case dbQueryResultMsg:
 		m.isLoading = false
@@ -868,7 +888,8 @@ func (m Model) renderHelp() string {
   EDITOR (Normal mode)
     i/a/o       Enter insert mode
     enter       Execute query under cursor
-    ctrl+p/n    Browse query history
+    ctrl+p/n    Browse query history (replace buffer)
+    backspace   History popup (d = delete confirm panel, y confirm)
     dd          Delete line
     gg/G        Go to top/bottom
 

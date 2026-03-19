@@ -91,7 +91,8 @@ Config is stored in `~/.config/dbx/config.json`:
 | ------------------- | -------------------------- |
 | `i` / `a` / `o`     | Enter insert mode          |
 | `enter`             | Execute query under cursor |
-| `ctrl+p` / `ctrl+n` | Browse history             |
+| `ctrl+p` / `ctrl+n` | Browse history (replace buffer) |
+| `backspace`         | History popup: pick a query to append |
 | `dd`                | Delete line                |
 | `gg` / `G`          | Go to top / bottom         |
 | `h/j/k/l`           | Move cursor                |
@@ -124,4 +125,5 @@ Query history is saved per connection/database to `~/.config/dbx/history.json`. 
 
 1. **Select a database** in the explorer (expand a connection, then select a database). History is loaded when you select a database.
 2. **Execute a query** — it is saved to history for that connection/database.
-3. **Browse history** with `ctrl+p` (older) and `ctrl+n` (newer) in the editor — works in both Normal and Insert mode.
+3. **Browse history** with `ctrl+p` (older) and `ctrl+n` (newer) in the editor — works in both Normal and Insert mode (replaces the buffer).
+4. **History popup** (normal mode): `backspace` opens a list; `j`/`k` or `ctrl+p`/`ctrl+n` to move; `enter` appends the chosen query at the end of the editor; `d` opens an in-popup confirmation showing the exact query; `y` deletes it from history (`n`, `esc`, or `d` again cancels).

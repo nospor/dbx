@@ -136,6 +136,24 @@ func (h *History) Add(connKey, query string) error {
 	return h.save()
 }
 
+// Remove deletes all entries matching connKey and query (usually at most one).
+func (h *History) Remove(connKey, query string) error {
+	if connKey == "" || query == "" {
+		return nil
+	}
+	if h.entries == nil {
+		return nil
+	}
+	filtered := h.entries[:0]
+	for _, e := range h.entries {
+		if !(e.ConnKey == connKey && e.Query == query) {
+			filtered = append(filtered, e)
+		}
+	}
+	h.entries = filtered
+	return h.save()
+}
+
 // ForKey returns all history entries for a given connection key, newest first.
 func (h *History) ForKey(connKey string) []Entry {
 	if h.entries == nil {

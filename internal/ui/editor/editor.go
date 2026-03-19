@@ -16,6 +16,11 @@ type ExecuteQueryMsg struct {
 	Query string
 }
 
+// DeleteHistoryEntryMsg asks the app to remove a query from persisted history.
+type DeleteHistoryEntryMsg struct {
+	Query string
+}
+
 // Model is the bubbletea model for the query editor panel.
 type Model struct {
 	theme   theme.Theme
@@ -45,8 +50,9 @@ type Model struct {
 	histBrowsing  bool
 
 	// History popup
-	histPopupVisible bool
-	histPopupCursor  int
+	histPopupVisible            bool
+	histPopupCursor             int
+	histPopupPendingDeleteQuery string // non-empty = showing delete confirmation for this exact query
 }
 
 // New creates a new editor model.
@@ -68,12 +74,28 @@ func (m *Model) SetSchema(tables, columns []string) {
 }
 
 // SetHistory sets the history entries for the current connection (newest first).
+// Closes the history popup (e.g. when switching database).
 func (m *Model) SetHistory(entries []string) {
 	m.history = entries
 	m.histCursor = -1
 	m.histBrowsing = false
 	m.histPopupVisible = false
 	m.histPopupCursor = 0
+	m.histPopupPendingDeleteQuery = ""
+}
+
+// ReplaceHistoryEntries updates the in-memory history list without closing the popup.
+func (m *Model) ReplaceHistoryEntries(entries []string) {
+	m.history = entries
+	if len(entries) == 0 {
+		m.histPopupVisible = false
+		m.histPopupCursor = 0
+		m.histPopupPendingDeleteQuery = ""
+		return
+	}
+	if m.histPopupCursor >= len(entries) {
+		m.histPopupCursor = len(entries) - 1
+	}
 }
 
 // acceptHistoryPopup appends the selected history entry to the editor content.
@@ -99,6 +121,7 @@ func (m *Model) acceptHistoryPopup() {
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
 	m.histPopupVisible = false
+	m.histPopupPendingDeleteQuery = ""
 }
 
 // BrowseHistoryPrev loads the previous history entry into the editor.
@@ -324,6 +347,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	case "j", "down":
 		if m.histPopupVisible {
+			if m.histPopupPendingDeleteQuery != "" {
+				return nil
+			}
 			if m.histPopupCursor < len(m.history)-1 {
 				m.histPopupCursor++
 			}
@@ -335,6 +361,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	case "k", "up":
 		if m.histPopupVisible {
+			if m.histPopupPendingDeleteQuery != "" {
+				return nil
+			}
 			if m.histPopupCursor > 0 {
 				m.histPopupCursor--
 			}
@@ -372,6 +401,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		lines = m.deleteCharAt(lines)
 		m.setLines(lines)
 	case "d":
+		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
+			m.histPopupPendingDeleteQuery = ""
+			m.vim.pendingD = false
+			return nil
+		}
+		if m.histPopupVisible && m.histPopupCursor < len(m.history) {
+			m.histPopupPendingDeleteQuery = m.history[m.histPopupCursor]
+			m.vim.pendingD = false
+			return nil
+		}
 		if m.vim.pendingD {
 			lines = m.deleteLine(lines)
 			m.setLines(lines)
@@ -379,8 +418,22 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.vim.pendingD = true
 		}
+	case "y":
+		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
+			q := m.histPopupPendingDeleteQuery
+			m.histPopupPendingDeleteQuery = ""
+			return func() tea.Msg { return DeleteHistoryEntryMsg{Query: q} }
+		}
+	case "n":
+		if m.histPopupVisible {
+			m.histPopupPendingDeleteQuery = ""
+			return nil
+		}
 	case "enter", "ctrl+enter", "ctrl+r", "f5":
 		if m.histPopupVisible {
+			if m.histPopupPendingDeleteQuery != "" {
+				return nil
+			}
 			m.acceptHistoryPopup()
 			return nil
 		}
@@ -390,15 +443,23 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		if len(m.history) > 0 {
 			m.histPopupVisible = true
 			m.histPopupCursor = 0
+			m.histPopupPendingDeleteQuery = ""
 		}
 		return nil
 	case "esc":
 		if m.histPopupVisible {
-			m.histPopupVisible = false
+			if m.histPopupPendingDeleteQuery != "" {
+				m.histPopupPendingDeleteQuery = ""
+			} else {
+				m.histPopupVisible = false
+			}
 			return nil
 		}
 	case "ctrl+p":
 		if m.histPopupVisible {
+			if m.histPopupPendingDeleteQuery != "" {
+				return nil
+			}
 			if m.histPopupCursor > 0 {
 				m.histPopupCursor--
 			}
@@ -408,6 +469,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+n":
 		if m.histPopupVisible {
+			if m.histPopupPendingDeleteQuery != "" {
+				return nil
+			}
 			if m.histPopupCursor < len(m.history)-1 {
 				m.histPopupCursor++
 			}
@@ -728,35 +792,70 @@ func (m Model) View() string {
 		if innerW < 10 {
 			innerW = 10
 		}
-		maxVisible := visibleLines - 2 // leave room for header + counter
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-
-		start := 0
-		if m.histPopupCursor >= maxVisible {
-			start = m.histPopupCursor - maxVisible + 1
-		}
-		end := start + maxVisible
-		if end > len(m.history) {
-			end = len(m.history)
-		}
 
 		var popSb strings.Builder
-		header := m.theme.Dimmed.Width(m.width).Render(fmt.Sprintf(" History (%d)  j/k navigate  enter insert  esc close", len(m.history)))
-		popSb.WriteString(header + "\n")
 
-		for i := start; i < end; i++ {
-			preview := strings.ReplaceAll(m.history[i], "\n", " ↵ ")
-			runes := []rune(preview)
-			if len(runes) > innerW-2 {
-				preview = string(runes[:innerW-5]) + "..."
+		if m.histPopupPendingDeleteQuery != "" {
+			// Delete confirmation: full-width sub-panel (no list navigation)
+			topHint := m.theme.Dimmed.Width(m.width).Render(" Remove from history — y confirm   n / esc cancel ")
+			popSb.WriteString(topHint + "\n")
+
+			preview := strings.ReplaceAll(m.histPopupPendingDeleteQuery, "\n", " ↵ ")
+			textW := innerW - 4
+			if textW < 8 {
+				textW = 8
 			}
-			line := " " + preview
-			if i == m.histPopupCursor {
-				popSb.WriteString(m.theme.TreeSelected.Width(m.width).Render(line) + "\n")
-			} else {
-				popSb.WriteString(lipgloss.NewStyle().Width(m.width).Render(line) + "\n")
+			previewLines := wrapRunesToWidth([]rune(preview), textW)
+			maxPreview := visibleLines - 5
+			if maxPreview < 2 {
+				maxPreview = 2
+			}
+			if len(previewLines) > maxPreview {
+				previewLines = previewLines[:maxPreview]
+				previewLines = append(previewLines, "...")
+			}
+			boxInner := lipgloss.NewStyle().Bold(true).Render("Delete this query?") + "\n\n" +
+				strings.Join(previewLines, "\n")
+			box := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("9")).
+				Width(innerW).
+				Padding(0, 1).
+				Render(boxInner)
+			for _, bl := range strings.Split(box, "\n") {
+				popSb.WriteString(lipgloss.NewStyle().Width(m.width).Render(bl) + "\n")
+			}
+		} else {
+			maxVisible := visibleLines - 2
+			if maxVisible < 1 {
+				maxVisible = 1
+			}
+
+			start := 0
+			if m.histPopupCursor >= maxVisible {
+				start = m.histPopupCursor - maxVisible + 1
+			}
+			end := start + maxVisible
+			if end > len(m.history) {
+				end = len(m.history)
+			}
+
+			headerText := fmt.Sprintf(" History (%d)  j/k navigate  enter insert  esc close  d delete", len(m.history))
+			header := m.theme.Dimmed.Width(m.width).Render(headerText)
+			popSb.WriteString(header + "\n")
+
+			for i := start; i < end; i++ {
+				preview := strings.ReplaceAll(m.history[i], "\n", " ↵ ")
+				runes := []rune(preview)
+				if len(runes) > innerW-2 {
+					preview = string(runes[:innerW-5]) + "..."
+				}
+				line := " " + preview
+				if i == m.histPopupCursor {
+					popSb.WriteString(m.theme.TreeSelected.Width(m.width).Render(line) + "\n")
+				} else {
+					popSb.WriteString(lipgloss.NewStyle().Width(m.width).Render(line) + "\n")
+				}
 			}
 		}
 
@@ -768,7 +867,6 @@ func (m Model) View() string {
 			renderedLines++
 		}
 
-		// Replace content area in sb (keep title bar line)
 		titleLine := strings.SplitN(sb.String(), "\n", 2)[0]
 		return titleLine + "\n" + rendered
 	}
@@ -817,6 +915,23 @@ func (m Model) View() string {
 	}
 
 	return sb.String()
+}
+
+// wrapRunesToWidth splits runes into lines of at most width runes each.
+func wrapRunesToWidth(runes []rune, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var lines []string
+	for len(runes) > 0 {
+		if len(runes) <= width {
+			lines = append(lines, string(runes))
+			break
+		}
+		lines = append(lines, string(runes[:width]))
+		runes = runes[width:]
+	}
+	return lines
 }
 
 // wordForward moves to the start of the next word.
