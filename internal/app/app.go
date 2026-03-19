@@ -581,7 +581,7 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			}
 			query := quickSelectQuery(driver, node.DBName, node.Label)
 			m.editor.SetContent(query)
-			m.setFocus(PanelResults)
+			// Keep focus in explorer; user can press r to view results.
 			m.results.SetLoading(true)
 			cmds = append(cmds, m.execQueryCmd(query))
 		} else if node.Expanded {
