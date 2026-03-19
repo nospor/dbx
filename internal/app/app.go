@@ -501,9 +501,16 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 
 	switch node.Kind {
 	case explorer.NodeConnection:
-		cmds = append(cmds, m.connectCmd(node.ConnID))
+		// Only fetch databases when expanding; collapsing should not refetch
+		if node.Expanded {
+			cmds = append(cmds, m.connectCmd(node.ConnID))
+		}
 
 	case explorer.NodeDatabase:
+		// Only set active DB and fetch schema when expanding; collapsing should not refetch
+		if !node.Expanded {
+			return nil
+		}
 		m.activeConnID = node.ConnID
 		m.activeDB = node.DBName
 		m.editor.SwitchConnection(m.connKey())
@@ -532,7 +539,8 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			m.setFocus(PanelResults)
 			m.results.SetLoading(true)
 			cmds = append(cmds, m.execQueryCmd(query))
-		} else {
+		} else if node.Expanded {
+			// Only fetch columns when expanding; collapsing should not refetch
 			cmds = append(cmds, m.fetchColumnsCmd(node.ConnID, node.DBName, node.Label))
 		}
 
