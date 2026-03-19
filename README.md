@@ -10,7 +10,8 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
 - **Tab autocomplete** for table names, column names, and SQL keywords
-- **Query history** per connection/database (ctrl+p/n to browse)
+- **Query history** per connection/database (ctrl+p/n to browse) — stored in `history.json`
+- **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
 - **Command palette** (space) with context-aware commands per panel
 - **Fullscreen** any panel with space+f
 - **Export** results to CSV or JSON
@@ -65,6 +66,14 @@ Config is stored in `~/.config/dbx/config.json`:
 ```
 
 **`database` field**: Leave empty to show all databases. Use a comma-separated list (e.g. `"db1,db2"`) to show specific databases.
+
+## Data files (`~/.config/dbx/`)
+
+| File | Purpose |
+| ---- | ------- |
+| `config.json` | Connections and UI preferences |
+| `history.json` | Executed queries (history popup / ctrl+p n) |
+| `query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 
 ## Keybindings
 

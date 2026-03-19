@@ -21,6 +21,20 @@ type DeleteHistoryEntryMsg struct {
 	Query string
 }
 
+// QueryPanePersistMsg asks the app to persist the editor buffer for the given connection key.
+// ConnKey is the logical key (may be "" before a DB is selected); the app maps "" to "_".
+type QueryPanePersistMsg struct {
+	ConnKey string
+	Text    string
+}
+
+func tabStoreKey(connKey string) string {
+	if connKey == "" {
+		return "_"
+	}
+	return connKey
+}
+
 // Model is the bubbletea model for the query editor panel.
 type Model struct {
 	theme   theme.Theme
@@ -66,6 +80,25 @@ func New(t theme.Theme) Model {
 	}
 	m.ensureTab("")
 	return m
+}
+
+// SeedQueryTabs hydrates in-memory tabs from disk (e.g. at startup).
+func (m *Model) SeedQueryTabs(contents map[string]string) {
+	if len(contents) == 0 {
+		return
+	}
+	for key, text := range contents {
+		sk := tabStoreKey(key)
+		m.tabs[sk] = linesFromText(text)
+	}
+}
+
+func linesFromText(text string) []string {
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
 }
 
 // SetSchema updates the autocomplete schema tokens.
@@ -157,20 +190,21 @@ func (m *Model) BrowseHistoryNext() {
 }
 
 func (m *Model) ensureTab(key string) {
-	if _, ok := m.tabs[key]; !ok {
-		m.tabs[key] = []string{""}
+	sk := tabStoreKey(key)
+	if _, ok := m.tabs[sk]; !ok {
+		m.tabs[sk] = []string{""}
 	}
 }
 
 func (m *Model) lines() []string {
-	return m.tabs[m.connKey]
+	return m.tabs[tabStoreKey(m.connKey)]
 }
 
 func (m *Model) setLines(lines []string) {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	m.tabs[m.connKey] = lines
+	m.tabs[tabStoreKey(m.connKey)] = lines
 }
 
 // SwitchConnection switches the editor to the tab for the given connection key.
@@ -179,6 +213,16 @@ func (m *Model) SwitchConnection(key string) {
 	m.ensureTab(key)
 	m.vim = newVimState()
 	m.scrollTop = 0
+}
+
+// EditorConnKey returns the logical connection key for the active tab (may be "").
+func (m Model) EditorConnKey() string {
+	return m.connKey
+}
+
+// TabText returns the full buffer for the active tab.
+func (m Model) TabText() string {
+	return strings.Join(m.lines(), "\n")
 }
 
 func (m *Model) SetSize(w, h int) {
@@ -268,6 +312,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.vim.col > 0 {
 				m.vim.col--
 			}
+			m.setLines(lines)
+			m.clampCursor()
+			m.adjustScroll()
+			persistKey := m.connKey
+			persistText := strings.Join(lines, "\n")
+			return func() tea.Msg {
+				return QueryPanePersistMsg{ConnKey: persistKey, Text: persistText}
+			}
 		case "backspace":
 			lines = m.deleteBackspace(lines)
 			m.compVisible = false
@@ -319,10 +371,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 			m.compVisible = false
 		case "ctrl+enter", "ctrl+r", "f5":
-		q := m.currentQuery(lines)
-		m.setLines(lines)
-		m.compVisible = false
-		return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
+			q := m.currentQuery(lines)
+			m.setLines(lines)
+			m.compVisible = false
+			return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
 		case "ctrl+v":
 			if text, err := util.Paste(); err == nil && text != "" {
 				for _, ch := range text {

@@ -15,6 +15,7 @@ import (
 	"github.com/robertn/dbx/internal/config"
 	"github.com/robertn/dbx/internal/db"
 	"github.com/robertn/dbx/internal/history"
+	"github.com/robertn/dbx/internal/querycontents"
 	"github.com/robertn/dbx/internal/ui/cmdpalette"
 	"github.com/robertn/dbx/internal/ui/editor"
 	"github.com/robertn/dbx/internal/ui/explorer"
@@ -29,6 +30,8 @@ type Model struct {
 	theme   theme.Theme
 	keymap  KeyMap
 	history *history.History
+
+	queryContents *querycontents.Store
 
 	width  int
 	height int
@@ -59,11 +62,18 @@ type Model struct {
 	statusExpiry  time.Time
 }
 
+func newEditorWithDrafts(t theme.Theme, drafts map[string]string) editor.Model {
+	ed := editor.New(t)
+	ed.SeedQueryTabs(drafts)
+	return ed
+}
+
 // New creates the root application model.
 func New(cfg *config.Config) Model {
 	t := theme.Get(cfg.Theme)
 
 	hist := history.NewOrEmpty()
+	qc := querycontents.NewOrEmpty()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -73,11 +83,12 @@ func New(cfg *config.Config) Model {
 		theme:           t,
 		keymap:          DefaultKeyMap(),
 		history:         hist,
+		queryContents:   qc,
 		focus:           PanelExplorer,
 		fullscreenPanel: PanelExplorer,
 		drivers:         make(map[string]db.Driver),
 		explorer:        explorer.New(cfg, t),
-		editor:          editor.New(t),
+		editor:          newEditorWithDrafts(t, qc.All()),
 		results:         results.New(t),
 		palette:         cmdpalette.New(t),
 		spinner:         sp,
@@ -147,6 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "ctrl+c":
+			m.persistEditorDraft()
 			m.closeAllDrivers()
 			return m, tea.Quit
 
@@ -220,6 +232,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.execQueryCmd(msg.Query))
 		cmds = append(cmds, m.spinner.Tick)
 		return m, tea.Batch(cmds...)
+
+	case editor.QueryPanePersistMsg:
+		if m.queryContents != nil {
+			key := msg.ConnKey
+			if key == "" {
+				key = "_"
+			}
+			if err := m.queryContents.Put(key, msg.Text); err != nil {
+				m.setStatus("Query draft save failed: " + err.Error())
+			}
+		}
+		return m, nil
 
 	case editor.DeleteHistoryEntryMsg:
 		if m.history == nil || msg.Query == "" {
@@ -373,6 +397,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case clearEditorMsg:
 		m.editor.SetContent("")
+		m.persistEditorDraft()
 		return m, nil
 
 	case copyCellMsg:
@@ -455,6 +480,17 @@ func (m *Model) connKey() string {
 	return m.activeConnID + ":" + m.activeDB
 }
 
+func (m *Model) persistEditorDraft() {
+	if m.queryContents == nil {
+		return
+	}
+	key := m.editor.EditorConnKey()
+	if key == "" {
+		key = "_"
+	}
+	_ = m.queryContents.Put(key, m.editor.TabText())
+}
+
 func (m *Model) openPalette() {
 	var title string
 	var commands []cmdpalette.Command
@@ -493,6 +529,23 @@ func (m *Model) openPalette() {
 	m.palette.Show(title, commands)
 }
 
+// activateExplorerDatabase sets the active conn/db, switches the editor tab, and loads history.
+// Call before any explorer action that should show that database's query pane (expand/collapse/select table).
+func (m *Model) activateExplorerDatabase(connID, dbName string) {
+	m.persistEditorDraft()
+	m.activeConnID = connID
+	m.activeDB = dbName
+	m.editor.SwitchConnection(m.connKey())
+	if m.history != nil {
+		entries := m.history.ForKey(m.connKey())
+		queries := make([]string, len(entries))
+		for i, e := range entries {
+			queries[i] = e.Query
+		}
+		m.editor.SetHistory(queries)
+	}
+}
+
 func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 	if node == nil {
 		return nil
@@ -507,28 +560,20 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 		}
 
 	case explorer.NodeDatabase:
-		// Only set active DB and fetch schema when expanding; collapsing should not refetch
-		if !node.Expanded {
-			return nil
-		}
-		m.activeConnID = node.ConnID
-		m.activeDB = node.DBName
-		m.editor.SwitchConnection(m.connKey())
-		// Load history for this connection
+		// Always sync editor + query draft for this database (expand or collapse).
+		// Only fetch schema when expanding so collapse does not refetch/re-open.
+		m.activateExplorerDatabase(node.ConnID, node.DBName)
 		if m.history != nil {
-			entries := m.history.ForKey(m.connKey())
-			queries := make([]string, len(entries))
-			for i, e := range entries {
-				queries[i] = e.Query
-			}
-			m.editor.SetHistory(queries)
-			if len(queries) > 0 {
-				m.setStatus(fmt.Sprintf("Loaded %d history entries", len(queries)))
+			if n := len(m.history.ForKey(m.connKey())); n > 0 {
+				m.setStatus(fmt.Sprintf("Loaded %d history entries", n))
 			}
 		}
-		cmds = append(cmds, m.fetchSchemaCmd(node.ConnID, node.DBName))
+		if node.Expanded {
+			cmds = append(cmds, m.fetchSchemaCmd(node.ConnID, node.DBName))
+		}
 
 	case explorer.NodeTable, explorer.NodeView:
+		m.activateExplorerDatabase(node.ConnID, node.DBName)
 		if node.Detail == "select" {
 			driver := ""
 			if conn := m.findConn(node.ConnID); conn != nil {

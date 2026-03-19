@@ -20,7 +20,8 @@ dbx/
 │   ├── app/                # Root model, focus, keymap, message routing
 │   ├── config/             # Config load/save (~/.config/dbx/config.json)
 │   ├── db/                 # Driver interface + Postgres/MySQL/SQLite/MSSQL impls
-│   ├── history/            # Query history (~/.config/dbx/history.json)
+│   ├── history/            # Executed query history (~/.config/dbx/history.json)
+│   ├── querycontents/      # Editor buffer drafts per conn/db (~/.config/dbx/query-contents.json)
 │   ├── ui/
 │   │   ├── cmdpalette/     # Space-triggered command palette
 │   │   ├── editor/         # Query editor (vim mode, syntax highlight, autocomplete)
@@ -41,7 +42,7 @@ dbx/
 
 ## Conventions
 
-- Config and history live in `~/.config/dbx/`.
+- Config, query history, and per-database **editor drafts** (`query-contents.json`) live in `~/.config/dbx/`. Drafts persist on `esc` (Insert→Normal) and when changing the active database; they are independent of `history.json`.
 - Connection form uses a driver selector (not free text); SQLite hides host/port fields.
 - Quick SELECT (`s` on table) is dialect-aware (e.g. `SELECT TOP 100` for MSSQL).
 - Results pane supports horizontal scrolling with `h`/`l`, `0`/`$`; scrollbar thumb reflects position.
