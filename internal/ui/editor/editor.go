@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,6 +43,10 @@ type Model struct {
 	history       []string
 	histCursor    int
 	histBrowsing  bool
+
+	// History popup
+	histPopupVisible bool
+	histPopupCursor  int
 }
 
 // New creates a new editor model.
@@ -67,6 +72,33 @@ func (m *Model) SetHistory(entries []string) {
 	m.history = entries
 	m.histCursor = -1
 	m.histBrowsing = false
+	m.histPopupVisible = false
+	m.histPopupCursor = 0
+}
+
+// acceptHistoryPopup appends the selected history entry to the editor content.
+func (m *Model) acceptHistoryPopup() {
+	if !m.histPopupVisible || len(m.history) == 0 {
+		return
+	}
+	if m.histPopupCursor >= len(m.history) {
+		m.histPopupCursor = 0
+	}
+	existing := m.lines()
+	// Strip trailing blank lines from existing content
+	for len(existing) > 0 && strings.TrimSpace(existing[len(existing)-1]) == "" {
+		existing = existing[:len(existing)-1]
+	}
+	newLines := strings.Split(m.history[m.histPopupCursor], "\n")
+	// Separate with a blank line if there's existing content
+	if len(existing) > 0 {
+		existing = append(existing, "")
+	}
+	combined := append(existing, newLines...)
+	m.setLines(combined)
+	m.vim.row = len(m.lines()) - 1
+	m.vim.col = 0
+	m.histPopupVisible = false
 }
 
 // BrowseHistoryPrev loads the previous history entry into the editor.
@@ -291,11 +323,23 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.vim.col++
 		}
 	case "j", "down":
+		if m.histPopupVisible {
+			if m.histPopupCursor < len(m.history)-1 {
+				m.histPopupCursor++
+			}
+			return nil
+		}
 		if m.vim.row < len(lines)-1 {
 			m.vim.row++
 			m.clampCol(lines)
 		}
 	case "k", "up":
+		if m.histPopupVisible {
+			if m.histPopupCursor > 0 {
+				m.histPopupCursor--
+			}
+			return nil
+		}
 		if m.vim.row > 0 {
 			m.vim.row--
 			m.clampCol(lines)
@@ -336,12 +380,39 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.vim.pendingD = true
 		}
 	case "enter", "ctrl+enter", "ctrl+r", "f5":
+		if m.histPopupVisible {
+			m.acceptHistoryPopup()
+			return nil
+		}
 		q := m.currentQuery(lines)
 		return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
+	case "backspace":
+		if len(m.history) > 0 {
+			m.histPopupVisible = true
+			m.histPopupCursor = 0
+		}
+		return nil
+	case "esc":
+		if m.histPopupVisible {
+			m.histPopupVisible = false
+			return nil
+		}
 	case "ctrl+p":
+		if m.histPopupVisible {
+			if m.histPopupCursor > 0 {
+				m.histPopupCursor--
+			}
+			return nil
+		}
 		m.BrowseHistoryPrev()
 		return nil
 	case "ctrl+n":
+		if m.histPopupVisible {
+			if m.histPopupCursor < len(m.history)-1 {
+				m.histPopupCursor++
+			}
+			return nil
+		}
 		if m.histBrowsing {
 			m.BrowseHistoryNext()
 		}
@@ -649,6 +720,57 @@ func (m Model) View() string {
 		}
 
 		sb.WriteString(lipgloss.NewStyle().Width(m.width).Render(rendered) + "\n")
+	}
+
+	// Render history popup — replaces the content area, keeps the title bar
+	if m.histPopupVisible && len(m.history) > 0 {
+		innerW := m.width - 2
+		if innerW < 10 {
+			innerW = 10
+		}
+		maxVisible := visibleLines - 2 // leave room for header + counter
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+
+		start := 0
+		if m.histPopupCursor >= maxVisible {
+			start = m.histPopupCursor - maxVisible + 1
+		}
+		end := start + maxVisible
+		if end > len(m.history) {
+			end = len(m.history)
+		}
+
+		var popSb strings.Builder
+		header := m.theme.Dimmed.Width(m.width).Render(fmt.Sprintf(" History (%d)  j/k navigate  enter insert  esc close", len(m.history)))
+		popSb.WriteString(header + "\n")
+
+		for i := start; i < end; i++ {
+			preview := strings.ReplaceAll(m.history[i], "\n", " ↵ ")
+			runes := []rune(preview)
+			if len(runes) > innerW-2 {
+				preview = string(runes[:innerW-5]) + "..."
+			}
+			line := " " + preview
+			if i == m.histPopupCursor {
+				popSb.WriteString(m.theme.TreeSelected.Width(m.width).Render(line) + "\n")
+			} else {
+				popSb.WriteString(lipgloss.NewStyle().Width(m.width).Render(line) + "\n")
+			}
+		}
+
+		// Pad remaining lines
+		rendered := popSb.String()
+		renderedLines := strings.Count(rendered, "\n")
+		for renderedLines < visibleLines {
+			rendered += lipgloss.NewStyle().Width(m.width).Render("") + "\n"
+			renderedLines++
+		}
+
+		// Replace content area in sb (keep title bar line)
+		titleLine := strings.SplitN(sb.String(), "\n", 2)[0]
+		return titleLine + "\n" + rendered
 	}
 
 	// Render autocomplete dropdown
