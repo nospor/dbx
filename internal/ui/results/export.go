@@ -8,6 +8,20 @@ import (
 	"time"
 )
 
+// CloneQueryResult returns a deep copy suitable for caching (nil-safe).
+func CloneQueryResult(r *QueryResult) *QueryResult {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	cp.Columns = append([]string(nil), r.Columns...)
+	cp.Rows = make([][]string, len(r.Rows))
+	for i, row := range r.Rows {
+		cp.Rows[i] = append([]string(nil), row...)
+	}
+	return &cp
+}
+
 // ExportCSV writes the result to a CSV file. Returns the path written.
 func (r *QueryResult) ExportCSV(dir string) (string, error) {
 	if r == nil {

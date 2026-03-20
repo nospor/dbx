@@ -19,6 +19,8 @@ type dbQueryResultMsg struct {
 	result    *db.QueryResult
 	elapsed   time.Duration
 	sourceSQL string // statement that was executed (for results delete drafts)
+	connID    string  // connection/db the query ran under (for per-tab results)
+	dbName    string
 }
 
 // dbSchemaMsg carries the result of an async schema fetch.

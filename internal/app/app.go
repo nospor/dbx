@@ -54,6 +54,10 @@ type Model struct {
 	schemaCols   map[string][]string  // connID:db -> column tokens
 	tableCols    map[string][]db.ColumnInfo // connID:db:table -> columns (cache + explorer)
 
+	// Per editor-tab results for this session only (key = connID:dbName).
+	tabResultCache   map[string]*results.QueryResult
+	tabResultLoading map[string]bool
+
 	explorer explorer.Model
 	editor   editor.Model
 	results  results.Model
@@ -126,10 +130,12 @@ func New(cfg *config.Config) Model {
 		drivers:         make(map[string]db.Driver),
 		schemaTables:    make(map[string][]string),
 		schemaCols:      make(map[string][]string),
-		tableCols:       make(map[string][]db.ColumnInfo),
-		explorer:        explorer.New(cfg, t),
-		editor:          newEditorWithDrafts(t, qc.All(), cfg, ot),
-		results:         results.New(t),
+		tableCols:        make(map[string][]db.ColumnInfo),
+		tabResultCache:   make(map[string]*results.QueryResult),
+		tabResultLoading: make(map[string]bool),
+		explorer:         explorer.New(cfg, t),
+		editor:           newEditorWithDrafts(t, qc.All(), cfg, ot),
+		results:          results.New(t),
 		palette:         cmdpalette.New(t),
 		spinner:         sp,
 	}
@@ -351,8 +357,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Query == "" {
 			return m, nil
 		}
-		m.isLoading = true
-		m.results.SetLoading(true)
+		m.beginQueryForActiveTab()
 		key := m.connKey()
 		if key == "" {
 			key = "_"
@@ -409,9 +414,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case dbQueryResultMsg:
-		m.isLoading = false
+		if msg.result == nil {
+			msg.result = &db.QueryResult{Error: "internal error: nil query result"}
+		}
+		k := m.tabResultCacheKey(msg.connID, msg.dbName)
+		if k != "" {
+			m.tabResultLoading[k] = false
+		}
 		drv := ""
-		if c := m.findConn(m.activeConnID); c != nil {
+		if c := m.findConn(msg.connID); c != nil {
 			drv = c.Driver
 		}
 		qr := &results.QueryResult{
@@ -421,9 +432,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Elapsed:   msg.elapsed,
 			SourceSQL: msg.sourceSQL,
 			Driver:    drv,
-			Database:  m.activeDB,
+			Database:  msg.dbName,
 		}
-		m.results.SetResult(qr)
+		if k != "" {
+			m.tabResultCache[k] = results.CloneQueryResult(qr)
+		}
+		belongsToActive := m.tabResultCacheKey(msg.connID, msg.dbName) == m.tabResultCacheKey(m.activeConnID, m.activeDB)
+		if belongsToActive {
+			m.results.SetResult(qr)
+		}
+		m.syncIsLoadingWithActiveTab()
 		if qr.Error != "" {
 			cmds = append(cmds, m.setStatus("Query error: "+qr.Error))
 		} else {
@@ -591,7 +609,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case execQueryFromPaletteMsg:
 		query := m.editor.CurrentQuery()
 		if query != "" {
-			m.results.SetLoading(true)
+			m.beginQueryForActiveTab()
 			cmds = append(cmds, m.execQueryCmd(query))
 		}
 		return m, tea.Batch(cmds...)
@@ -679,6 +697,83 @@ func (m *Model) connKey() string {
 		return ""
 	}
 	return m.activeConnID + ":" + m.activeDB
+}
+
+// tabResultCacheKey matches editor tab keys (connID:dbName).
+func (m *Model) tabResultCacheKey(connID, dbName string) string {
+	if connID == "" {
+		return ""
+	}
+	return connID + ":" + dbName
+}
+
+func (m *Model) syncIsLoadingWithActiveTab() {
+	k := m.tabResultCacheKey(m.activeConnID, m.activeDB)
+	if k == "" {
+		m.isLoading = false
+		return
+	}
+	m.isLoading = m.tabResultLoading[k]
+}
+
+func (m *Model) stashResultsForTab(connID, dbName string) {
+	k := m.tabResultCacheKey(connID, dbName)
+	if k == "" {
+		return
+	}
+	m.tabResultCache[k] = results.CloneQueryResult(m.results.Result())
+	m.tabResultLoading[k] = m.results.Loading()
+}
+
+func (m *Model) applyResultsForTab(connID, dbName string) {
+	k := m.tabResultCacheKey(connID, dbName)
+	if k == "" {
+		m.results.SetResult(nil)
+		m.results.SetLoading(false)
+		m.isLoading = false
+		return
+	}
+	loading := m.tabResultLoading[k]
+	r := m.tabResultCache[k]
+	if r != nil {
+		m.results.SetResult(r)
+	} else {
+		m.results.SetResult(nil)
+	}
+	if loading {
+		m.results.SetLoading(true)
+	}
+	m.syncIsLoadingWithActiveTab()
+}
+
+func (m *Model) beginQueryForActiveTab() {
+	k := m.tabResultCacheKey(m.activeConnID, m.activeDB)
+	if k == "" {
+		m.results.SetLoading(true)
+		m.isLoading = true
+		return
+	}
+	m.tabResultLoading[k] = true
+	m.results.SetLoading(true)
+	m.isLoading = true
+}
+
+func (m *Model) pruneTabResultsCache() {
+	keys := m.editor.OpenTabKeys()
+	open := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		open[k] = struct{}{}
+	}
+	for k := range m.tabResultCache {
+		if _, ok := open[k]; !ok {
+			delete(m.tabResultCache, k)
+		}
+	}
+	for k := range m.tabResultLoading {
+		if _, ok := open[k]; !ok {
+			delete(m.tabResultLoading, k)
+		}
+	}
 }
 
 func schemaKey(connID, dbName string) string {
@@ -826,13 +921,16 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 		if prevConn != "" {
 			m.explorer.CollapseConnection(prevConn)
 		}
+		m.stashResultsForTab(prevConn, prevDB)
 		m.activeConnID = ""
 		m.activeDB = ""
-		m.results.SetResult(nil)
+		m.applyResultsForTab("", "")
+		m.pruneTabResultsCache()
 		m.persistOpenTabs()
 		return cmds
 	}
 	connID, dbName := splitConnKey(connKey)
+	m.stashResultsForTab(prevConn, prevDB)
 	if prevConn != "" && (prevConn != connID || prevDB != dbName) {
 		if prevConn != connID {
 			m.explorer.CollapseConnection(prevConn)
@@ -844,6 +942,8 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 	}
 	m.activeConnID = connID
 	m.activeDB = dbName
+	m.applyResultsForTab(connID, dbName)
+	m.pruneTabResultsCache()
 	if m.explorer.SelectDatabaseNode(connID, dbName) {
 		// explorer cursor aligned
 	} else if connID != "" && dbName != "" {
@@ -868,9 +968,13 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 // Call before any explorer action that should show that database's query pane (expand/collapse/select table).
 func (m *Model) activateExplorerDatabase(connID, dbName string) {
 	m.persistEditorDraft()
+	prevConn, prevDB := m.activeConnID, m.activeDB
+	m.stashResultsForTab(prevConn, prevDB)
 	m.activeConnID = connID
 	m.activeDB = dbName
+	m.applyResultsForTab(connID, dbName)
 	m.editor.OpenTab(m.connKey(), m.tabLabelForConn(connID, dbName))
+	m.pruneTabResultsCache()
 	m.persistOpenTabs()
 	m.applyEditorSchema(connID, dbName)
 	if m.history != nil {
@@ -929,7 +1033,7 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			m.editor.AppendAtEnd(query)
 			m.persistEditorDraft()
 			// Keep focus in explorer; user can press r to view results.
-			m.results.SetLoading(true)
+			m.beginQueryForActiveTab()
 			cmds = append(cmds, m.execQueryCmd(query))
 		} else if node.Expanded {
 			ck := tableColsKey(node.ConnID, node.DBName, node.Label)
@@ -1315,7 +1419,7 @@ func (m Model) renderTabCloseConfirmPopup() string {
 
 	head := m.theme.Bold.Render("Close this tab?")
 	preview := m.theme.Normal.Render(label)
-	hint := m.theme.Dimmed.Render("Draft text is still saved in query-contents.json.")
+	hint := m.theme.Dimmed.Render("Queries/text is still saved.")
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		head,
 		"",
@@ -1422,21 +1526,33 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 				result:    &db.QueryResult{Error: "No active connection. Select a database in the explorer first."},
 				elapsed:   0,
 				sourceSQL: query,
+				connID:    connID,
+				dbName:    dbName,
 			}
 		}
 		driver, err := db.New(*conn)
 		if err != nil {
-			return dbQueryResultMsg{result: &db.QueryResult{Error: err.Error()}, sourceSQL: query}
+			return dbQueryResultMsg{
+				result:    &db.QueryResult{Error: err.Error()},
+				sourceSQL: query,
+				connID:    connID,
+				dbName:    dbName,
+			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := driver.Connect(ctx, *conn); err != nil {
-			return dbQueryResultMsg{result: &db.QueryResult{Error: err.Error()}, sourceSQL: query}
+			return dbQueryResultMsg{
+				result:    &db.QueryResult{Error: err.Error()},
+				sourceSQL: query,
+				connID:    connID,
+				dbName:    dbName,
+			}
 		}
 		defer driver.Close()
 
 		if stmts, ok := sqlutil.SplitExecBatchDeleteUpdate(query); ok && len(stmts) > 1 {
-			return execDeleteUpdateBatch(ctx, driver, dbName, stmts, start, query)
+			return execDeleteUpdateBatch(ctx, driver, connID, dbName, stmts, start, query)
 		}
 
 		// Determine if SELECT or DML
@@ -1452,13 +1568,22 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 		if err != nil {
 			result = &db.QueryResult{Error: err.Error()}
 		}
-		return dbQueryResultMsg{result: result, elapsed: time.Since(start), sourceSQL: query}
+		if result == nil {
+			result = &db.QueryResult{}
+		}
+		return dbQueryResultMsg{
+			result:    result,
+			elapsed:   time.Since(start),
+			sourceSQL: query,
+			connID:    connID,
+			dbName:    dbName,
+		}
 	}
 }
 
 // execDeleteUpdateBatch runs several DELETE/UPDATE statements sequentially (drivers often
 // reject multiple statements in a single Exec call).
-func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, dbName string, stmts []string, start time.Time, sourceSQL string) dbQueryResultMsg {
+func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName string, stmts []string, start time.Time, sourceSQL string) dbQueryResultMsg {
 	var rows [][]string
 	for i, stmt := range stmts {
 		result, err := driver.Exec(ctx, dbName, stmt)
@@ -1467,6 +1592,8 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, dbName string,
 				result:    &db.QueryResult{Error: fmt.Sprintf("statement %d: %v", i+1, err)},
 				elapsed:   time.Since(start),
 				sourceSQL: sourceSQL,
+				connID:    connID,
+				dbName:    dbName,
 			}
 		}
 		if result != nil && result.Error != "" {
@@ -1474,6 +1601,8 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, dbName string,
 				result:    &db.QueryResult{Error: fmt.Sprintf("statement %d: %s", i+1, result.Error)},
 				elapsed:   time.Since(start),
 				sourceSQL: sourceSQL,
+				connID:    connID,
+				dbName:    dbName,
 			}
 		}
 		ra := "0"
@@ -1489,6 +1618,8 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, dbName string,
 		},
 		elapsed:   time.Since(start),
 		sourceSQL: sourceSQL,
+		connID:    connID,
+		dbName:    dbName,
 	}
 }
 
@@ -1708,19 +1839,7 @@ func (m Model) panelTitleFor(p Panel) string {
 	case PanelExplorer:
 		return "[e] Explorer"
 	case PanelEditor:
-		sub := "—"
-		if m.activeConnID != "" {
-			label := m.activeConnID
-			if c := m.findConn(m.activeConnID); c != nil && c.Name != "" {
-				label = c.Name
-			}
-			if m.activeDB != "" {
-				sub = label + " / " + m.activeDB
-			} else {
-				sub = label + " —"
-			}
-		}
-		return "[q] Query Editor · " + sub
+		return "[q] Query Editor " 
 	case PanelResults:
 		return "[r] Results"
 	default:

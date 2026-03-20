@@ -78,6 +78,11 @@ func (m *Model) SetLoading(loading bool) {
 	m.loading = loading
 }
 
+// Loading reports whether the results panel is showing a query-in-progress state.
+func (m Model) Loading() bool {
+	return m.loading
+}
+
 func (m *Model) SetResult(r *QueryResult) {
 	m.result = r
 	m.cursorRow = 0
