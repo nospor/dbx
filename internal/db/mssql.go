@@ -132,6 +132,33 @@ func (d *mssqlDriver) AllTableColumns(ctx context.Context, database string) ([]T
 	return out, rows.Err()
 }
 
+func (d *mssqlDriver) PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error) {
+	db := d.dbForQuery(database)
+	if db != "" {
+		if _, err := d.db.ExecContext(ctx, fmt.Sprintf("USE [%s]", db)); err != nil {
+			return nil, err
+		}
+	}
+	if schema == "" {
+		schema = "dbo"
+	}
+	q := `
+SELECT c.name
+FROM sys.tables t
+INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+INNER JOIN sys.indexes i ON t.object_id = i.object_id AND i.is_primary_key = 1
+INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+WHERE s.name = @p1 AND t.name = @p2
+ORDER BY ic.key_ordinal`
+	rows, err := d.db.QueryContext(ctx, q, schema, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanStringColumn(rows)
+}
+
 func (d *mssqlDriver) Query(ctx context.Context, database, sqlStr string) (*QueryResult, error) {
 	db := d.dbForQuery(database)
 	if db != "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 
 	_ "modernc.org/sqlite"
 
@@ -145,6 +146,40 @@ func (d *sqliteDriver) AllTableColumns(ctx context.Context, _ string) ([]TableCo
 		for _, c := range cols {
 			out = append(out, TableColumn{Table: name, Name: c.Name, DataType: c.DataType})
 		}
+	}
+	return out, nil
+}
+
+func (d *sqliteDriver) PrimaryKeyColumns(ctx context.Context, _, _, table string) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%q)", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type pkcol struct {
+		ord int
+		nam string
+	}
+	var pks []pkcol
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		if pk > 0 {
+			pks = append(pks, pkcol{ord: pk, nam: name})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(pks, func(i, j int) bool { return pks[i].ord < pks[j].ord })
+	out := make([]string, 0, len(pks))
+	for _, p := range pks {
+		out = append(out, p.nam)
 	}
 	return out, nil
 }

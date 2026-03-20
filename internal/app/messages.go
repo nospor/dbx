@@ -9,8 +9,9 @@ import (
 
 // dbQueryResultMsg carries the result of an async query.
 type dbQueryResultMsg struct {
-	result  *db.QueryResult
-	elapsed time.Duration
+	result    *db.QueryResult
+	elapsed   time.Duration
+	sourceSQL string // statement that was executed (for results delete drafts)
 }
 
 // dbSchemaMsg carries the result of an async schema fetch.

@@ -53,6 +53,10 @@ type Driver interface {
 	// AllTableColumns returns columns for all tables and views in the database (for autocomplete).
 	AllTableColumns(ctx context.Context, database string) ([]TableColumn, error)
 
+	// PrimaryKeyColumns returns primary-key column names in order (composite keys supported).
+	// database is the active catalog when applicable; schema/table are logical names from the object.
+	PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error)
+
 	// Query executes a SELECT-like statement and returns rows.
 	Query(ctx context.Context, database, sql string) (*QueryResult, error)
 

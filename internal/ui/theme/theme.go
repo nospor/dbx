@@ -41,6 +41,7 @@ type Theme struct {
 	TableRowAlt       lipgloss.Style
 	TableCursorRow    lipgloss.Style // non-active cells on the cursor row
 	TableCursorCell   lipgloss.Style // the focused cell (stronger than row)
+	TableRowSelected  lipgloss.Style // marked rows in results (s / S)
 }
 
 // Terminal theme — uses terminal default colors so it works with any terminal palette.
@@ -89,6 +90,7 @@ func Terminal() Theme {
 		TableRowAlt:       lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
 		TableCursorRow:    lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("7")),
 		TableCursorCell:   lipgloss.NewStyle().Background(accentSoftBg).Foreground(accentSoftFg).Bold(true),
+		TableRowSelected:  lipgloss.NewStyle().Background(lipgloss.Color("22")).Foreground(lipgloss.Color("7")),
 	}
 }
 
@@ -123,6 +125,7 @@ func Dark() Theme {
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7")).Background(lipgloss.Color("#283457")).Underline(true)
 	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#1f2335")).Foreground(lipgloss.Color("#a9b1d6"))
 	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#283457")).Foreground(lipgloss.Color("#7aa2f7")).Bold(true)
+	t.TableRowSelected = lipgloss.NewStyle().Background(lipgloss.Color("#283d22")).Foreground(lipgloss.Color("#a9b1d6"))
 
 	return t
 }
@@ -158,6 +161,7 @@ func Light() Theme {
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9")).Background(lipgloss.Color("#b6bfe2")).Underline(true)
 	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#d8dce8")).Foreground(lipgloss.Color("#3760bf"))
 	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#b6bfe2")).Foreground(lipgloss.Color("#2e7de9")).Bold(true)
+	t.TableRowSelected = lipgloss.NewStyle().Background(lipgloss.Color("#c2ddc2")).Foreground(lipgloss.Color("#3760bf"))
 
 	return t
 }
@@ -193,6 +197,7 @@ func CatppuccinMocha() Theme {
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")).Background(lipgloss.Color("#313244")).Underline(true)
 	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#181825")).Foreground(lipgloss.Color("#cdd6f4"))
 	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#313244")).Foreground(lipgloss.Color("#89b4fa")).Bold(true)
+	t.TableRowSelected = lipgloss.NewStyle().Background(lipgloss.Color("#304428")).Foreground(lipgloss.Color("#a6e3a1"))
 
 	return t
 }
@@ -228,6 +233,7 @@ func CatppuccinLatte() Theme {
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")).Background(lipgloss.Color("#ccd0da")).Underline(true)
 	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#e6e9ef")).Foreground(lipgloss.Color("#4c4f69"))
 	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#ccd0da")).Foreground(lipgloss.Color("#1e66f5")).Bold(true)
+	t.TableRowSelected = lipgloss.NewStyle().Background(lipgloss.Color("#b8e8c5")).Foreground(lipgloss.Color("#4c4f69"))
 
 	return t
 }
@@ -263,6 +269,7 @@ func Nord() Theme {
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1")).Background(lipgloss.Color("#3b4252")).Underline(true)
 	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#2a303b")).Foreground(lipgloss.Color("#d8dee9"))
 	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#3b4252")).Foreground(lipgloss.Color("#88c0d0")).Bold(true)
+	t.TableRowSelected = lipgloss.NewStyle().Background(lipgloss.Color("#3b5323")).Foreground(lipgloss.Color("#d8dee9"))
 
 	return t
 }
@@ -298,6 +305,7 @@ func GruvboxDark() Theme {
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598")).Background(lipgloss.Color("#3c3836")).Underline(true)
 	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#32302f")).Foreground(lipgloss.Color("#ebdbb2"))
 	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#3c3836")).Foreground(lipgloss.Color("#fabd2f")).Bold(true)
+	t.TableRowSelected = lipgloss.NewStyle().Background(lipgloss.Color("#3d4220")).Foreground(lipgloss.Color("#b8bb26"))
 
 	return t
 }

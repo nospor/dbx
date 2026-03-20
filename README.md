@@ -117,6 +117,10 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `j` / `k` | Navigate rows    |
 | `h` / `l` | Navigate columns |
 | `g` / `G` | First / last row |
+| `s`       | Toggle **mark** on the current row (highlighted); use for multi-row actions |
+| `S`       | Start **band select**: current row is marked; move with `j`/`k`/`g`/`G` to extend/shrink the marked range (all rows from anchor through cursor, inclusive) |
+| `d`       | Append **DELETE** draft(s) to the query editor for all marked rows, or for the cursor row if none marked. Requires the last result from a **simple** `SELECT` of **one** base table (no `WITH`, `JOIN`, subquery in `FROM`). The `WHERE` clause uses the table’s **primary key columns** when they appear in the result; otherwise it falls back to matching **all** visible columns. Review before executing. |
+| `esc`     | Clear marks / exit band mode |
 | `v`       | View full cell in popup (`y` to copy) |
 
 The **active cell** uses a stronger highlight than the rest of the cursor row.

@@ -206,6 +206,45 @@ func (d *postgresDriver) AllTableColumns(ctx context.Context, database string) (
 	return out, rows.Err()
 }
 
+func (d *postgresDriver) PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error) {
+	pool, err := d.poolForDB(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if pool != d.pool {
+			pool.Close()
+		}
+	}()
+	if schema == "" {
+		schema = "public"
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT kcu.column_name
+		FROM information_schema.table_constraints AS tc
+		JOIN information_schema.key_column_usage AS kcu
+		  ON tc.constraint_schema = kcu.constraint_schema
+		 AND tc.constraint_name = kcu.constraint_name
+		 AND tc.table_schema = kcu.table_schema
+		 AND tc.table_name = kcu.table_name
+		WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'PRIMARY KEY'
+		ORDER BY kcu.ordinal_position`,
+		schema, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		cols = append(cols, name)
+	}
+	return cols, rows.Err()
+}
+
 func (d *postgresDriver) Query(ctx context.Context, database, sql string) (*QueryResult, error) {
 	pool, err := d.poolForDB(ctx, database)
 	if err != nil {

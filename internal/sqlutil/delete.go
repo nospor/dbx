@@ -1,0 +1,130 @@
+package sqlutil
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+var (
+	reInt   = regexp.MustCompile(`^-?[0-9]+$`)
+	reFloat = regexp.MustCompile(`^-?[0-9]+\.[0-9]+$`)
+)
+
+// DeleteForRows builds DELETE statements (one per row).
+// If whereColumns is non-empty, the WHERE clause uses only those names (each must match
+// a name in columns, case-insensitively). Otherwise all columns are used.
+// tableExpr is pasted verbatim after DELETE FROM (as taken from the original SELECT).
+func DeleteForRows(driver, tableExpr string, columns []string, rows [][]string, whereColumns []string) (string, error) {
+	if tableExpr == "" {
+		return "", fmt.Errorf("empty table")
+	}
+	if len(columns) == 0 {
+		return "", fmt.Errorf("no columns")
+	}
+	wc := whereColumns
+	if len(wc) == 0 {
+		wc = columns
+	}
+	var b strings.Builder
+	for _, row := range rows {
+		where, err := rowWhereClause(driver, columns, row, wc)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString("DELETE FROM ")
+		b.WriteString(tableExpr)
+		b.WriteString(" WHERE ")
+		b.WriteString(where)
+		b.WriteString(";\n")
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+// MatchResultColumnsForPK maps PK names to result column names (exact spelling from result).
+// Returns nil if any PK column is missing from the result set.
+func MatchResultColumnsForPK(resultCols []string, pkNames []string) []string {
+	if len(pkNames) == 0 {
+		return nil
+	}
+	byLower := make(map[string]string, len(resultCols))
+	for _, c := range resultCols {
+		byLower[strings.ToLower(c)] = c
+	}
+	out := make([]string, 0, len(pkNames))
+	for _, pk := range pkNames {
+		if act, ok := byLower[strings.ToLower(pk)]; ok {
+			out = append(out, act)
+		} else {
+			return nil
+		}
+	}
+	return out
+}
+
+func rowWhereClause(driver string, columns []string, row []string, whereNames []string) (string, error) {
+	idx := make(map[string]int, len(columns))
+	for i, c := range columns {
+		idx[strings.ToLower(c)] = i
+	}
+	parts := make([]string, 0, len(whereNames))
+	for _, col := range whereNames {
+		i, ok := idx[strings.ToLower(col)]
+		if !ok {
+			return "", fmt.Errorf("column %q not in result set", col)
+		}
+		val := ""
+		if i < len(row) {
+			val = row[i]
+		}
+		actName := columns[i]
+		qcol, err := quoteIdent(driver, actName)
+		if err != nil {
+			return "", err
+		}
+		if strings.EqualFold(val, "NULL") {
+			parts = append(parts, qcol+" IS NULL")
+			continue
+		}
+		lit, err := formatLiteral(driver, val)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, qcol+" = "+lit)
+	}
+	return strings.Join(parts, " AND "), nil
+}
+
+func quoteIdent(driver, ident string) (string, error) {
+	if ident == "" {
+		return "", fmt.Errorf("empty column name")
+	}
+	d := strings.ToLower(driver)
+	switch d {
+	case "mysql":
+		esc := strings.ReplaceAll(ident, "`", "``")
+		return "`" + esc + "`", nil
+	case "mssql", "sqlserver":
+		esc := strings.ReplaceAll(ident, "]", "]]")
+		return "[" + esc + "]", nil
+	default: // postgres, sqlite, postgresql, sqlite3
+		esc := strings.ReplaceAll(ident, `"`, `""`)
+		return `"` + esc + `"`, nil
+	}
+}
+
+func formatLiteral(driver, s string) (string, error) {
+	if reInt.MatchString(s) || reFloat.MatchString(s) {
+		return s, nil
+	}
+	d := strings.ToLower(driver)
+	switch d {
+	case "mysql":
+		esc := strings.ReplaceAll(s, "\\", "\\\\")
+		esc = strings.ReplaceAll(esc, "'", "''")
+		return "'" + esc + "'", nil
+	default:
+		esc := strings.ReplaceAll(s, "'", "''")
+		return "'" + esc + "'", nil
+	}
+}

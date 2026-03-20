@@ -17,6 +17,7 @@ import (
 	"github.com/robertn/dbx/internal/db"
 	"github.com/robertn/dbx/internal/history"
 	"github.com/robertn/dbx/internal/querycontents"
+	"github.com/robertn/dbx/internal/sqlutil"
 	"github.com/robertn/dbx/internal/ui/cmdpalette"
 	"github.com/robertn/dbx/internal/ui/editor"
 	"github.com/robertn/dbx/internal/ui/explorer"
@@ -138,6 +139,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = ""
 		}
 		return m, nil
+
+	case results.DeleteDraftMsg:
+		if msg.Err != "" {
+			return m, m.setStatus(msg.Err)
+		}
+		m.editor.AppendAtEnd(msg.SQL)
+		m.persistEditorDraft()
+		m.setFocus(PanelEditor)
+		return m, m.setStatus("DELETE draft appended — review before running.")
+
+	case results.DeleteDraftRequestMsg:
+		return m, m.buildDeleteDraftCmd(msg)
 
 	case explorer.ConnFormSubmitMsg:
 		return m.handleConnFormSubmit(msg)
@@ -277,11 +290,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dbQueryResultMsg:
 		m.isLoading = false
+		drv := ""
+		if c := m.findConn(m.activeConnID); c != nil {
+			drv = c.Driver
+		}
 		qr := &results.QueryResult{
-			Columns: msg.result.Columns,
-			Rows:    msg.result.Rows,
-			Error:   msg.result.Error,
-			Elapsed: msg.elapsed,
+			Columns:   msg.result.Columns,
+			Rows:      msg.result.Rows,
+			Error:     msg.result.Error,
+			Elapsed:   msg.elapsed,
+			SourceSQL: msg.sourceSQL,
+			Driver:    drv,
+			Database:  m.activeDB,
 		}
 		m.results.SetResult(qr)
 		if qr.Error != "" {
@@ -811,6 +831,39 @@ func (m *Model) fetchColumnsCmd(connID, dbName, table string) tea.Cmd {
 	}
 }
 
+func (m *Model) buildDeleteDraftCmd(msg results.DeleteDraftRequestMsg) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		conn := m.findConn(m.activeConnID)
+		if conn == nil {
+			return results.DeleteDraftMsg{Err: "No active connection."}
+		}
+		drv, err := db.New(*conn)
+		if err != nil {
+			return results.DeleteDraftMsg{Err: err.Error()}
+		}
+		if err := drv.Connect(ctx, *conn); err != nil {
+			return results.DeleteDraftMsg{Err: err.Error()}
+		}
+		defer drv.Close()
+
+		schema, tbl := sqlutil.ParseTableRef(msg.TableExpr, msg.Driver)
+		var whereCols []string
+		pkCols, pkErr := drv.PrimaryKeyColumns(ctx, msg.Database, schema, tbl)
+		if pkErr == nil && len(pkCols) > 0 {
+			if matched := sqlutil.MatchResultColumnsForPK(msg.Columns, pkCols); matched != nil {
+				whereCols = matched
+			}
+		}
+		sqlText, err := sqlutil.DeleteForRows(msg.Driver, msg.TableExpr, msg.Columns, msg.Rows, whereCols)
+		if err != nil {
+			return results.DeleteDraftMsg{Err: err.Error()}
+		}
+		return results.DeleteDraftMsg{SQL: sqlText}
+	}
+}
+
 func (m *Model) execQueryCmd(query string) tea.Cmd {
 	connID := m.activeConnID
 	dbName := m.activeDB
@@ -819,18 +872,19 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 		start := time.Now()
 		if conn == nil {
 			return dbQueryResultMsg{
-				result:  &db.QueryResult{Error: "No active connection. Select a database in the explorer first."},
-				elapsed: 0,
+				result:    &db.QueryResult{Error: "No active connection. Select a database in the explorer first."},
+				elapsed:   0,
+				sourceSQL: query,
 			}
 		}
 		driver, err := db.New(*conn)
 		if err != nil {
-			return dbQueryResultMsg{result: &db.QueryResult{Error: err.Error()}}
+			return dbQueryResultMsg{result: &db.QueryResult{Error: err.Error()}, sourceSQL: query}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := driver.Connect(ctx, *conn); err != nil {
-			return dbQueryResultMsg{result: &db.QueryResult{Error: err.Error()}}
+			return dbQueryResultMsg{result: &db.QueryResult{Error: err.Error()}, sourceSQL: query}
 		}
 		defer driver.Close()
 
@@ -847,7 +901,7 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 		if err != nil {
 			result = &db.QueryResult{Error: err.Error()}
 		}
-		return dbQueryResultMsg{result: result, elapsed: time.Since(start)}
+		return dbQueryResultMsg{result: result, elapsed: time.Since(start), sourceSQL: query}
 	}
 }
 
@@ -1214,6 +1268,9 @@ func (m Model) renderHelp() string {
     j/k         Navigate rows
     h/l         Navigate columns
     g/G         First/last row
+    s           Toggle mark on current row (for delete draft)
+    S           Mark current row + band-select while moving j/k/g/G (esc clears marks)
+    d           Append DELETE draft(s) for marked rows (or cursor row); WHERE uses PK cols when possible
     v           View full selected cell popup (y copy, esc close)
 
   COMMAND PALETTE (space)

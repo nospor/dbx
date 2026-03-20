@@ -2,10 +2,13 @@ package results
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/robertn/dbx/internal/sqlutil"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
@@ -15,10 +18,13 @@ import (
 
 // QueryResult holds the outcome of a query execution.
 type QueryResult struct {
-	Columns []string
-	Rows    [][]string
-	Error   string
-	Elapsed time.Duration
+	Columns   []string
+	Rows      [][]string
+	Error     string
+	Elapsed   time.Duration
+	SourceSQL string // original SELECT (for delete-row draft generation)
+	Driver    string // connection driver name (for SQL quoting)
+	Database  string // active database name when the query ran
 }
 
 // Model is the bubbletea model for the results panel.
@@ -38,6 +44,11 @@ type Model struct {
 	showCellPopup bool
 	cellPopupTop  int
 	cellPopupMsg  string
+
+	// Row marks for bulk delete draft (s / S); rangeSelect + rangeAnchor for Shift+S band selection
+	selectedRows map[int]struct{}
+	rangeSelect  bool
+	rangeAnchor  int
 }
 
 // New creates a new results model.
@@ -72,6 +83,9 @@ func (m *Model) SetResult(r *QueryResult) {
 	m.showCellPopup = false
 	m.cellPopupTop = 0
 	m.cellPopupMsg = ""
+	m.selectedRows = nil
+	m.rangeSelect = false
+	m.rangeAnchor = 0
 }
 
 func (m Model) Init() tea.Cmd {
@@ -84,18 +98,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		m.handleKey(msg)
+		cmd := m.handleKey(msg)
+		return m, cmd
 	}
 	return m, nil
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) {
+func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	if m.result == nil {
-		return
+		return nil
 	}
 	if m.showCellPopup {
 		m.handleCellPopupKey(msg)
-		return
+		return nil
 	}
 	rows := m.result.Rows
 	cols := m.result.Columns
@@ -113,6 +128,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) {
 				m.scrollTop++
 			}
 		}
+		m.syncRangeSelection()
 	case "k", "up":
 		if m.cursorRow > 0 {
 			m.cursorRow--
@@ -120,6 +136,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) {
 				m.scrollTop--
 			}
 		}
+		m.syncRangeSelection()
 	case "h", "left":
 		if m.cursorCol > 0 {
 			m.cursorCol--
@@ -135,11 +152,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) {
 	case "g":
 		m.cursorRow = 0
 		m.scrollTop = 0
+		m.syncRangeSelection()
 	case "G":
 		m.cursorRow = len(rows) - 1
 		if m.cursorRow >= visibleRows {
 			m.scrollTop = m.cursorRow - visibleRows + 1
 		}
+		m.syncRangeSelection()
 	case "0":
 		m.cursorCol = 0
 		m.scrollLeft = 0
@@ -150,7 +169,27 @@ func (m *Model) handleKey(msg tea.KeyMsg) {
 		m.showCellPopup = true
 		m.cellPopupTop = 0
 		m.cellPopupMsg = ""
+	case "esc":
+		m.rangeSelect = false
+		m.selectedRows = nil
+	case "s":
+		m.rangeSelect = false
+		if m.selectedRows == nil {
+			m.selectedRows = make(map[int]struct{})
+		}
+		if _, ok := m.selectedRows[m.cursorRow]; ok {
+			delete(m.selectedRows, m.cursorRow)
+		} else {
+			m.selectedRows[m.cursorRow] = struct{}{}
+		}
+	case "S":
+		m.rangeSelect = true
+		m.rangeAnchor = m.cursorRow
+		m.syncRangeSelection()
+	case "d":
+		return m.deleteDraftCmd()
 	}
+	return nil
 }
 
 func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
@@ -231,8 +270,12 @@ func (m Model) View() string {
 	if len(m.result.Columns) > 0 {
 		colInfo = fmt.Sprintf(" | col %d/%d", m.cursorCol+1, len(m.result.Columns))
 	}
-	status := fmt.Sprintf("%d rows | row %d%s%s",
-		len(m.result.Rows), m.cursorRow+1, colInfo, elapsed)
+	markInfo := ""
+	if m.selectedRows != nil && len(m.selectedRows) > 0 {
+		markInfo = fmt.Sprintf(" | %d marked", len(m.selectedRows))
+	}
+	status := fmt.Sprintf("%d rows | row %d%s%s%s",
+		len(m.result.Rows), m.cursorRow+1, colInfo, markInfo, elapsed)
 	sb.WriteString(m.theme.StatusBar.Width(m.width).Render(status) + "\n")
 
 	if len(m.result.Columns) == 0 {
@@ -278,6 +321,8 @@ func (m Model) View() string {
 				style = m.theme.TableCursorCell
 			case rowIdx == m.cursorRow && m.focused:
 				style = m.theme.TableCursorRow
+			case m.isRowSelected(rowIdx):
+				style = m.theme.TableRowSelected
 			case rowIdx%2 == 0:
 				style = m.theme.TableRow
 			default:
@@ -390,6 +435,91 @@ func fitToWidth(s string, width int) string {
 		r = r[:width]
 	}
 	return string(r)
+}
+
+func (m *Model) syncRangeSelection() {
+	if !m.rangeSelect || m.result == nil {
+		return
+	}
+	lo, hi := m.rangeAnchor, m.cursorRow
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	m.selectedRows = make(map[int]struct{})
+	for r := lo; r <= hi; r++ {
+		if r >= 0 && r < len(m.result.Rows) {
+			m.selectedRows[r] = struct{}{}
+		}
+	}
+}
+
+func (m Model) isRowSelected(row int) bool {
+	if m.selectedRows == nil {
+		return false
+	}
+	_, ok := m.selectedRows[row]
+	return ok
+}
+
+func (m *Model) deleteTargetRows() []int {
+	if m.result == nil {
+		return nil
+	}
+	if len(m.selectedRows) == 0 {
+		if m.cursorRow >= 0 && m.cursorRow < len(m.result.Rows) {
+			return []int{m.cursorRow}
+		}
+		return nil
+	}
+	idx := make([]int, 0, len(m.selectedRows))
+	for r := range m.selectedRows {
+		if r >= 0 && r < len(m.result.Rows) {
+			idx = append(idx, r)
+		}
+	}
+	sort.Ints(idx)
+	return idx
+}
+
+func (m *Model) deleteDraftCmd() tea.Cmd {
+	if m.result == nil || len(m.result.Rows) == 0 {
+		return func() tea.Msg { return DeleteDraftMsg{Err: "No rows to delete."} }
+	}
+	rowsIdx := m.deleteTargetRows()
+	if len(rowsIdx) == 0 {
+		return func() tea.Msg { return DeleteDraftMsg{Err: "No rows to delete."} }
+	}
+	if strings.TrimSpace(m.result.SourceSQL) == "" {
+		return func() tea.Msg {
+			return DeleteDraftMsg{Err: "No source query recorded — run a SELECT first, then use d."}
+		}
+	}
+	table, ok := sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	if !ok || table == "" {
+		return func() tea.Msg {
+			return DeleteDraftMsg{Err: "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."}
+		}
+	}
+	var data [][]string
+	for _, ri := range rowsIdx {
+		row := m.result.Rows[ri]
+		cp := make([]string, len(row))
+		copy(cp, row)
+		data = append(data, cp)
+	}
+	driver := m.result.Driver
+	database := m.result.Database
+	cols := append([]string(nil), m.result.Columns...)
+	tbl := table
+	return func() tea.Msg {
+		return DeleteDraftRequestMsg{
+			Driver:    driver,
+			Database:  database,
+			TableExpr: tbl,
+			Columns:   cols,
+			Rows:      data,
+		}
+	}
 }
 
 // Result returns the current query result, or nil.

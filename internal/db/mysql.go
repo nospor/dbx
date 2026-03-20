@@ -135,6 +135,28 @@ func (d *mysqlDriver) AllTableColumns(ctx context.Context, database string) ([]T
 	return out, rows.Err()
 }
 
+func (d *mysqlDriver) PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error) {
+	if database != "" {
+		if _, err := d.db.ExecContext(ctx, "USE `"+database+"`"); err != nil {
+			return nil, err
+		}
+	}
+	sch := schema
+	if sch == "" {
+		sch = d.dbForQuery(database)
+	}
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+		 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+		 ORDER BY ORDINAL_POSITION`,
+		sch, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanStringColumn(rows)
+}
+
 func (d *mysqlDriver) Query(ctx context.Context, database, sqlStr string) (*QueryResult, error) {
 	if database != "" {
 		if _, err := d.db.ExecContext(ctx, "USE `"+database+"`"); err != nil {
