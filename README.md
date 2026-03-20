@@ -126,6 +126,8 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `h` / `l` | Navigate columns |
 | `g` / `G` | First / last row |
 
+The **active cell** uses a stronger highlight than the rest of the cursor row.
+
 ### Command Palette (space)
 | Panel    | Commands                                                                     |
 | -------- | ---------------------------------------------------------------------------- |

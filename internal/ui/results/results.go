@@ -211,9 +211,9 @@ func (m Model) View() string {
 			case isHeader:
 				style = m.theme.TableHeader
 			case ci == m.cursorCol && rowIdx == m.cursorRow && m.focused:
-				style = m.theme.TableCursor
+				style = m.theme.TableCursorCell
 			case rowIdx == m.cursorRow && m.focused:
-				style = m.theme.TableCursor
+				style = m.theme.TableCursorRow
 			case rowIdx%2 == 0:
 				style = m.theme.TableRow
 			default:

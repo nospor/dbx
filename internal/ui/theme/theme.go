@@ -35,10 +35,12 @@ type Theme struct {
 	PaletteKey     lipgloss.Style
 
 	// Results table
-	TableHeader lipgloss.Style
-	TableRow    lipgloss.Style
-	TableRowAlt lipgloss.Style
-	TableCursor lipgloss.Style
+	TableHeader       lipgloss.Style
+	TableHeaderActive lipgloss.Style // header cell for the cursor column
+	TableRow          lipgloss.Style
+	TableRowAlt       lipgloss.Style
+	TableCursorRow    lipgloss.Style // non-active cells on the cursor row
+	TableCursorCell   lipgloss.Style // the focused cell (stronger than row)
 }
 
 // Terminal theme — uses terminal default colors so it works with any terminal palette.
@@ -76,10 +78,12 @@ func Terminal() Theme {
 		PaletteItem:  lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
 		PaletteKey:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
 
-		TableHeader: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Underline(true),
-		TableRow:    lipgloss.NewStyle(),
-		TableRowAlt: lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
-		TableCursor: lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")),
+		TableHeader:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Underline(true),
+		TableHeaderActive: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("4")).Underline(true),
+		TableRow:          lipgloss.NewStyle(),
+		TableRowAlt:       lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
+		TableCursorRow:    lipgloss.NewStyle().Background(lipgloss.Color("8")).Foreground(lipgloss.Color("15")),
+		TableCursorCell:   lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true),
 	}
 }
 
@@ -111,7 +115,9 @@ func Dark() Theme {
 	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")).Bold(true)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7")).Underline(true)
-	t.TableCursor = lipgloss.NewStyle().Background(lipgloss.Color("#283457")).Foreground(lipgloss.Color("#7aa2f7"))
+	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7")).Background(lipgloss.Color("#283457")).Underline(true)
+	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#1f2335")).Foreground(lipgloss.Color("#a9b1d6"))
+	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#283457")).Foreground(lipgloss.Color("#7aa2f7")).Bold(true)
 
 	return t
 }
@@ -144,7 +150,9 @@ func Light() Theme {
 	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#8c6c3e")).Bold(true)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9")).Underline(true)
-	t.TableCursor = lipgloss.NewStyle().Background(lipgloss.Color("#b6bfe2")).Foreground(lipgloss.Color("#2e7de9"))
+	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9")).Background(lipgloss.Color("#b6bfe2")).Underline(true)
+	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#d8dce8")).Foreground(lipgloss.Color("#3760bf"))
+	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#b6bfe2")).Foreground(lipgloss.Color("#2e7de9")).Bold(true)
 
 	return t
 }
