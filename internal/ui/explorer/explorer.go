@@ -141,7 +141,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "enter", "l":
 			if len(m.flat) > 0 {
 				n := m.flat[m.cursor]
-				if len(n.Children) > 0 || n.Kind == NodeConnection || n.Kind == NodeDatabase {
+				if len(n.Children) > 0 || n.Kind == NodeConnection || n.Kind == NodeDatabase || n.Kind == NodeTable {
 					n.Expanded = !n.Expanded
 					m.flatten()
 				}
@@ -251,7 +251,7 @@ func (m Model) renderNode(n *Node, selected bool) string {
 		if n.Expanded {
 			icon = "▼ "
 		} else {
-			icon = "  "
+			icon = "▶ "
 		}
 		labelStyle = m.theme.TreeTable
 	case NodeView:
@@ -295,13 +295,34 @@ func (m Model) SelectedNode() *Node {
 	return m.flat[m.cursor]
 }
 
-// SetChildren replaces the children of the node matching connID+dbName (or connID+table).
+// SetChildren replaces children for connection, database, or table/view nodes.
 // connID is always required; dbName is the parent database name (empty for connection-level).
 // When called as SetChildren(connID, "", nodes) it sets database nodes under a connection.
 // When called as SetChildren(connID, dbName, nodes) it sets table/view nodes under a database.
 // When called as SetChildren(connID+":"+dbName, table, nodes) it sets column nodes under a table.
 func (m *Model) SetChildren(connID, dbName string, children []*Node) {
-	// Special case: connID may contain ":" for column-level (connID:dbName, table)
+	// Special case: column-level lookup.
+	// Caller passes connID as "connID:dbName" and dbName as table/view name.
+	if strings.Contains(connID, ":") && dbName != "" {
+		parts := strings.SplitN(connID, ":", 2)
+		if len(parts) == 2 {
+			cid := parts[0]
+			db := parts[1]
+			table := dbName
+			for _, n := range m.flat {
+				if n.ConnID == cid && n.DBName == db && n.Label == table && (n.Kind == NodeTable || n.Kind == NodeView) {
+					n.Children = children
+					for _, c := range children {
+						c.parent = n
+					}
+					n.Expanded = true
+					m.flatten()
+					return
+				}
+			}
+		}
+	}
+
 	for _, n := range m.flat {
 		if n.ConnID == connID && n.DBName == dbName {
 			n.Children = children

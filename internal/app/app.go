@@ -1047,7 +1047,7 @@ func (m Model) renderHelp() string {
 
   EXPLORER
     j/k         Navigate up/down
-    enter/l     Expand/collapse node
+    enter/l     Expand/collapse node (incl. table columns)
     h           Collapse current branch
     s           Quick SELECT * FROM table LIMIT 100
 
