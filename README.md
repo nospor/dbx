@@ -22,12 +22,6 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 ## Install
 
 ```bash
-go install github.com/robertn/dbx@latest
-```
-
-Or build from source:
-
-```bash
 git clone ...
 cd dbx
 
