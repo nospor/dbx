@@ -350,6 +350,51 @@ func (m *Model) SetChildren(connID, dbName string, children []*Node) {
 	}
 }
 
+// SelectDatabaseNode expands the path to connID and dbName and moves the cursor there.
+// Returns false if the connection or database node is not present yet (e.g. databases not loaded).
+func (m *Model) SelectDatabaseNode(connID, dbName string) bool {
+	if connID == "" || dbName == "" {
+		return false
+	}
+	var conn *Node
+	for _, n := range m.nodes {
+		if n.ConnID == connID && n.Kind == NodeConnection {
+			conn = n
+			break
+		}
+	}
+	if conn == nil {
+		return false
+	}
+	conn.Expanded = true
+	var dbNode *Node
+	for _, c := range conn.Children {
+		if c.Kind == NodeDatabase && c.DBName == dbName {
+			dbNode = c
+			break
+		}
+	}
+	if dbNode == nil {
+		m.flatten()
+		for i, fn := range m.flat {
+			if fn == conn {
+				m.cursor = i
+				break
+			}
+		}
+		return false
+	}
+	dbNode.Expanded = true
+	m.flatten()
+	for i, fn := range m.flat {
+		if fn == dbNode {
+			m.cursor = i
+			return true
+		}
+	}
+	return false
+}
+
 // ConsumeSelection returns and clears any pending selection from the last Enter press.
 func (m *Model) ConsumeSelection() *Node {
 	if m.pendingSel == nil {

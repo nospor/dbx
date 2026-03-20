@@ -12,6 +12,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Tab autocomplete** for table names, column names, and SQL keywords (columns are loaded automatically when you expand a database / refresh schema—no need to open each table first)
 - **Query history** per connection/database (ctrl+p/n to browse) — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
+- **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs are restored on startup (`open-tabs.json`)
 - **Command palette** (space) with context-aware commands per panel
 - **Fullscreen** any panel with space+f
 - **Export** results to CSV or JSON
@@ -73,10 +74,11 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 | `~/.cache/dbx/connections.json`    | Saved connections                                                                      |
 | `~/.cache/dbx/history.json`        | Executed queries (history popup / ctrl+p n)                                            |
 | `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
+| `~/.cache/dbx/open-tabs.json`     | Ordered list of open query tabs (`connection_id:database` keys) for session restore     |
 
 ## Layout
 
-Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] Query Editor`, `[r] Results`. The query editor border also shows the **active connection name** (or id) and **database**, e.g. `· Local PG / myapp`, or `—` when nothing is selected.
+Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] Query Editor`, `[r] Results`. The query editor border also shows the **active connection name** (or id) and **database**, e.g. `· Local PG / myapp`, or `—` when nothing is selected. Inside the query pane, the **top row** is a tab bar (when no tabs are open, it shows idle / no connection).
 
 ## Keybindings
 
@@ -103,6 +105,8 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 ### Editor (Normal mode)
 | Key                 | Action                                                                                                                                                                                                            |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tab`               | Next query tab (explorer selection follows)                                                                                                                                                                       |
+| `shift+tab`         | Previous query tab                                                                                                                                                                                                |
 | `i` / `a` / `o`     | Enter insert mode                                                                                                                                                                                                 |
 | `enter`             | Execute query under cursor. If the block is **only** multiple `DELETE` and/or `UPDATE` statements separated by `;`, they run **one after another**; the results grid shows `#` and `rows_affected` per statement. |
 | `u`                 | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits                                                                       |
@@ -143,7 +147,7 @@ The **active cell** uses a stronger highlight than the rest of the cursor row.
 | Panel    | Commands                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------- |
 | Explorer | `a` add, `e` edit, `d` delete, `R` refresh, `t` toggle, `f` fullscreen                            |
-| Editor   | `x` execute, `c` clear, `t` toggle explorer, `f` fullscreen                                       |
+| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `f` fullscreen               |
 | Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `f` fullscreen |
 
 ## History

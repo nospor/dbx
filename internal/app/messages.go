@@ -88,3 +88,6 @@ type exportCSVMsg struct{}
 
 // exportJSONMsg exports results to JSON.
 type exportJSONMsg struct{}
+
+// closeTabPromptMsg asks to close the current editor tab (confirmation follows).
+type closeTabPromptMsg struct{}

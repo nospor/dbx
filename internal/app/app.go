@@ -16,6 +16,7 @@ import (
 	"github.com/robertn/dbx/internal/config"
 	"github.com/robertn/dbx/internal/db"
 	"github.com/robertn/dbx/internal/history"
+	"github.com/robertn/dbx/internal/opentabs"
 	"github.com/robertn/dbx/internal/querycontents"
 	"github.com/robertn/dbx/internal/sqlutil"
 	"github.com/robertn/dbx/internal/ui/cmdpalette"
@@ -34,6 +35,7 @@ type Model struct {
 	history *history.History
 
 	queryContents *querycontents.Store
+	openTabsStore *opentabs.Store
 
 	width  int
 	height int
@@ -72,11 +74,32 @@ type Model struct {
 	ddlPopupTitle  string
 	ddlPopupText   string
 	ddlPopupScroll int
+
+	// Editor tabs + restore
+	tabCloseConfirm           bool
+	pendingExplorerSelectConnID string
+	pendingExplorerSelectDB     string
 }
 
-func newEditorWithDrafts(t theme.Theme, drafts map[string]string) editor.Model {
+func newEditorWithDrafts(t theme.Theme, drafts map[string]string, cfg *config.Config, ot *opentabs.Store) editor.Model {
 	ed := editor.New(t)
 	ed.SeedQueryTabs(drafts)
+	keys := ot.Keys()
+	valid := make([]string, 0, len(keys))
+	for _, k := range keys {
+		connID, _ := splitConnKey(k)
+		found := false
+		for _, c := range cfg.Connections {
+			if c.ID == connID {
+				found = true
+				break
+			}
+		}
+		if found {
+			valid = append(valid, k)
+		}
+	}
+	ed.RestoreOpenTabs(valid, func(s string) string { return tabLabelForConfig(cfg, s) })
 	return ed
 }
 
@@ -86,6 +109,7 @@ func New(cfg *config.Config) Model {
 
 	hist := history.NewOrEmpty()
 	qc := querycontents.NewOrEmpty()
+	ot := opentabs.NewOrEmpty()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -96,6 +120,7 @@ func New(cfg *config.Config) Model {
 		keymap:          DefaultKeyMap(),
 		history:         hist,
 		queryContents:   qc,
+		openTabsStore:   ot,
 		focus:           PanelExplorer,
 		fullscreenPanel: PanelExplorer,
 		drivers:         make(map[string]db.Driver),
@@ -103,10 +128,19 @@ func New(cfg *config.Config) Model {
 		schemaCols:      make(map[string][]string),
 		tableCols:       make(map[string][]db.ColumnInfo),
 		explorer:        explorer.New(cfg, t),
-		editor:          newEditorWithDrafts(t, qc.All()),
+		editor:          newEditorWithDrafts(t, qc.All(), cfg, ot),
 		results:         results.New(t),
 		palette:         cmdpalette.New(t),
 		spinner:         sp,
+	}
+	if kt := m.editor.OpenTabKeys(); len(kt) > 0 {
+		connID, dbName := splitConnKey(m.editor.EditorConnKey())
+		m.activeConnID = connID
+		m.activeDB = dbName
+		if connID != "" && dbName != "" {
+			m.pendingExplorerSelectConnID = connID
+			m.pendingExplorerSelectDB = dbName
+		}
 	}
 	m.explorer.SetFocused(true)
 	m.editor.SetFocused(false)
@@ -120,7 +154,11 @@ type clearStatusMsg struct {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.spinner.Tick
+	cmds := []tea.Cmd{m.spinner.Tick}
+	if m.pendingExplorerSelectConnID != "" {
+		cmds = append(cmds, m.connectCmd(m.pendingExplorerSelectConnID))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -212,6 +250,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.tabCloseConfirm {
+			switch msg.String() {
+			case "y", "enter":
+				m.tabCloseConfirm = false
+				m.persistEditorDraft()
+				sw := m.editor.CloseActiveTab()
+				if sw != nil {
+					sub := m.syncActiveFromEditorTab(sw.ConnKey)
+					sub = append(sub, m.setStatus("Tab closed."))
+					return m, tea.Batch(sub...)
+				}
+				m.persistOpenTabs()
+				return m, m.setStatus("Tab closed.")
+			case "n", "esc", "q":
+				m.tabCloseConfirm = false
+				return m, m.setStatus("")
+			}
+			return m, nil
+		}
+
 		if m.ddlPopupOpen {
 			return m.handleDDLPopupKey(msg)
 		}
@@ -233,6 +291,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			m.persistEditorDraft()
+			m.persistOpenTabs()
 			m.closeAllDrivers()
 			return m, tea.Quit
 
@@ -276,6 +335,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, func() tea.Msg { return msg.Action() })
 		}
 		return m, tea.Batch(cmds...)
+
+	case editor.TabSwitchedMsg:
+		sub := m.syncActiveFromEditorTab(msg.ConnKey)
+		return m, tea.Batch(sub...)
+
+	case closeTabPromptMsg:
+		if len(m.editor.OpenTabKeys()) == 0 {
+			return m, m.setStatus("No tab to close.")
+		}
+		m.tabCloseConfirm = true
+		return m, nil
 
 	case editor.ExecuteQueryMsg:
 		if msg.Query == "" {
@@ -399,8 +469,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nodes = append(nodes, explorer.NewDatabaseNode(dbName, msg.connID))
 		}
 		m.explorer.SetChildren(msg.connID, "", nodes)
-		// Auto-select when connection has exactly one database (loads history, fetches schema)
-		if len(msg.databases) == 1 {
+		if m.pendingExplorerSelectConnID == msg.connID && m.pendingExplorerSelectDB != "" {
+			db := m.pendingExplorerSelectDB
+			if m.explorer.SelectDatabaseNode(msg.connID, db) {
+				m.pendingExplorerSelectConnID = ""
+				m.pendingExplorerSelectDB = ""
+				n := explorer.NewDatabaseNode(db, msg.connID)
+				n.Expanded = true
+				cmds = append(cmds, func() tea.Msg {
+					return explorerSelectMsg{node: n}
+				})
+			}
+		} else if len(msg.databases) == 1 {
+			// Auto-select when connection has exactly one database (loads history, fetches schema)
 			cmds = append(cmds, func() tea.Msg {
 				return explorerSelectMsg{node: explorer.NewDatabaseNode(msg.databases[0], msg.connID)}
 			})
@@ -700,6 +781,7 @@ func (m *Model) openPalette() {
 		commands = []cmdpalette.Command{
 			{Key: "x", Description: "Execute query (enter)", Action: func() tea.Msg { return execQueryFromPaletteMsg{} }},
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
+			{Key: "D", Description: "Close tab (confirm)", Action: func() tea.Msg { return closeTabPromptMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
@@ -718,13 +800,65 @@ func (m *Model) openPalette() {
 	m.palette.Show(title, commands)
 }
 
+func (m *Model) tabLabelForConn(connID, dbName string) string {
+	label := connID
+	if c := m.findConn(connID); c != nil && c.Name != "" {
+		label = c.Name
+	}
+	if dbName != "" {
+		return label + " / " + dbName
+	}
+	return label
+}
+
+func (m *Model) persistOpenTabs() {
+	if m.openTabsStore == nil {
+		return
+	}
+	_ = m.openTabsStore.Save(m.editor.OpenTabKeys())
+}
+
+// syncActiveFromEditorTab applies app + explorer state when the editor active tab changes (keyboard).
+func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
+	var cmds []tea.Cmd
+	if connKey == "" {
+		m.activeConnID = ""
+		m.activeDB = ""
+		m.results.SetResult(nil)
+		m.persistOpenTabs()
+		return cmds
+	}
+	connID, dbName := splitConnKey(connKey)
+	m.activeConnID = connID
+	m.activeDB = dbName
+	if m.explorer.SelectDatabaseNode(connID, dbName) {
+		// explorer cursor aligned
+	} else if connID != "" && dbName != "" {
+		m.pendingExplorerSelectConnID = connID
+		m.pendingExplorerSelectDB = dbName
+		cmds = append(cmds, m.connectCmd(connID))
+	}
+	m.applyEditorSchema(connID, dbName)
+	if m.history != nil {
+		entries := m.history.ForKey(connKey)
+		queries := make([]string, len(entries))
+		for i, e := range entries {
+			queries[i] = e.Query
+		}
+		m.editor.SetHistory(queries)
+	}
+	m.persistOpenTabs()
+	return cmds
+}
+
 // activateExplorerDatabase sets the active conn/db, switches the editor tab, and loads history.
 // Call before any explorer action that should show that database's query pane (expand/collapse/select table).
 func (m *Model) activateExplorerDatabase(connID, dbName string) {
 	m.persistEditorDraft()
 	m.activeConnID = connID
 	m.activeDB = dbName
-	m.editor.SwitchConnection(m.connKey())
+	m.editor.OpenTab(m.connKey(), m.tabLabelForConn(connID, dbName))
+	m.persistOpenTabs()
 	m.applyEditorSchema(connID, dbName)
 	if m.history != nil {
 		entries := m.history.ForKey(m.connKey())
@@ -1059,6 +1193,8 @@ const helpScreenText = `
     v           DDL popup for table/view (CREATE + indexes; driver-specific)
 
   EDITOR (Normal mode)
+    tab         Next query tab
+    shift+tab   Previous query tab
     i/a/o       Enter insert mode
     enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
     u           Undo edit (whole insert session until esc; normal edits undo separately)
@@ -1086,7 +1222,7 @@ const helpScreenText = `
 
   COMMAND PALETTE (space)
     Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen
-    Editor:     x=execute  c=clear  t=toggle explorer  f=fullscreen
+    Editor:     x=execute  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  f=fullscreen
     Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  f=fullscreen
 `
 
@@ -1140,6 +1276,44 @@ func (m Model) ddlPopupInnerLines() int {
 		innerH = 1
 	}
 	return innerH
+}
+
+func (m Model) renderTabCloseConfirmPopup() string {
+	boxW := min(max(36, m.width*45/100), m.width-4)
+	if boxW < 28 {
+		boxW = min(m.width-2, 36)
+	}
+	if boxW < 24 {
+		boxW = m.width
+	}
+	innerW := boxW - 6
+	if innerW < 12 {
+		innerW = 12
+	}
+
+	label := m.tabLabelForConn(m.activeConnID, m.activeDB)
+	if strings.TrimSpace(label) == "" {
+		label = m.editor.EditorConnKey()
+	}
+	if strings.TrimSpace(label) == "" {
+		label = "this connection"
+	}
+	label = ansi.Truncate(label, innerW, "…")
+
+	head := m.theme.Bold.Render("Close this tab?")
+	preview := m.theme.Normal.Render(label)
+	hint := m.theme.Dimmed.Render("Draft text is still saved in query-contents.json.")
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		head,
+		"",
+		preview,
+		"",
+		hint,
+	)
+	body := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(inner)
+	popup := m.theme.BorderFocused.Width(boxW - 2).Render(body)
+	popup = m.embedDDLPopupBorderLabels(popup, "Close tab", "y / enter confirm · n · esc · q cancel")
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
 }
 
 func (m Model) renderDDLPopup() string {
@@ -1423,6 +1597,9 @@ func (m Model) View() string {
 		if m.ddlPopupOpen {
 			view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
 		}
+		if m.tabCloseConfirm {
+			view = overlayCentered(view, m.renderTabCloseConfirmPopup(), m.width, m.height)
+		}
 		return view
 	}
 
@@ -1464,6 +1641,10 @@ func (m Model) View() string {
 		view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
 	}
 
+	if m.tabCloseConfirm {
+		view = overlayCentered(view, m.renderTabCloseConfirmPopup(), m.width, m.height)
+	}
+
 	return view
 }
 
@@ -1501,7 +1682,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		if m.editor.IsInsertMode() {
 			return "Esc - normal mode · Tab - autocomplete · Ctrl+Enter - run query"
 		}
-		return "Enter - run query · i - insert mode · u - undo · Ctrl+R - redo · backspace - query history · space - command palette"
+		return "Enter - run query · Tab - next tab · Sh-Tab - prev tab · i - insert · space - palette (D close tab)"
 	case PanelResults:
 		return "s - toggle row mark · S - band select rows · d - delete draft · u - update cell · v - full cell · space - command palette"
 	default:

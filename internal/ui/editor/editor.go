@@ -28,6 +28,12 @@ type QueryPanePersistMsg struct {
 	Text    string
 }
 
+// TabSwitchedMsg notifies the app that the active editor tab changed (keyboard or close).
+// ConnKey is "" when all tabs are closed (idle / no active database).
+type TabSwitchedMsg struct {
+	ConnKey string
+}
+
 func tabStoreKey(connKey string) string {
 	if connKey == "" {
 		return "_"
@@ -45,6 +51,10 @@ type Model struct {
 	// Per-connection state: connKey -> lines
 	tabs    map[string][]string
 	connKey string
+
+	// Visible tabs (ordered). When empty, editor is idle (connKey "").
+	openTabs     []TabInfo
+	activeTabIdx int
 
 	// Vim state
 	vim *VimState
@@ -83,7 +93,7 @@ func New(t theme.Theme) Model {
 		vim:       newVimState(),
 		completer: NewCompletionProvider(),
 	}
-	m.ensureTab("")
+	m.switchToIdle()
 	return m
 }
 
@@ -237,6 +247,126 @@ func (m *Model) SwitchConnection(key string) {
 	m.vim = newVimState()
 	m.scrollTop = 0
 	m.insertUndoSeeded = false
+}
+
+func (m *Model) switchToIdle() {
+	m.openTabs = nil
+	m.activeTabIdx = 0
+	m.connKey = ""
+	m.ensureTab("")
+	m.vim = newVimState()
+	m.scrollTop = 0
+	m.insertUndoSeeded = false
+	m.compVisible = false
+	m.histPopupVisible = false
+	m.histPopupPendingDeleteQuery = ""
+	m.histBrowsing = false
+	m.histCursor = -1
+}
+
+func (m *Model) activateTabIndex(i int) {
+	if i < 0 || i >= len(m.openTabs) {
+		return
+	}
+	m.activeTabIdx = i
+	m.connKey = m.openTabs[i].ConnKey
+	m.ensureTab(m.connKey)
+	m.vim = newVimState()
+	m.scrollTop = 0
+	m.insertUndoSeeded = false
+	m.compVisible = false
+	m.histPopupVisible = false
+	m.histPopupPendingDeleteQuery = ""
+	m.histBrowsing = false
+	m.histCursor = -1
+}
+
+// RestoreOpenTabs rebuilds visible tabs from persisted keys (after SeedQueryTabs).
+func (m *Model) RestoreOpenTabs(keys []string, labelFor func(string) string) {
+	m.openTabs = m.openTabs[:0]
+	for _, k := range keys {
+		if k == "" || k == "_" {
+			continue
+		}
+		lbl := ""
+		if labelFor != nil {
+			lbl = labelFor(k)
+		}
+		if lbl == "" {
+			lbl = k
+		}
+		m.openTabs = append(m.openTabs, TabInfo{ConnKey: k, Label: lbl})
+		m.ensureTab(k)
+	}
+	if len(m.openTabs) == 0 {
+		m.switchToIdle()
+		return
+	}
+	m.activateTabIndex(0)
+}
+
+// OpenTab opens or activates a tab for the given connection key.
+func (m *Model) OpenTab(connKey, label string) {
+	if connKey == "" {
+		return
+	}
+	for i, t := range m.openTabs {
+		if t.ConnKey == connKey {
+			if label != "" {
+				m.openTabs[i].Label = label
+			}
+			m.activateTabIndex(i)
+			return
+		}
+	}
+	m.openTabs = append(m.openTabs, TabInfo{ConnKey: connKey, Label: label})
+	m.activateTabIndex(len(m.openTabs) - 1)
+}
+
+// CloseActiveTab removes the current tab. Returns a message for the app if the connection changed.
+func (m *Model) CloseActiveTab() *TabSwitchedMsg {
+	if len(m.openTabs) == 0 {
+		return nil
+	}
+	idx := m.activeTabIdx
+	if idx < 0 || idx >= len(m.openTabs) {
+		idx = len(m.openTabs) - 1
+	}
+	m.openTabs = append(m.openTabs[:idx], m.openTabs[idx+1:]...)
+	if len(m.openTabs) == 0 {
+		m.switchToIdle()
+		return &TabSwitchedMsg{ConnKey: ""}
+	}
+	if m.activeTabIdx >= len(m.openTabs) {
+		m.activeTabIdx = len(m.openTabs) - 1
+	}
+	m.activateTabIndex(m.activeTabIdx)
+	return &TabSwitchedMsg{ConnKey: m.connKey}
+}
+
+// CycleTab moves the active tab by delta (-1 or +1). Returns nil if unchanged.
+func (m *Model) CycleTab(delta int) *TabSwitchedMsg {
+	if len(m.openTabs) < 2 {
+		return nil
+	}
+	m.activeTabIdx = (m.activeTabIdx + delta) % len(m.openTabs)
+	if m.activeTabIdx < 0 {
+		m.activeTabIdx += len(m.openTabs)
+	}
+	m.activateTabIndex(m.activeTabIdx)
+	return &TabSwitchedMsg{ConnKey: m.connKey}
+}
+
+// OpenTabKeys returns conn keys in tab order for persistence.
+func (m Model) OpenTabKeys() []string {
+	if len(m.openTabs) == 0 {
+		return nil
+	}
+	out := make([]string, len(m.openTabs))
+	for i, t := range m.openTabs {
+		out[i] = t.ConnKey
+	}
+	return out
 }
 
 // EditorConnKey returns the logical connection key for the active tab (may be "").
@@ -552,6 +682,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		if m.vim.row > 0 {
 			m.vim.row--
 			m.clampCol(lines)
+		}
+	case "tab":
+		if msg := m.CycleTab(1); msg != nil {
+			return func() tea.Msg { return *msg }
+		}
+	case "shift+tab", "backtab":
+		if msg := m.CycleTab(-1); msg != nil {
+			return func() tea.Msg { return *msg }
 		}
 	case "0":
 		m.vim.col = 0
@@ -980,14 +1118,8 @@ func (m Model) View() string {
 
 	var sb strings.Builder
 
-	// Mode indicator row (panel name + DB live on the app border).
-	modeStr := m.theme.StatusBarMode.Render(" " + m.vim.mode.String() + " ")
-	restW := m.width - lipgloss.Width(modeStr)
-	if restW < 0 {
-		restW = 0
-	}
-	modeRow := lipgloss.JoinHorizontal(lipgloss.Top, modeStr, lipgloss.NewStyle().Width(restW).Render(""))
-	sb.WriteString(modeRow + "\n")
+	modeLabel := " " + m.vim.mode.String() + " "
+	sb.WriteString(renderTabBar(m.theme, m.openTabs, m.activeTabIdx, modeLabel, m.width) + "\n")
 
 	// Render visible lines
 	for i := m.scrollTop; i < m.scrollTop+visibleLines; i++ {
