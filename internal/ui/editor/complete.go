@@ -52,10 +52,10 @@ func (p *CompletionProvider) Complete(prefix string, maxResults int) []string {
 
 // CompleteWithContext prefers token categories based on SQL context around cursor.
 func (p *CompletionProvider) CompleteWithContext(prefix, beforeCursor string, maxResults int) []string {
-	if prefix == "" {
-		return nil
-	}
 	orderedPools := p.poolsForContext(beforeCursor)
+	if prefix == "" {
+		return firstTokensFromPools(orderedPools, maxResults)
+	}
 	seen := make(map[string]struct{}, maxResults)
 	matches := make([]string, 0, maxResults)
 	for _, pool := range orderedPools {
@@ -71,6 +71,28 @@ func (p *CompletionProvider) CompleteWithContext(prefix, beforeCursor string, ma
 		}
 	}
 	return matches
+}
+
+// firstTokensFromPools returns up to maxResults distinct tokens from pools in order (for Tab with no typed prefix).
+func firstTokensFromPools(pools [][]string, maxResults int) []string {
+	seen := make(map[string]struct{}, maxResults)
+	out := make([]string, 0, maxResults)
+	for _, pool := range pools {
+		for _, t := range pool {
+			if t == "" {
+				continue
+			}
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			out = append(out, t)
+			if len(out) >= maxResults {
+				return out
+			}
+		}
+	}
+	return out
 }
 
 func (p *CompletionProvider) poolsForContext(beforeCursor string) [][]string {

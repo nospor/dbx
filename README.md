@@ -104,7 +104,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | --------------- | --------------------- |
 | `esc`           | Return to normal mode |
 | `←` `→` `↑` `↓` | Move cursor (arrows)  |
-| `tab`           | Trigger autocomplete / accept selected suggestion |
+| `tab`           | Open autocomplete from context (no need to type first) / accept selected suggestion; suggestions also appear as you type an identifier prefix |
 | `ctrl+n` / `ctrl+p` | Next / previous suggestion (when autocomplete is open) |
 | `ctrl+enter`    | Execute query         |
 

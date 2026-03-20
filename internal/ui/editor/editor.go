@@ -327,14 +327,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			lines = m.insertNewline(lines)
 			m.compVisible = false
 		case "tab":
-			// Trigger autocomplete
+			// Trigger autocomplete (works even with no typed prefix — suggests by SQL context)
 			prefix := m.wordBeforeCursor(lines)
-			if prefix != "" {
-				m.completions = m.completer.CompleteWithContext(prefix, m.beforeCursorText(lines), 8)
-				if len(m.completions) > 0 {
-					m.compCursor = 0
-					m.compVisible = true
-				}
+			m.completions = m.completer.CompleteWithContext(prefix, m.beforeCursorText(lines), 8)
+			if len(m.completions) > 0 {
+				m.compCursor = 0
+				m.compVisible = true
 			}
 		case "left":
 			if m.vim.col > 0 {
@@ -739,11 +737,23 @@ func (m *Model) deleteLine(lines []string) []string {
 
 func (m *Model) refreshCompletions(lines []string) {
 	prefix := m.wordBeforeCursor(lines)
-	if prefix == "" {
-		m.compVisible = false
+	before := m.beforeCursorText(lines)
+
+	if m.compVisible {
+		// Popup already open: keep list in sync (typing filters; empty prefix → context “top picks” again)
+		m.completions = m.completer.CompleteWithContext(prefix, before, 8)
+		m.compCursor = 0
+		if len(m.completions) == 0 {
+			m.compVisible = false
+		}
 		return
 	}
-	m.completions = m.completer.CompleteWithContext(prefix, m.beforeCursorText(lines), 8)
+
+	// Popup closed: auto-open while typing a non-empty identifier prefix (previous behavior)
+	if prefix == "" {
+		return
+	}
+	m.completions = m.completer.CompleteWithContext(prefix, before, 8)
 	m.compCursor = 0
 	m.compVisible = len(m.completions) > 0
 }
