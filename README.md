@@ -91,7 +91,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | Key                 | Action                                |
 | ------------------- | ------------------------------------- |
 | `i` / `a` / `o`     | Enter insert mode                     |
-| `enter`             | Execute query under cursor            |
+| `enter`             | Execute query under cursor. If the block is **only** multiple `DELETE` and/or `UPDATE` statements separated by `;`, they run **one after another**; the results grid shows `#` and `rows_affected` per statement. |
 | `u`                 | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits |
 | `ctrl+r`            | Redo (normal mode only; see insert mode for run-query) |
 | `ctrl+p` / `ctrl+n` | Browse history (replace buffer)       |

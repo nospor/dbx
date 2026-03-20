@@ -888,6 +888,10 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 		}
 		defer driver.Close()
 
+		if stmts, ok := sqlutil.SplitExecBatchDeleteUpdate(query); ok && len(stmts) > 1 {
+			return execDeleteUpdateBatch(ctx, driver, dbName, stmts, start, query)
+		}
+
 		// Determine if SELECT or DML
 		trimmed := strings.TrimSpace(strings.ToUpper(query))
 		var result *db.QueryResult
@@ -902,6 +906,42 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 			result = &db.QueryResult{Error: err.Error()}
 		}
 		return dbQueryResultMsg{result: result, elapsed: time.Since(start), sourceSQL: query}
+	}
+}
+
+// execDeleteUpdateBatch runs several DELETE/UPDATE statements sequentially (drivers often
+// reject multiple statements in a single Exec call).
+func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, dbName string, stmts []string, start time.Time, sourceSQL string) dbQueryResultMsg {
+	var rows [][]string
+	for i, stmt := range stmts {
+		result, err := driver.Exec(ctx, dbName, stmt)
+		if err != nil {
+			return dbQueryResultMsg{
+				result:    &db.QueryResult{Error: fmt.Sprintf("statement %d: %v", i+1, err)},
+				elapsed:   time.Since(start),
+				sourceSQL: sourceSQL,
+			}
+		}
+		if result != nil && result.Error != "" {
+			return dbQueryResultMsg{
+				result:    &db.QueryResult{Error: fmt.Sprintf("statement %d: %s", i+1, result.Error)},
+				elapsed:   time.Since(start),
+				sourceSQL: sourceSQL,
+			}
+		}
+		ra := "0"
+		if result != nil && len(result.Rows) > 0 && len(result.Rows[0]) > 0 {
+			ra = result.Rows[0][0]
+		}
+		rows = append(rows, []string{fmt.Sprintf("%d", i+1), ra})
+	}
+	return dbQueryResultMsg{
+		result: &db.QueryResult{
+			Columns: []string{"#", "rows_affected"},
+			Rows:    rows,
+		},
+		elapsed:   time.Since(start),
+		sourceSQL: sourceSQL,
 	}
 }
 
@@ -1250,7 +1290,7 @@ func (m Model) renderHelp() string {
 
   EDITOR (Normal mode)
     i/a/o       Enter insert mode
-    enter       Execute query under cursor
+    enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
     u           Undo edit (whole insert session until esc; normal edits undo separately)
     ctrl+r      Redo edit
     ctrl+p/n    Browse query history (replace buffer)

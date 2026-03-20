@@ -9,7 +9,7 @@ import (
 // for straightforward single-table SELECTs (no subquery in FROM, no JOIN, no comma-FROM).
 // The returned string is copied verbatim from the original SQL (including any quoting).
 func TableFromSimpleSelect(sql string) (string, bool) {
-	s := stripSQLComments(sql)
+	s := StripSQLComments(sql)
 	s = strings.TrimSpace(strings.TrimSuffix(s, ";"))
 	if s == "" {
 		return "", false
@@ -240,7 +240,8 @@ func scanBracketTable(s string) int {
 	return i
 }
 
-func stripSQLComments(sql string) string {
+// StripSQLComments removes -- line comments and /* */ block comments.
+func StripSQLComments(sql string) string {
 	var out strings.Builder
 	i := 0
 	for i < len(sql) {
