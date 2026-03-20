@@ -193,6 +193,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connForm = nil
 		return m, nil
 
+	case explorer.ConnTestRequestMsg:
+		return m, m.testConnectionCmd(msg.Conn)
+
+	case explorer.ConnTestResultMsg:
+		if m.showForm && m.connForm != nil {
+			updated, cmd := m.connForm.Update(msg)
+			m.connForm = &updated
+			return m, cmd
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Route to connection form if active
 		if m.showForm && m.connForm != nil {
@@ -941,6 +952,25 @@ func (m *Model) buildUpdateDraftCmd(msg results.UpdateDraftRequestMsg) tea.Cmd {
 			return results.UpdateDraftMsg{Err: err.Error()}
 		}
 		return results.UpdateDraftMsg{SQL: sqlText}
+	}
+}
+
+func (m *Model) testConnectionCmd(conn config.Connection) tea.Cmd {
+	return func() tea.Msg {
+		drv, err := db.New(conn)
+		if err != nil {
+			return explorer.ConnTestResultMsg{Err: err}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := drv.Connect(ctx, conn); err != nil {
+			return explorer.ConnTestResultMsg{Err: err}
+		}
+		defer drv.Close()
+		if err := drv.Ping(ctx); err != nil {
+			return explorer.ConnTestResultMsg{Err: err}
+		}
+		return explorer.ConnTestResultMsg{}
 	}
 }
 

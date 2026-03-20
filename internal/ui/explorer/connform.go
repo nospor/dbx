@@ -22,6 +22,16 @@ type ConnFormSubmitMsg struct {
 // ConnFormCancelMsg is sent when the form is cancelled.
 type ConnFormCancelMsg struct{}
 
+// ConnTestRequestMsg asks the app to test the connection built from current form fields.
+type ConnTestRequestMsg struct {
+	Conn config.Connection
+}
+
+// ConnTestResultMsg carries the result of a connection test back to the form.
+type ConnTestResultMsg struct {
+	Err error
+}
+
 // field indices
 const (
 	fieldName = iota
@@ -61,6 +71,8 @@ type ConnForm struct {
 	origID    string
 	width     int
 	height    int
+	testMsg   string // result of last test (success/error)
+	testing   bool   // true while a test is in progress
 }
 
 // NewConnForm creates a blank add-connection form.
@@ -132,7 +144,16 @@ func (f ConnForm) lastVisible() int {
 
 func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 	switch msg := msg.(type) {
+	case ConnTestResultMsg:
+		f.testing = false
+		if msg.Err != nil {
+			f.testMsg = "✗ " + msg.Err.Error()
+		} else {
+			f.testMsg = "✓ Connection successful"
+		}
+		return f, nil
 	case tea.KeyMsg:
+		f.testMsg = ""
 		switch msg.String() {
 		case "esc":
 			return f, func() tea.Msg { return ConnFormCancelMsg{} }
@@ -161,10 +182,17 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			}
 		case "ctrl+s":
 			return f, f.submitCmd()
+		case "ctrl+t":
+			if f.testing {
+				return f, nil
+			}
+			f.testing = true
+			f.testMsg = "Testing connection…"
+			conn := f.toConnection()
+			return f, func() tea.Msg { return ConnTestRequestMsg{Conn: conn} }
 		case "ctrl+v":
 			if f.cursor != fieldDriver {
 				if text, err := util.Paste(); err == nil {
-					// Strip newlines from pasted text
 					text = strings.NewReplacer("\n", "", "\r", "").Replace(text)
 					f.fields[f.cursor] += text
 				}
@@ -293,8 +321,21 @@ func (f ConnForm) View() string {
 		sb.WriteString(labelStr + " " + valueStr + "\n")
 	}
 
+	if f.testMsg != "" {
+		sb.WriteString("\n")
+		switch {
+		case strings.HasPrefix(f.testMsg, "✓"):
+			sb.WriteString(f.theme.Success.Render(f.testMsg))
+		case strings.HasPrefix(f.testMsg, "✗"):
+			sb.WriteString(f.theme.Error.Render(f.testMsg))
+		default:
+			sb.WriteString(f.theme.Dimmed.Render(f.testMsg))
+		}
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("\n")
-	hint := "tab/↑↓: next field  ←/→: change driver  ctrl+s: save  esc: cancel"
+	hint := "tab/↑↓: next field  ←/→: change driver  ctrl+t: test  ctrl+s: save  esc: cancel"
 	sb.WriteString(f.theme.Dimmed.Render(hint))
 
 	return lipgloss.NewStyle().Width(f.width).Height(f.height).Render(sb.String())
