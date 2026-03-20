@@ -44,7 +44,7 @@ dbx/
 
 - Config, query history, and per-database **editor drafts** (`query-contents.json`) live in `~/.config/dbx/`. Drafts persist on `esc` (Insert→Normal) and when changing the active database; they are independent of `history.json`.
 - Connection form uses a driver selector (not free text); SQLite hides host/port fields.
-- Quick SELECT (`s` on table) is dialect-aware (e.g. `SELECT TOP 100` for MSSQL).
+- Quick SELECT (`s` on table) appends a dialect-aware query at the end of the editor, then runs it (does not replace the buffer).
 - Results pane supports horizontal scrolling with `h`/`l`, `0`/`$`; scrollbar thumb reflects position.
 
 ## Build & Run

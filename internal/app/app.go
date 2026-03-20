@@ -722,7 +722,8 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 				driver = conn.Driver
 			}
 			query := quickSelectQuery(driver, node.DBName, node.Label)
-			m.editor.SetContent(query)
+			m.editor.AppendAtEnd(query)
+			m.persistEditorDraft()
 			// Keep focus in explorer; user can press r to view results.
 			m.results.SetLoading(true)
 			cmds = append(cmds, m.execQueryCmd(query))
@@ -1286,7 +1287,7 @@ func (m Model) renderHelp() string {
     j/k         Navigate up/down
     enter/l     Expand/collapse node (incl. table columns)
     h           Collapse current branch
-    s           Quick SELECT * FROM table LIMIT 100
+    s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
 
   EDITOR (Normal mode)
     i/a/o       Enter insert mode
