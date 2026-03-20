@@ -125,6 +125,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `j` / `k` | Navigate rows    |
 | `h` / `l` | Navigate columns |
 | `g` / `G` | First / last row |
+| `v`       | View full cell in popup (`y` to copy) |
 
 The **active cell** uses a stronger highlight than the rest of the cursor row.
 

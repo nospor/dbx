@@ -1067,6 +1067,7 @@ func (m Model) renderHelp() string {
     j/k         Navigate rows
     h/l         Navigate columns
     g/G         First/last row
+    v           View full selected cell popup (y copy, esc close)
 
   COMMAND PALETTE (space)
     Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen

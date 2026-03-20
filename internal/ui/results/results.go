@@ -7,8 +7,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/robertn/dbx/internal/ui/theme"
+	"github.com/robertn/dbx/internal/util"
 )
 
 // QueryResult holds the outcome of a query execution.
@@ -32,6 +34,10 @@ type Model struct {
 	scrollTop int
 	scrollLeft int
 	loading   bool
+
+	showCellPopup bool
+	cellPopupTop  int
+	cellPopupMsg  string
 }
 
 // New creates a new results model.
@@ -63,6 +69,9 @@ func (m *Model) SetResult(r *QueryResult) {
 	m.scrollTop = 0
 	m.scrollLeft = 0
 	m.loading = false
+	m.showCellPopup = false
+	m.cellPopupTop = 0
+	m.cellPopupMsg = ""
 }
 
 func (m Model) Init() tea.Cmd {
@@ -82,6 +91,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m *Model) handleKey(msg tea.KeyMsg) {
 	if m.result == nil {
+		return
+	}
+	if m.showCellPopup {
+		m.handleCellPopupKey(msg)
 		return
 	}
 	rows := m.result.Rows
@@ -133,6 +146,54 @@ func (m *Model) handleKey(msg tea.KeyMsg) {
 	case "$":
 		m.cursorCol = len(cols) - 1
 		m.adjustScrollLeft()
+	case "v":
+		m.showCellPopup = true
+		m.cellPopupTop = 0
+		m.cellPopupMsg = ""
+	}
+}
+
+func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
+	lines := m.selectedCellLines()
+	maxTop := 0
+	visible := m.height - 8
+	if visible < 1 {
+		visible = 1
+	}
+	if len(lines) > visible {
+		maxTop = len(lines) - visible
+	}
+
+	switch msg.String() {
+	case "esc", "enter", "q", "v":
+		m.showCellPopup = false
+		m.cellPopupMsg = ""
+	case "y":
+		if err := util.Copy(m.SelectedCell()); err != nil {
+			m.cellPopupMsg = "Clipboard unavailable: " + err.Error()
+		}
+	case "j", "down":
+		if m.cellPopupTop < maxTop {
+			m.cellPopupTop++
+		}
+	case "k", "up":
+		if m.cellPopupTop > 0 {
+			m.cellPopupTop--
+		}
+	case "pgdown", "ctrl+f":
+		m.cellPopupTop += visible
+		if m.cellPopupTop > maxTop {
+			m.cellPopupTop = maxTop
+		}
+	case "pgup", "ctrl+b":
+		m.cellPopupTop -= visible
+		if m.cellPopupTop < 0 {
+			m.cellPopupTop = 0
+		}
+	case "g":
+		m.cellPopupTop = 0
+	case "G":
+		m.cellPopupTop = maxTop
 	}
 }
 
@@ -154,6 +215,9 @@ func (m Model) View() string {
 	if m.result.Error != "" {
 		errMsg := m.theme.Error.Render("Error: " + m.result.Error)
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(errMsg)
+	}
+	if m.showCellPopup {
+		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(m.renderCellPopup())
 	}
 
 	var sb strings.Builder
@@ -201,7 +265,7 @@ func (m Model) View() string {
 			if isHeader {
 				cell = m.result.Columns[ci]
 			} else if ci < len(cells) {
-				cell = cells[ci]
+				cell = sanitizeTableCell(cells[ci])
 			}
 			cell = truncate(cell, colWidths[ci])
 			cell = padRight(cell, colWidths[ci])
@@ -401,7 +465,7 @@ func (m *Model) computeColWidths() []int {
 	for _, row := range m.result.Rows {
 		for i, cell := range row {
 			if i < len(colWidths) {
-				if w := len([]rune(cell)); w > colWidths[i] {
+				if w := len([]rune(sanitizeTableCell(cell))); w > colWidths[i] {
 					colWidths[i] = w
 				}
 			}
@@ -434,4 +498,125 @@ func truncate(s string, n int) string {
 		return string(runes[:n])
 	}
 	return string(runes[:n-3]) + "..."
+}
+
+func sanitizeTableCell(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " \\n ")
+	s = strings.ReplaceAll(s, "\n", " \\n ")
+	s = strings.ReplaceAll(s, "\r", " \\n ")
+	return s
+}
+
+func (m Model) selectedCellLines() []string {
+	val := m.SelectedCell()
+	val = strings.ReplaceAll(val, "\r\n", "\n")
+	val = strings.ReplaceAll(val, "\r", "\n")
+	lines := strings.Split(val, "\n")
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+func (m Model) renderCellPopup() string {
+	boxW := m.width - 4
+	boxH := m.height - 2
+	if boxW < 20 {
+		boxW = m.width
+	}
+	if boxH < 6 {
+		boxH = m.height
+	}
+	innerW := boxW - 4
+	innerH := boxH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+
+	lines := m.selectedCellLines()
+	maxTop := 0
+	if len(lines) > innerH {
+		maxTop = len(lines) - innerH
+	}
+	if m.cellPopupTop > maxTop {
+		m.cellPopupTop = maxTop
+	}
+
+	var sb strings.Builder
+	for i := m.cellPopupTop; i < len(lines) && i < m.cellPopupTop+innerH; i++ {
+		sb.WriteString(truncate(lines[i], innerW))
+		sb.WriteString("\n")
+	}
+	if m.cellPopupMsg != "" {
+		sb.WriteString("\n")
+		sb.WriteString(m.theme.Success.Render(truncate(m.cellPopupMsg, innerW)))
+		sb.WriteString("\n")
+	}
+	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
+
+	title := fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
+	footer := "y copy  j/k scroll  g/G top/bottom  esc close"
+	if maxTop == 0 {
+		footer = "y copy  esc close"
+	}
+	popup := m.theme.BorderFocused.
+		Width(boxW - 2).
+		Height(boxH - 2).
+		Render(body)
+	popup = m.embedPopupBorderLabels(popup, title, footer)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+}
+
+func (m Model) embedPopupBorderLabels(boxed, topLabel, bottomLabel string) string {
+	lines := strings.Split(boxed, "\n")
+	if len(lines) < 2 {
+		return boxed
+	}
+	width := ansi.StringWidth(lines[0])
+	lines[0] = m.renderPopupBorderLine(width, topLabel, true)
+	lines[len(lines)-1] = m.renderPopupBorderLine(width, bottomLabel, false)
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderPopupBorderLine(width int, label string, top bool) string {
+	if width < 3 {
+		return strings.Repeat("─", max(0, width))
+	}
+	left := "╭"
+	right := "╮"
+	if !top {
+		left = "╰"
+		right = "╯"
+	}
+	sep := "─"
+	mid := width - 2
+	if mid < 1 {
+		return lipgloss.NewStyle().Foreground(m.theme.BorderFocused.GetBorderTopForeground()).Render(left + right)
+	}
+
+	part := sep + " " + label + " "
+	if ansi.StringWidth(part) > mid {
+		inner := mid - ansi.StringWidth(sep+"  ")
+		if inner < 1 {
+			part = strings.Repeat(sep, mid)
+		} else {
+			part = sep + " " + ansi.Truncate(label, inner, "…") + " "
+		}
+	}
+	fill := mid - ansi.StringWidth(part)
+	if fill < 0 {
+		fill = 0
+	}
+	var line string
+	if top {
+		line = left + part + strings.Repeat(sep, fill) + right
+	} else {
+		line = left + strings.Repeat(sep, fill) + part + right
+	}
+	style := lipgloss.NewStyle().Foreground(m.theme.BorderFocused.GetBorderTopForeground())
+	return style.Render(line)
 }
