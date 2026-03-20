@@ -92,6 +92,8 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | ------------------- | ------------------------------------- |
 | `i` / `a` / `o`     | Enter insert mode                     |
 | `enter`             | Execute query under cursor            |
+| `u`                 | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits |
+| `ctrl+r`            | Redo (normal mode only; see insert mode for run-query) |
 | `ctrl+p` / `ctrl+n` | Browse history (replace buffer)       |
 | `backspace`         | History popup: pick a query to append |
 | `dd`                | Delete line                           |
@@ -107,6 +109,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `tab`           | Open autocomplete from context (no need to type first) / accept selected suggestion; suggestions also appear as you type an identifier prefix |
 | `ctrl+n` / `ctrl+p` | Next / previous suggestion (when autocomplete is open) |
 | `ctrl+enter`    | Execute query         |
+| `ctrl+r`        | Execute query         |
 
 ### Results
 | Key       | Action           |

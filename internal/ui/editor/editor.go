@@ -67,6 +67,11 @@ type Model struct {
 	histPopupVisible            bool
 	histPopupCursor             int
 	histPopupPendingDeleteQuery string // non-empty = showing delete confirmation for this exact query
+
+	// Per-tab undo/redo (see undo.go)
+	tabUndo          map[string]*tabUndoState
+	skipUndoRecord   bool
+	insertUndoSeeded bool // insert-session checkpoint taken (reset on Esc; see beforeInsertEdit)
 }
 
 // New creates a new editor model.
@@ -150,6 +155,7 @@ func (m *Model) acceptHistoryPopup() {
 		existing = append(existing, "")
 	}
 	combined := append(existing, newLines...)
+	m.pushUndoPoint()
 	m.setLines(combined)
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
@@ -162,14 +168,27 @@ func (m *Model) BrowseHistoryPrev() {
 	if len(m.history) == 0 {
 		return
 	}
-	m.histBrowsing = true
-	m.histCursor++
-	if m.histCursor >= len(m.history) {
-		m.histCursor = len(m.history) - 1
+	var next int
+	if !m.histBrowsing {
+		next = 0
+	} else {
+		next = m.histCursor + 1
 	}
+	if next >= len(m.history) {
+		next = len(m.history) - 1
+	}
+	if m.histBrowsing && next == m.histCursor {
+		return // already showing the oldest entry
+	}
+	m.pushUndoPoint()
+	m.histBrowsing = true
+	m.histCursor = next
 	m.setLines(strings.Split(m.history[m.histCursor], "\n"))
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
+	if m.vim.mode == ModeInsert {
+		m.insertUndoSeeded = true
+	}
 }
 
 // BrowseHistoryNext loads the next history entry (or clears if at end).
@@ -177,6 +196,7 @@ func (m *Model) BrowseHistoryNext() {
 	if !m.histBrowsing {
 		return
 	}
+	m.pushUndoPoint()
 	m.histCursor--
 	if m.histCursor < 0 {
 		m.histBrowsing = false
@@ -187,6 +207,9 @@ func (m *Model) BrowseHistoryNext() {
 	}
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
+	if m.vim.mode == ModeInsert {
+		m.insertUndoSeeded = true
+	}
 }
 
 func (m *Model) ensureTab(key string) {
@@ -213,6 +236,7 @@ func (m *Model) SwitchConnection(key string) {
 	m.ensureTab(key)
 	m.vim = newVimState()
 	m.scrollTop = 0
+	m.insertUndoSeeded = false
 }
 
 // EditorConnKey returns the logical connection key for the active tab (may be "").
@@ -250,9 +274,11 @@ func (m Model) CurrentQuery() string {
 
 // SetContent replaces the current tab content (e.g. when pressing 's' in explorer).
 func (m *Model) SetContent(content string) {
+	m.clearTabUndo(tabStoreKey(m.connKey))
 	m.setLines(strings.Split(content, "\n"))
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
+	m.insertUndoSeeded = false
 }
 
 func (m Model) Init() tea.Cmd {
@@ -284,6 +310,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			case "tab", "enter":
 				// Accept completion
+				m.beforeInsertEdit()
 				lines = m.acceptCompletion(lines)
 				m.setLines(lines)
 				m.compVisible = false
@@ -308,6 +335,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		case "esc":
 			m.vim.mode = ModeNormal
+			m.insertUndoSeeded = false
 			m.compVisible = false
 			if m.vim.col > 0 {
 				m.vim.col--
@@ -321,9 +349,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				return QueryPanePersistMsg{ConnKey: persistKey, Text: persistText}
 			}
 		case "backspace":
+			m.beforeInsertEdit()
 			lines = m.deleteBackspace(lines)
 			m.refreshCompletions(lines)
 		case "enter":
+			m.beforeInsertEdit()
 			lines = m.insertNewline(lines)
 			m.compVisible = false
 		case "tab":
@@ -375,6 +405,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
 		case "ctrl+v":
 			if text, err := util.Paste(); err == nil && text != "" {
+				m.beforeInsertEdit()
 				for _, ch := range text {
 					if ch == '\n' {
 						lines = m.insertNewline(lines)
@@ -386,6 +417,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		default:
 			if len(msg.Runes) == 1 {
+				m.beforeInsertEdit()
 				lines = m.insertRune(lines, msg.Runes[0])
 				m.refreshCompletions(lines)
 			}
@@ -414,13 +446,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.vim.mode = ModeInsert
 	case "o":
+		m.pushUndoPoint()
 		lines = m.openLineBelow(lines)
 		m.setLines(lines)
 		m.vim.mode = ModeInsert
+		m.insertUndoSeeded = true // checkpoint is the push before open-line (whole O/o session)
 	case "O":
+		m.pushUndoPoint()
 		lines = m.openLineAbove(lines)
 		m.setLines(lines)
 		m.vim.mode = ModeInsert
+		m.insertUndoSeeded = true
 	case "h", "left":
 		if m.vim.col > 0 {
 			m.vim.col--
@@ -482,6 +518,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "b":
 		m.vim.row, m.vim.col = wordBackward(lines, m.vim.row, m.vim.col)
 	case "x":
+		m.pushUndoPoint()
 		lines = m.deleteCharAt(lines)
 		m.setLines(lines)
 	case "d":
@@ -496,6 +533,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if m.vim.pendingD {
+			m.pushUndoPoint()
 			lines = m.deleteLine(lines)
 			m.setLines(lines)
 			m.vim.pendingD = false
@@ -513,7 +551,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.histPopupPendingDeleteQuery = ""
 			return nil
 		}
-	case "enter", "ctrl+enter", "ctrl+r", "f5":
+	case "u":
+		if m.histPopupVisible {
+			return nil
+		}
+		m.Undo()
+		return nil
+	case "ctrl+r":
+		if m.histPopupVisible {
+			return nil
+		}
+		m.Redo()
+		return nil
+	case "enter", "ctrl+enter", "f5":
 		if m.histPopupVisible {
 			if m.histPopupPendingDeleteQuery != "" {
 				return nil

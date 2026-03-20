@@ -1197,6 +1197,8 @@ func (m Model) renderHelp() string {
   EDITOR (Normal mode)
     i/a/o       Enter insert mode
     enter       Execute query under cursor
+    u           Undo edit (whole insert session until esc; normal edits undo separately)
+    ctrl+r      Redo edit
     ctrl+p/n    Browse query history (replace buffer)
     backspace   History popup (d = delete confirm panel, y confirm)
     dd          Delete line
@@ -1206,6 +1208,7 @@ func (m Model) renderHelp() string {
     esc         Return to normal mode
     tab         Trigger autocomplete
     ctrl+enter  Execute query
+    ctrl+r      Execute query
 
   RESULTS
     j/k         Navigate rows
