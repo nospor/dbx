@@ -1335,6 +1335,7 @@ func (m Model) View() string {
 		content := m.renderPanelContent(m.fullscreenPanel)
 		boxed := m.theme.BorderFocused.Width(m.width - 2).Height(m.height - 3).Render(content)
 		border := m.embedPanelTopTitle(boxed, m.panelTitleFor(m.fullscreenPanel), true)
+		border = m.embedPanelBottomHint(border, m.panelBottomHintFor(m.fullscreenPanel), true)
 		view := lipgloss.JoinVertical(lipgloss.Left, border, m.renderStatusBar())
 		if m.showHelp {
 			view = overlayCentered(view, m.renderHelp(), m.width, m.height)
@@ -1410,6 +1411,22 @@ func (m Model) rightColumnWidth() int {
 		w = 0
 	}
 	return w
+}
+
+func (m Model) panelBottomHintFor(p Panel) string {
+	switch p {
+	case PanelExplorer:
+		return "s - show rows · v - DDL · space - commands"
+	case PanelEditor:
+		if m.editor.IsInsertMode() {
+			return "Esc - normal mode · Tab - autocomplete · Ctrl+Enter - run query"
+		}
+		return "Enter - run query · i - insert mode · u - undo · Ctrl+R - redo · backspace - query history · space - command palette"
+	case PanelResults:
+		return "s - toggle row mark · S - band select rows · d - append delete draft · v - full cell · space - command palette"
+	default:
+		return ""
+	}
 }
 
 func (m Model) panelTitleFor(p Panel) string {
@@ -1499,6 +1516,59 @@ func (m Model) renderPanelTopBorderLine(outerWidth int, title string, focused bo
 	return m.styleForPanelTopLine(focused).Render(line)
 }
 
+// embedPanelBottomHint replaces the last border line with a titled bottom edge (hint on the right).
+func (m Model) embedPanelBottomHint(boxed, hint string, focused bool) string {
+	if hint == "" {
+		return boxed
+	}
+	lines := strings.Split(boxed, "\n")
+	if len(lines) < 2 {
+		return boxed
+	}
+	tw := ansi.StringWidth(lines[len(lines)-1])
+	lines[len(lines)-1] = m.renderPanelBottomBorderLine(tw, hint, focused)
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderPanelBottomBorderLine(outerWidth int, label string, focused bool) string {
+	if outerWidth < 3 {
+		return strings.Repeat("─", max(0, outerWidth))
+	}
+	tl := "╰"
+	tr := "╯"
+	sep := "─"
+	mid := outerWidth - ansi.StringWidth(tl) - ansi.StringWidth(tr)
+	if mid < 1 {
+		return m.styleForPanelTopLine(focused).Render(tl + strings.Repeat(sep, max(0, mid)) + tr)
+	}
+	rightPart := sep + " " + label + " "
+	rpw := ansi.StringWidth(rightPart)
+	if rpw > mid {
+		inner := mid - ansi.StringWidth(sep+"  ")
+		if inner < 1 {
+			rightPart = strings.Repeat(sep, mid)
+		} else {
+			rightPart = sep + " " + ansi.Truncate(label, inner, "…") + " "
+			rpw = ansi.StringWidth(rightPart)
+		}
+	}
+	fill := mid - rpw
+	if fill < 0 {
+		fill = 0
+	}
+	line := tl + strings.Repeat(sep, fill) + rightPart + tr
+	for ansi.StringWidth(line) < outerWidth {
+		rs := []rune(line)
+		if len(rs) < 2 {
+			break
+		}
+		body := string(rs[:len(rs)-1])
+		corner := string(rs[len(rs)-1:])
+		line = body + sep + corner
+	}
+	return m.styleForPanelTopLine(focused).Render(line)
+}
+
 func (m Model) renderBorderedPanel(p Panel) string {
 	focused := m.focus == p
 	content := m.renderPanelContent(p)
@@ -1512,6 +1582,7 @@ func (m Model) renderBorderedPanel(p Panel) string {
 
 	totalH := m.height - 1
 	title := m.panelTitleFor(p)
+	hint := m.panelBottomHintFor(p)
 	switch p {
 	case PanelExplorer:
 		w := m.width*m.cfg.Layout.ExplorerWidthPct/100 - 2
@@ -1520,7 +1591,8 @@ func (m Model) renderBorderedPanel(p Panel) string {
 			w = 0
 		}
 		boxed := borderStyle.Width(w).Height(h).Render(content)
-		return m.embedPanelTopTitle(boxed, title, focused)
+		boxed = m.embedPanelTopTitle(boxed, title, focused)
+		return m.embedPanelBottomHint(boxed, hint, focused)
 	case PanelEditor:
 		w := m.rightColumnWidth()
 		h := totalH*m.cfg.Layout.EditorHeightPct/100 - 2
@@ -1528,7 +1600,8 @@ func (m Model) renderBorderedPanel(p Panel) string {
 			h = 0
 		}
 		boxed := borderStyle.Width(w).Height(h).Render(content)
-		return m.embedPanelTopTitle(boxed, title, focused)
+		boxed = m.embedPanelTopTitle(boxed, title, focused)
+		return m.embedPanelBottomHint(boxed, hint, focused)
 	case PanelResults:
 		w := m.rightColumnWidth()
 		h := totalH*(100-m.cfg.Layout.EditorHeightPct)/100 - 2
@@ -1536,7 +1609,8 @@ func (m Model) renderBorderedPanel(p Panel) string {
 			h = 0
 		}
 		boxed := borderStyle.Width(w).Height(h).Render(content)
-		return m.embedPanelTopTitle(boxed, title, focused)
+		boxed = m.embedPanelTopTitle(boxed, title, focused)
+		return m.embedPanelBottomHint(boxed, hint, focused)
 	}
 	return content
 }
@@ -1556,7 +1630,7 @@ func (m Model) renderStatusBar() string {
 	} else if m.statusMsg != "" {
 		status = m.statusMsg
 	} else {
-		status = "  [" + m.focus.String() + "]  " + connInfo + "  space: commands  e/q/r: focus  ?: help  ctrl+c: quit"
+		status = "  [" + m.focus.String() + "]  " + connInfo + " · Commands: space · Focus: e/q/r · Help: ? · Quit: ctrl+c"
 	}
 	return m.theme.StatusBar.Width(m.width).Render(status)
 }

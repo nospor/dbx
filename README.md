@@ -5,7 +5,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 ## Features
 
 - **Databases**: PostgreSQL, MySQL, SQLite, MSSQL
-- **Three-panel layout**: Explorer | Query Editor | Results
+- **Three-panel layout**: Explorer | Query Editor | Results — each pane shows **key hints** on the bottom border (long lines truncate if the pane is narrow)
 - **Vim mode**: Normal and Insert mode with motions (h/j/k/l, w/b, gg/G, dd, etc.)
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
