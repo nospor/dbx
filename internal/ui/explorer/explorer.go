@@ -1,11 +1,11 @@
 package explorer
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/robertn/dbx/internal/config"
 	"github.com/robertn/dbx/internal/ui/theme"
@@ -231,9 +231,11 @@ func (m Model) View() string {
 	}
 
 	for i := start; i < len(m.flat) && i < start+visibleLines; i++ {
+		if i > start {
+			sb.WriteByte('\n')
+		}
 		n := m.flat[i]
-		line := m.renderNode(n, i == m.cursor)
-		sb.WriteString(line + "\n")
+		sb.WriteString(m.renderNode(n, i == m.cursor))
 	}
 
 	return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(sb.String())
@@ -276,19 +278,42 @@ func (m Model) renderNode(n *Node, selected bool) string {
 		labelStyle = m.theme.TreeColumn
 	}
 
-	label := labelStyle.Render(n.Label)
-	detail := ""
+	prefix := indent + icon
+	suffixPlain := ""
 	if n.Detail != "" {
-		detail = " " + m.theme.Dimmed.Render(fmt.Sprintf("(%s)", n.Detail))
+		suffixPlain = " (" + n.Detail + ")"
 	}
-
-	line := indent + icon + label + detail
+	maxW := m.width
+	prefixW := ansi.StringWidth(prefix)
+	suffixW := ansi.StringWidth(suffixPlain)
+	labBudget := maxW - prefixW - suffixW
+	if suffixPlain != "" && labBudget < 1 {
+		suffixBudget := max(1, maxW-prefixW-3)
+		if suffixBudget >= 2 {
+			suffixPlain = " (" + ansi.Truncate(n.Detail, max(1, suffixBudget-3), "…") + ")"
+			suffixW = ansi.StringWidth(suffixPlain)
+		} else {
+			suffixPlain = ""
+			suffixW = 0
+		}
+		labBudget = maxW - prefixW - suffixW
+	}
+	if labBudget < 1 {
+		labBudget = 1
+	}
+	tlab := ansi.Truncate(n.Label, labBudget, "…")
 
 	if selected {
-		line = m.theme.TreeSelected.Width(m.width - 2).Render(indent + icon + n.Label + detail)
+		fullPlain := prefix + n.Label + suffixPlain
+		trunc := ansi.Truncate(fullPlain, maxW, "…")
+		return m.theme.TreeSelected.Render(trunc)
 	}
 
-	return line
+	detailRendered := ""
+	if suffixPlain != "" {
+		detailRendered = m.theme.Dimmed.Render(suffixPlain)
+	}
+	return prefix + labelStyle.Render(tlab) + detailRendered
 }
 
 func (m Model) nodeDepth(n *Node) int {
