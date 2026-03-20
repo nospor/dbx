@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +47,8 @@ type Model struct {
 	activeConnID string
 	activeDB     string
 	drivers      map[string]db.Driver // connID -> driver
+	schemaTables map[string][]string  // connID:db -> tables/views
+	schemaCols   map[string][]string  // connID:db -> column tokens
 
 	explorer explorer.Model
 	editor   editor.Model
@@ -87,6 +90,8 @@ func New(cfg *config.Config) Model {
 		focus:           PanelExplorer,
 		fullscreenPanel: PanelExplorer,
 		drivers:         make(map[string]db.Driver),
+		schemaTables:    make(map[string][]string),
+		schemaCols:      make(map[string][]string),
 		explorer:        explorer.New(cfg, t),
 		editor:          newEditorWithDrafts(t, qc.All()),
 		results:         results.New(t),
@@ -297,8 +302,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nodes = append(nodes, explorer.NewViewNode(v, msg.connID, msg.dbName))
 		}
 		m.explorer.SetChildren(msg.connID, msg.dbName, nodes)
-		// Update autocomplete with table names
-		m.editor.SetSchema(msg.tables, nil)
+		key := schemaKey(msg.connID, msg.dbName)
+		tokens := make([]string, 0, len(msg.tables)+len(msg.views))
+		tokens = append(tokens, msg.tables...)
+		tokens = append(tokens, msg.views...)
+		m.schemaTables[key] = tokens
+		if msg.connID == m.activeConnID && msg.dbName == m.activeDB {
+			m.applyEditorSchema(msg.connID, msg.dbName)
+		}
 		cmds = append(cmds, m.setStatus(""))
 		return m, tea.Batch(cmds...)
 
@@ -331,6 +342,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			colNodes = append(colNodes, explorer.NewColumnNode(c.Name, c.DataType, msg.connID, msg.dbName))
 		}
 		m.explorer.SetChildren(msg.connID+":"+msg.dbName, msg.table, colNodes)
+		key := schemaKey(msg.connID, msg.dbName)
+		existing := m.schemaCols[key]
+		seen := make(map[string]struct{}, len(existing)+len(msg.columns)*2)
+		for _, v := range existing {
+			seen[v] = struct{}{}
+		}
+		for _, c := range msg.columns {
+			if c.Name == "" {
+				continue
+			}
+			if _, ok := seen[c.Name]; !ok {
+				existing = append(existing, c.Name)
+				seen[c.Name] = struct{}{}
+			}
+			qualified := msg.table + "." + c.Name
+			if _, ok := seen[qualified]; !ok {
+				existing = append(existing, qualified)
+				seen[qualified] = struct{}{}
+			}
+		}
+		sort.Strings(existing)
+		m.schemaCols[key] = existing
+		if msg.connID == m.activeConnID && msg.dbName == m.activeDB {
+			m.applyEditorSchema(msg.connID, msg.dbName)
+		}
 		cmds = append(cmds, m.setStatus(""))
 		return m, tea.Batch(cmds...)
 
@@ -486,6 +522,18 @@ func (m *Model) connKey() string {
 	return m.activeConnID + ":" + m.activeDB
 }
 
+func schemaKey(connID, dbName string) string {
+	if connID == "" {
+		return ""
+	}
+	return connID + ":" + dbName
+}
+
+func (m *Model) applyEditorSchema(connID, dbName string) {
+	key := schemaKey(connID, dbName)
+	m.editor.SetSchema(m.schemaTables[key], m.schemaCols[key])
+}
+
 func (m *Model) persistEditorDraft() {
 	if m.queryContents == nil {
 		return
@@ -542,6 +590,7 @@ func (m *Model) activateExplorerDatabase(connID, dbName string) {
 	m.activeConnID = connID
 	m.activeDB = dbName
 	m.editor.SwitchConnection(m.connKey())
+	m.applyEditorSchema(connID, dbName)
 	if m.history != nil {
 		entries := m.history.ForKey(m.connKey())
 		queries := make([]string, len(entries))

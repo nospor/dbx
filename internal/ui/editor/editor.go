@@ -282,19 +282,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			case "esc":
 				m.compVisible = false
 				return nil
-			case "tab", "ctrl+n", "down":
-				m.compCursor = (m.compCursor + 1) % len(m.completions)
-				return nil
-			case "ctrl+p", "up":
-				m.compCursor = (m.compCursor - 1 + len(m.completions)) % len(m.completions)
-				return nil
-			case "enter":
+			case "tab", "enter":
 				// Accept completion
 				lines = m.acceptCompletion(lines)
 				m.setLines(lines)
 				m.compVisible = false
 				m.clampCursor()
 				m.adjustScroll()
+				return nil
+			case "ctrl+n", "down":
+				m.compCursor = (m.compCursor + 1) % len(m.completions)
+				return nil
+			case "ctrl+p", "up":
+				m.compCursor = (m.compCursor - 1 + len(m.completions)) % len(m.completions)
 				return nil
 			}
 		}
@@ -322,7 +322,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		case "backspace":
 			lines = m.deleteBackspace(lines)
-			m.compVisible = false
+			m.refreshCompletions(lines)
 		case "enter":
 			lines = m.insertNewline(lines)
 			m.compVisible = false
@@ -330,7 +330,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			// Trigger autocomplete
 			prefix := m.wordBeforeCursor(lines)
 			if prefix != "" {
-				m.completions = m.completer.Complete(prefix, 8)
+				m.completions = m.completer.CompleteWithContext(prefix, m.beforeCursorText(lines), 8)
 				if len(m.completions) > 0 {
 					m.compCursor = 0
 					m.compVisible = true
@@ -389,7 +389,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		default:
 			if len(msg.Runes) == 1 {
 				lines = m.insertRune(lines, msg.Runes[0])
-				m.compVisible = false
+				m.refreshCompletions(lines)
 			}
 		}
 		m.setLines(lines)
@@ -735,6 +735,29 @@ func (m *Model) deleteLine(lines []string) []string {
 		m.vim.row = len(lines) - 1
 	}
 	return lines
+}
+
+func (m *Model) refreshCompletions(lines []string) {
+	prefix := m.wordBeforeCursor(lines)
+	if prefix == "" {
+		m.compVisible = false
+		return
+	}
+	m.completions = m.completer.CompleteWithContext(prefix, m.beforeCursorText(lines), 8)
+	m.compCursor = 0
+	m.compVisible = len(m.completions) > 0
+}
+
+func (m *Model) beforeCursorText(lines []string) string {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return ""
+	}
+	runes := []rune(lines[m.vim.row])
+	col := m.vim.col
+	if col > len(runes) {
+		col = len(runes)
+	}
+	return string(runes[:col])
 }
 
 // wordBeforeCursor returns the partial word immediately before the cursor.
