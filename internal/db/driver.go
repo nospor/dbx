@@ -13,6 +13,13 @@ type ColumnInfo struct {
 	DataType string
 }
 
+// TableColumn is one column belonging to a named table or view (used for bulk schema / autocomplete).
+type TableColumn struct {
+	Table    string
+	Name     string
+	DataType string
+}
+
 // QueryResult holds the result of a query execution.
 type QueryResult struct {
 	Columns []string
@@ -42,6 +49,9 @@ type Driver interface {
 
 	// Columns returns column info for the given table in the given database.
 	Columns(ctx context.Context, database, table string) ([]ColumnInfo, error)
+
+	// AllTableColumns returns columns for all tables and views in the database (for autocomplete).
+	AllTableColumns(ctx context.Context, database string) ([]TableColumn, error)
 
 	// Query executes a SELECT-like statement and returns rows.
 	Query(ctx context.Context, database, sql string) (*QueryResult, error)

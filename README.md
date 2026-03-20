@@ -9,7 +9,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Vim mode**: Normal and Insert mode with motions (h/j/k/l, w/b, gg/G, dd, etc.)
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
-- **Tab autocomplete** for table names, column names, and SQL keywords
+- **Tab autocomplete** for table names, column names, and SQL keywords (columns are loaded automatically when you expand a database / refresh schema—no need to open each table first)
 - **Query history** per connection/database (ctrl+p/n to browse) — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
 - **Command palette** (space) with context-aware commands per panel

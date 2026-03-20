@@ -175,6 +175,37 @@ func (d *postgresDriver) Columns(ctx context.Context, database, table string) ([
 	return cols, rows.Err()
 }
 
+func (d *postgresDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
+	pool, err := d.poolForDB(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if pool != d.pool {
+			pool.Close()
+		}
+	}()
+
+	rows, err := pool.Query(ctx,
+		`SELECT table_name, column_name, data_type
+		 FROM information_schema.columns
+		 WHERE table_schema = 'public'
+		 ORDER BY table_name, ordinal_position`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TableColumn
+	for rows.Next() {
+		var tc TableColumn
+		if err := rows.Scan(&tc.Table, &tc.Name, &tc.DataType); err != nil {
+			return nil, err
+		}
+		out = append(out, tc)
+	}
+	return out, rows.Err()
+}
+
 func (d *postgresDriver) Query(ctx context.Context, database, sql string) (*QueryResult, error) {
 	pool, err := d.poolForDB(ctx, database)
 	if err != nil {

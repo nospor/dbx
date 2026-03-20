@@ -106,6 +106,49 @@ func (d *sqliteDriver) Columns(ctx context.Context, _, table string) ([]ColumnIn
 	return cols, rows.Err()
 }
 
+func (d *sqliteDriver) AllTableColumns(ctx context.Context, _ string) ([]TableColumn, error) {
+	// SQLite 3.33+ supports table-valued pragma; fall back per-table if unavailable.
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT m.name, p.name, p.type
+		FROM sqlite_master AS m
+		JOIN pragma_table_info(m.name) AS p
+		WHERE m.type IN ('table','view')
+		  AND m.name NOT GLOB 'sqlite_*'
+		ORDER BY m.name, p.cid`)
+	if err == nil {
+		defer rows.Close()
+		var out []TableColumn
+		for rows.Next() {
+			var tc TableColumn
+			if err := rows.Scan(&tc.Table, &tc.Name, &tc.DataType); err != nil {
+				return nil, err
+			}
+			out = append(out, tc)
+		}
+		return out, rows.Err()
+	}
+
+	tables, err := d.Tables(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	views, _ := d.Views(ctx, "")
+	names := make([]string, 0, len(tables)+len(views))
+	names = append(names, tables...)
+	names = append(names, views...)
+	var out []TableColumn
+	for _, name := range names {
+		cols, err := d.Columns(ctx, "", name)
+		if err != nil {
+			continue
+		}
+		for _, c := range cols {
+			out = append(out, TableColumn{Table: name, Name: c.Name, DataType: c.DataType})
+		}
+	}
+	return out, nil
+}
+
 func (d *sqliteDriver) Query(ctx context.Context, _ string, sqlStr string) (*QueryResult, error) {
 	rows, err := d.db.QueryContext(ctx, sqlStr)
 	if err != nil {

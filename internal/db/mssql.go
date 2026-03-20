@@ -111,6 +111,27 @@ func (d *mssqlDriver) Columns(ctx context.Context, database, table string) ([]Co
 	return cols, rows.Err()
 }
 
+func (d *mssqlDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
+	db := d.dbForQuery(database)
+	query := fmt.Sprintf(
+		`SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM [%s].INFORMATION_SCHEMA.COLUMNS ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+		db)
+	rows, err := d.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TableColumn
+	for rows.Next() {
+		var tc TableColumn
+		if err := rows.Scan(&tc.Table, &tc.Name, &tc.DataType); err != nil {
+			return nil, err
+		}
+		out = append(out, tc)
+	}
+	return out, rows.Err()
+}
+
 func (d *mssqlDriver) Query(ctx context.Context, database, sqlStr string) (*QueryResult, error) {
 	db := d.dbForQuery(database)
 	if db != "" {

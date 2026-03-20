@@ -112,6 +112,29 @@ func (d *mysqlDriver) Columns(ctx context.Context, database, table string) ([]Co
 	return cols, rows.Err()
 }
 
+func (d *mysqlDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
+	db := d.dbForQuery(database)
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT table_name, column_name, data_type
+		 FROM information_schema.columns
+		 WHERE table_schema = ?
+		 ORDER BY table_name, ordinal_position`,
+		db)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TableColumn
+	for rows.Next() {
+		var tc TableColumn
+		if err := rows.Scan(&tc.Table, &tc.Name, &tc.DataType); err != nil {
+			return nil, err
+		}
+		out = append(out, tc)
+	}
+	return out, rows.Err()
+}
+
 func (d *mysqlDriver) Query(ctx context.Context, database, sqlStr string) (*QueryResult, error) {
 	if database != "" {
 		if _, err := d.db.ExecContext(ctx, "USE `"+database+"`"); err != nil {

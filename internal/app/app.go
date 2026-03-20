@@ -49,6 +49,7 @@ type Model struct {
 	drivers      map[string]db.Driver // connID -> driver
 	schemaTables map[string][]string  // connID:db -> tables/views
 	schemaCols   map[string][]string  // connID:db -> column tokens
+	tableCols    map[string][]db.ColumnInfo // connID:db:table -> columns (cache + explorer)
 
 	explorer explorer.Model
 	editor   editor.Model
@@ -92,6 +93,7 @@ func New(cfg *config.Config) Model {
 		drivers:         make(map[string]db.Driver),
 		schemaTables:    make(map[string][]string),
 		schemaCols:      make(map[string][]string),
+		tableCols:       make(map[string][]db.ColumnInfo),
 		explorer:        explorer.New(cfg, t),
 		editor:          newEditorWithDrafts(t, qc.All()),
 		results:         results.New(t),
@@ -307,7 +309,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tokens = append(tokens, msg.tables...)
 		tokens = append(tokens, msg.views...)
 		m.schemaTables[key] = tokens
-		if msg.connID == m.activeConnID && msg.dbName == m.activeDB {
+		m.clearTableColumnCache(msg.connID, msg.dbName)
+		m.schemaCols[key] = nil
+		if len(msg.allColumns) > 0 {
+			m.ingestBulkColumns(msg.connID, msg.dbName, msg.allColumns)
+		} else if msg.connID == m.activeConnID && msg.dbName == m.activeDB {
 			m.applyEditorSchema(msg.connID, msg.dbName)
 		}
 		cmds = append(cmds, m.setStatus(""))
@@ -342,6 +348,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			colNodes = append(colNodes, explorer.NewColumnNode(c.Name, c.DataType, msg.connID, msg.dbName))
 		}
 		m.explorer.SetChildren(msg.connID+":"+msg.dbName, msg.table, colNodes)
+		ck := tableColsKey(msg.connID, msg.dbName, msg.table)
+		m.tableCols[ck] = append([]db.ColumnInfo(nil), msg.columns...)
 		key := schemaKey(msg.connID, msg.dbName)
 		existing := m.schemaCols[key]
 		seen := make(map[string]struct{}, len(existing)+len(msg.columns)*2)
@@ -534,6 +542,63 @@ func (m *Model) applyEditorSchema(connID, dbName string) {
 	m.editor.SetSchema(m.schemaTables[key], m.schemaCols[key])
 }
 
+func tableColsKey(connID, dbName, table string) string {
+	return connID + ":" + dbName + ":" + table
+}
+
+// clearTableColumnCache removes per-table column data for one database (before schema refresh).
+func (m *Model) clearTableColumnCache(connID, dbName string) {
+	if m.tableCols == nil {
+		return
+	}
+	prefix := schemaKey(connID, dbName) + ":"
+	for k := range m.tableCols {
+		if strings.HasPrefix(k, prefix) {
+			delete(m.tableCols, k)
+		}
+	}
+}
+
+// ingestBulkColumns fills autocomplete + explorer column cache from one information_schema (or equivalent) query.
+func (m *Model) ingestBulkColumns(connID, dbName string, rows []db.TableColumn) {
+	if len(rows) == 0 {
+		return
+	}
+	prefix := schemaKey(connID, dbName) + ":"
+	byTable := make(map[string][]db.ColumnInfo)
+	for _, r := range rows {
+		if r.Table == "" || r.Name == "" {
+			continue
+		}
+		byTable[r.Table] = append(byTable[r.Table], db.ColumnInfo{Name: r.Name, DataType: r.DataType})
+	}
+	for tbl, cols := range byTable {
+		m.tableCols[prefix+tbl] = cols
+	}
+	dbKey := schemaKey(connID, dbName)
+	seen := make(map[string]struct{}, len(rows)*2)
+	tokens := make([]string, 0, len(rows)*2)
+	for _, r := range rows {
+		if r.Table == "" || r.Name == "" {
+			continue
+		}
+		if _, ok := seen[r.Name]; !ok {
+			seen[r.Name] = struct{}{}
+			tokens = append(tokens, r.Name)
+		}
+		q := r.Table + "." + r.Name
+		if _, ok := seen[q]; !ok {
+			seen[q] = struct{}{}
+			tokens = append(tokens, q)
+		}
+	}
+	sort.Strings(tokens)
+	m.schemaCols[dbKey] = tokens
+	if connID == m.activeConnID && dbName == m.activeDB {
+		m.applyEditorSchema(connID, dbName)
+	}
+}
+
 func (m *Model) persistEditorDraft() {
 	if m.queryContents == nil {
 		return
@@ -625,7 +690,7 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			}
 		}
 		if node.Expanded {
-			cmds = append(cmds, m.setStatus("Loading tables..."))
+			cmds = append(cmds, m.setStatus("Loading schema..."))
 			cmds = append(cmds, m.fetchSchemaCmd(node.ConnID, node.DBName))
 		}
 
@@ -642,9 +707,17 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			m.results.SetLoading(true)
 			cmds = append(cmds, m.execQueryCmd(query))
 		} else if node.Expanded {
-			// Only fetch columns when expanding; collapsing should not refetch
-			cmds = append(cmds, m.setStatus("Loading columns..."))
-			cmds = append(cmds, m.fetchColumnsCmd(node.ConnID, node.DBName, node.Label))
+			ck := tableColsKey(node.ConnID, node.DBName, node.Label)
+			if cached := m.tableCols[ck]; len(cached) > 0 {
+				colNodes := make([]*explorer.Node, 0, len(cached))
+				for _, c := range cached {
+					colNodes = append(colNodes, explorer.NewColumnNode(c.Name, c.DataType, node.ConnID, node.DBName))
+				}
+				m.explorer.SetChildren(node.ConnID+":"+node.DBName, node.Label, colNodes)
+			} else {
+				cmds = append(cmds, m.setStatus("Loading columns..."))
+				cmds = append(cmds, m.fetchColumnsCmd(node.ConnID, node.DBName, node.Label))
+			}
 		}
 
 	case explorer.NodeColumn:
@@ -698,7 +771,7 @@ func (m *Model) fetchSchemaCmd(connID, dbName string) tea.Cmd {
 		if err != nil {
 			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := driver.Connect(ctx, *conn); err != nil {
 			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
@@ -709,7 +782,11 @@ func (m *Model) fetchSchemaCmd(connID, dbName string) tea.Cmd {
 			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
 		}
 		views, _ := driver.Views(ctx, dbName)
-		return dbSchemaMsg{connID: connID, dbName: dbName, tables: tables, views: views}
+		var allCols []db.TableColumn
+		if ac, err := driver.AllTableColumns(ctx, dbName); err == nil {
+			allCols = ac
+		}
+		return dbSchemaMsg{connID: connID, dbName: dbName, tables: tables, views: views, allColumns: allCols}
 	}
 }
 

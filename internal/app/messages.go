@@ -19,7 +19,9 @@ type dbSchemaMsg struct {
 	dbName  string
 	tables  []string
 	views   []string
-	err     error
+	// allColumns is loaded in the same fetch for editor autocomplete (no need to expand each table).
+	allColumns []db.TableColumn
+	err        error
 }
 
 // dbDatabasesMsg carries the list of databases for a connection.
