@@ -41,6 +41,9 @@ func tabStoreKey(connKey string) string {
 	return connKey
 }
 
+// editorTopGutterLines is blank rows between the tab bar and query text.
+const editorTopGutterLines = 1
+
 // Model is the bubbletea model for the query editor panel.
 type Model struct {
 	theme   theme.Theme
@@ -867,7 +870,7 @@ func (m *Model) clampCol(lines []string) {
 }
 
 func (m *Model) adjustScroll() {
-	visibleLines := m.height - 3
+	visibleLines := m.height - 3 - editorTopGutterLines
 	if visibleLines < 1 {
 		visibleLines = 1
 	}
@@ -1110,8 +1113,8 @@ func (m Model) View() string {
 	}
 
 	lines := m.lines()
-	// 1 mode row + (height-3) editor rows = height-2 rows (same as before the border title change).
-	visibleLines := m.height - 3
+	// Tab row + gutter + editor rows: same total inner height as before gutter (height-2 content rows under the pane chrome).
+	visibleLines := m.height - 3 - editorTopGutterLines
 	if visibleLines < 1 {
 		visibleLines = 1
 	}
@@ -1120,6 +1123,9 @@ func (m Model) View() string {
 
 	modeLabel := " " + m.vim.mode.String() + " "
 	sb.WriteString(renderTabBar(m.theme, m.openTabs, m.activeTabIdx, modeLabel, m.width) + "\n")
+	for i := 0; i < editorTopGutterLines; i++ {
+		sb.WriteString(lipgloss.NewStyle().Width(m.width).Render("") + "\n")
+	}
 
 	// Render visible lines
 	for i := m.scrollTop; i < m.scrollTop+visibleLines; i++ {
@@ -1255,8 +1261,8 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("12")).
 			Render(compSb.String())
 
-		// Position the dropdown below the cursor line
-		cursorScreenRow := m.vim.row - m.scrollTop + 1
+		// Position the dropdown below the cursor line (after tab bar + top gutter).
+		cursorScreenRow := m.vim.row - m.scrollTop + 1 + editorTopGutterLines
 		result := sb.String()
 		resultLines := strings.Split(result, "\n")
 		compLines := strings.Split(compBox, "\n")
