@@ -3,7 +3,13 @@ package editor
 import (
 	"sort"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/cases"
 )
+
+// foldCaser matches prefixes case-insensitively (Unicode-aware).
+var foldCaser = cases.Fold()
 
 // CompletionProvider holds schema tokens for autocomplete.
 type CompletionProvider struct {
@@ -68,44 +74,99 @@ func (p *CompletionProvider) CompleteWithContext(prefix, beforeCursor string, ma
 }
 
 func (p *CompletionProvider) poolsForContext(beforeCursor string) [][]string {
-	word, prev := lastTwoSQLWords(beforeCursor)
-	switch {
-	case word == "from" || word == "join" || word == "update" || word == "into":
+	prevClause, _, alone := clauseBeforePartial(beforeCursor)
+
+	switch alone {
+	case "select":
+		return [][]string{p.columns, p.tables, p.keywords, p.tokens}
+	case "from", "join":
 		return [][]string{p.tables, p.columns, p.keywords, p.tokens}
-	case word == "select" || word == "where" || word == "on" || word == "set" || word == "having":
+	case "where":
 		return [][]string{p.columns, p.tables, p.keywords, p.tokens}
-	case word == "by" && (prev == "order" || prev == "group"):
-		return [][]string{p.columns, p.tables, p.keywords, p.tokens}
-	default:
-		return [][]string{p.tokens}
+	case "insert":
+		return [][]string{p.keywords, p.tables, p.columns, p.tokens}
+	case "update":
+		return [][]string{p.tables, p.columns, p.keywords, p.tokens}
 	}
+
+	switch prevClause {
+	case "from", "join", "update", "into":
+		return [][]string{p.tables, p.columns, p.keywords, p.tokens}
+	case "select", "where", "on", "set", "having":
+		return [][]string{p.columns, p.tables, p.keywords, p.tokens}
+	}
+
+	fields := sqlFieldsBeforeCursor(beforeCursor)
+	if len(fields) >= 2 {
+		a, b := fields[len(fields)-2], fields[len(fields)-1]
+		if a == "order" && b == "by" || a == "group" && b == "by" {
+			return [][]string{p.columns, p.tables, p.keywords, p.tokens}
+		}
+	}
+
+	return [][]string{p.tokens}
+}
+
+// clauseBeforePartial inspects tokens before the cursor. The last token is treated as the
+// partial identifier being typed; the previous token or the last clause keyword decides context.
+func clauseBeforePartial(beforeCursor string) (prevClause string, partial string, aloneClause string) {
+	fields := sqlFieldsBeforeCursor(beforeCursor)
+	if len(fields) == 0 {
+		return "", "", ""
+	}
+	if len(fields) == 1 {
+		w := fields[0]
+		if isClauseKeyword(w) {
+			return "", "", w
+		}
+		return "", w, ""
+	}
+	last := fields[len(fields)-1]
+	prefixFields := fields[:len(fields)-1]
+	secondLast := prefixFields[len(prefixFields)-1]
+	if isClauseKeyword(secondLast) {
+		return secondLast, last, ""
+	}
+	return lastClauseKeyword(prefixFields), last, ""
+}
+
+func lastClauseKeyword(fields []string) string {
+	for i := len(fields) - 1; i >= 0; i-- {
+		if isClauseKeyword(fields[i]) {
+			return fields[i]
+		}
+	}
+	return ""
+}
+
+func isClauseKeyword(w string) bool {
+	switch strings.ToLower(w) {
+	case "select", "from", "join", "where", "on", "set", "having", "update", "into", "insert":
+		return true
+	default:
+		return false
+	}
+}
+
+func sqlFieldsBeforeCursor(s string) []string {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	return strings.FieldsFunc(lower, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
+	})
 }
 
 func filterByPrefix(tokens []string, prefix string) []string {
 	if prefix == "" {
 		return nil
 	}
-	lower := strings.ToLower(prefix)
+	prefFold := foldCaser.String(prefix)
 	out := make([]string, 0, 8)
 	for _, t := range tokens {
-		if strings.HasPrefix(strings.ToLower(t), lower) {
+		if strings.HasPrefix(foldCaser.String(t), prefFold) {
 			out = append(out, t)
 		}
 	}
 	return out
-}
-
-func lastTwoSQLWords(s string) (string, string) {
-	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_')
-	})
-	if len(fields) == 0 {
-		return "", ""
-	}
-	if len(fields) == 1 {
-		return fields[0], ""
-	}
-	return fields[len(fields)-1], fields[len(fields)-2]
 }
 
 func sqlKeywords() []string {
