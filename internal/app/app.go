@@ -1826,9 +1826,9 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		if m.editor.IsInsertMode() {
 			return "Esc - normal mode · Tab - autocomplete · Ctrl+Enter - run query"
 		}
-		return "Enter - run query · Tab - next tab · Sh-Tab - prev tab · i - insert · space - palette (D close tab)"
+		return "Enter - run query · Tab - next tab · Sh-Tab - prev tab · i - insert · space - commands"
 	case PanelResults:
-		return "s - toggle row mark · S - band select rows · d - delete draft · u - update cell · v - full cell · space - command palette"
+		return "s - toggle row mark · S - band select rows · d - delete draft · u - update cell · v - full cell · space - commands"
 	default:
 		return ""
 	}
