@@ -96,6 +96,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | ------------- | ------------------------------------- |
 | `j` / `k`     | Navigate                              |
 | `enter` / `l` | Expand/collapse                       |
+| `h`           | Collapse current branch (from child -> parent) |
 | `s`           | Quick `SELECT * … LIMIT 100` (fills editor, runs query; focus stays here; `r` for results) |
 | `g` / `G`     | First / last item                     |
 

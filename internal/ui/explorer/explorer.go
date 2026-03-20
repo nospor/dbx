@@ -147,6 +147,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 				m.pendingSel = n
 			}
+		case "h":
+			if len(m.flat) > 0 {
+				n := m.flat[m.cursor]
+				target := n
+				// If cursor is inside a subtree leaf/item, collapse the nearest expanded parent.
+				if !target.Expanded && target.parent != nil {
+					target = target.parent
+				}
+				if target.Expanded {
+					target.Expanded = false
+					m.flatten()
+				}
+				// Keep cursor on the collapsed node for predictable navigation.
+				for i, fn := range m.flat {
+					if fn == target {
+						m.cursor = i
+						break
+					}
+				}
+				m.pendingSel = target
+			}
 		case "s":
 			// Quick select: generate SELECT query for table/view
 			if len(m.flat) > 0 {

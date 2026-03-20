@@ -1048,6 +1048,7 @@ func (m Model) renderHelp() string {
   EXPLORER
     j/k         Navigate up/down
     enter/l     Expand/collapse node
+    h           Collapse current branch
     s           Quick SELECT * FROM table LIMIT 100
 
   EDITOR (Normal mode)

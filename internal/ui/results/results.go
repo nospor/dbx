@@ -209,7 +209,7 @@ func (m Model) View() string {
 
 	if m.result == nil {
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).
-			Render(m.theme.Dimmed.Render("No results yet.\nPress ctrl+enter in the editor to execute a query."))
+			Render(m.theme.Dimmed.Render("No results yet.\nPress enter in the editor to execute a query."))
 	}
 
 	if m.result.Error != "" {
