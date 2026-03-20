@@ -100,7 +100,9 @@ func New(cfg *config.Config) Model {
 }
 
 // clearStatusMsg is a delayed message to clear the status bar.
-type clearStatusMsg struct{}
+type clearStatusMsg struct {
+	expiresAt time.Time
+}
 
 func (m Model) Init() tea.Cmd {
 	return m.spinner.Tick
@@ -125,7 +127,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case clearStatusMsg:
-		if time.Now().After(m.statusExpiry) {
+		if !msg.expiresAt.IsZero() && msg.expiresAt.Equal(m.statusExpiry) && time.Now().After(m.statusExpiry) {
 			m.statusMsg = ""
 		}
 		return m, nil
@@ -217,9 +219,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.history != nil {
 			if err := m.history.Add(key, msg.Query); err != nil {
-				m.setStatus("History save failed: " + err.Error())
+				cmds = append(cmds, m.setStatus("History save failed: "+err.Error()))
 			} else {
-				m.setStatus("Saved to history")
+				cmds = append(cmds, m.setStatus("Saved to history"))
 				// Refresh the editor's in-memory history so the popup shows the latest
 				entries := m.history.ForKey(key)
 				queries := make([]string, len(entries))
@@ -240,10 +242,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				key = "_"
 			}
 			if err := m.queryContents.Put(key, msg.Text); err != nil {
-				m.setStatus("Query draft save failed: " + err.Error())
+				cmds = append(cmds, m.setStatus("Query draft save failed: "+err.Error()))
 			}
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case editor.DeleteHistoryEntryMsg:
 		if m.history == nil || msg.Query == "" {
@@ -254,9 +256,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			key = "_"
 		}
 		if err := m.history.Remove(key, msg.Query); err != nil {
-			m.setStatus("History delete failed: " + err.Error())
+			cmds = append(cmds, m.setStatus("History delete failed: "+err.Error()))
 		} else {
-			m.setStatus("Removed from history")
+			cmds = append(cmds, m.setStatus("Removed from history"))
 		}
 		entries := m.history.ForKey(key)
 		queries := make([]string, len(entries))
@@ -264,7 +266,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			queries[i] = e.Query
 		}
 		m.editor.ReplaceHistoryEntries(queries)
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case dbQueryResultMsg:
 		m.isLoading = false
@@ -276,16 +278,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.results.SetResult(qr)
 		if qr.Error != "" {
-			m.setStatus("Query error: " + qr.Error)
+			cmds = append(cmds, m.setStatus("Query error: "+qr.Error))
 		} else {
-			m.setStatus("")
+			cmds = append(cmds, m.setStatus(""))
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case dbSchemaMsg:
 		if msg.err != nil {
-			m.statusMsg = "Schema error: " + msg.err.Error()
-			return m, nil
+			cmds = append(cmds, m.setStatus("Schema error: "+msg.err.Error()))
+			return m, tea.Batch(cmds...)
 		}
 		nodes := make([]*explorer.Node, 0, len(msg.tables)+len(msg.views))
 		for _, t := range msg.tables {
@@ -297,12 +299,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.explorer.SetChildren(msg.connID, msg.dbName, nodes)
 		// Update autocomplete with table names
 		m.editor.SetSchema(msg.tables, nil)
-		return m, nil
+		cmds = append(cmds, m.setStatus(""))
+		return m, tea.Batch(cmds...)
 
 	case dbDatabasesMsg:
 		if msg.err != nil {
-			m.statusMsg = "DB list error: " + msg.err.Error()
-			return m, nil
+			cmds = append(cmds, m.setStatus("DB list error: "+msg.err.Error()))
+			return m, tea.Batch(cmds...)
 		}
 		nodes := make([]*explorer.Node, 0, len(msg.databases))
 		for _, dbName := range msg.databases {
@@ -315,18 +318,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return explorerSelectMsg{node: explorer.NewDatabaseNode(msg.databases[0], msg.connID)}
 			})
 		}
+		cmds = append(cmds, m.setStatus(""))
 		return m, tea.Batch(cmds...)
 
 	case dbColumnsMsg:
 		if msg.err != nil {
-			return m, nil
+			cmds = append(cmds, m.setStatus("Columns error: "+msg.err.Error()))
+			return m, tea.Batch(cmds...)
 		}
 		colNodes := make([]*explorer.Node, 0, len(msg.columns))
 		for _, c := range msg.columns {
 			colNodes = append(colNodes, explorer.NewColumnNode(c.Name, c.DataType, msg.connID, msg.dbName))
 		}
 		m.explorer.SetChildren(msg.connID+":"+msg.dbName, msg.table, colNodes)
-		return m, nil
+		cmds = append(cmds, m.setStatus(""))
+		return m, tea.Batch(cmds...)
 
 	case explorerSelectMsg:
 		cmds = append(cmds, m.handleExplorerSelect(msg.node)...)
@@ -377,9 +383,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			_ = config.Save(m.cfg)
 			m.explorer.SetConfig(m.cfg)
-			m.statusMsg = "Connection deleted."
+			cmds = append(cmds, m.setStatus("Connection deleted."))
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case refreshSchemaMsg:
 		if node := m.explorer.SelectedNode(); node != nil && node.DBName != "" {
@@ -403,44 +409,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copyCellMsg:
 		cell := m.results.SelectedCell()
 		if err := util.Copy(cell); err != nil {
-			m.statusMsg = "Clipboard unavailable: " + err.Error()
+			cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
 		} else {
-			m.statusMsg = "Cell copied to clipboard."
+			cmds = append(cmds, m.setStatus("Cell copied to clipboard."))
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case copyRowMsg:
 		row := m.results.SelectedRow()
 		if err := util.Copy(strings.Join(row, "\t")); err != nil {
-			m.statusMsg = "Clipboard unavailable: " + err.Error()
+			cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
 		} else {
-			m.statusMsg = "Row copied to clipboard."
+			cmds = append(cmds, m.setStatus("Row copied to clipboard."))
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case exportCSVMsg:
 		dir, _ := os.UserHomeDir()
 		if r := m.results.Result(); r != nil {
 			path, err := r.ExportCSV(dir)
 			if err != nil {
-				m.statusMsg = "Export error: " + err.Error()
+				cmds = append(cmds, m.setStatus("Export error: "+err.Error()))
 			} else {
-				m.statusMsg = "Exported to " + path
+				cmds = append(cmds, m.setStatus("Exported to "+path))
 			}
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case exportJSONMsg:
 		dir, _ := os.UserHomeDir()
 		if r := m.results.Result(); r != nil {
 			path, err := r.ExportJSON(dir)
 			if err != nil {
-				m.statusMsg = "Export error: " + err.Error()
+				cmds = append(cmds, m.setStatus("Export error: "+err.Error()))
 			} else {
-				m.statusMsg = "Exported to " + path
+				cmds = append(cmds, m.setStatus("Exported to "+path))
 			}
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 	}
 
 	// Route key/other events to focused panel
@@ -556,6 +562,7 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 	case explorer.NodeConnection:
 		// Only fetch databases when expanding; collapsing should not refetch
 		if node.Expanded {
+			cmds = append(cmds, m.setStatus("Loading databases..."))
 			cmds = append(cmds, m.connectCmd(node.ConnID))
 		}
 
@@ -565,10 +572,11 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 		m.activateExplorerDatabase(node.ConnID, node.DBName)
 		if m.history != nil {
 			if n := len(m.history.ForKey(m.connKey())); n > 0 {
-				m.setStatus(fmt.Sprintf("Loaded %d history entries", n))
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Loaded %d history entries", n)))
 			}
 		}
 		if node.Expanded {
+			cmds = append(cmds, m.setStatus("Loading tables..."))
 			cmds = append(cmds, m.fetchSchemaCmd(node.ConnID, node.DBName))
 		}
 
@@ -586,6 +594,7 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			cmds = append(cmds, m.execQueryCmd(query))
 		} else if node.Expanded {
 			// Only fetch columns when expanding; collapsing should not refetch
+			cmds = append(cmds, m.setStatus("Loading columns..."))
 			cmds = append(cmds, m.fetchColumnsCmd(node.ConnID, node.DBName, node.Label))
 		}
 
@@ -736,11 +745,21 @@ func quickSelectQuery(driver, database, table string) string {
 	}
 }
 
-func (m *Model) setStatus(msg string) {
+func (m *Model) setStatus(msg string) tea.Cmd {
 	m.statusMsg = msg
-	if msg != "" {
-		m.statusExpiry = time.Now().Add(4 * time.Second)
+	if msg == "" {
+		m.statusExpiry = time.Time{}
+		return nil
 	}
+	seconds := 5
+	if m.cfg != nil && m.cfg.StatusMessageSeconds > 0 {
+		seconds = m.cfg.StatusMessageSeconds
+	}
+	m.statusExpiry = time.Now().Add(time.Duration(seconds) * time.Second)
+	exp := m.statusExpiry
+	return tea.Tick(time.Duration(seconds)*time.Second, func(time.Time) tea.Msg {
+		return clearStatusMsg{expiresAt: exp}
+	})
 }
 
 func (m *Model) handleConnFormSubmit(msg explorer.ConnFormSubmitMsg) (tea.Model, tea.Cmd) {
@@ -756,14 +775,12 @@ func (m *Model) handleConnFormSubmit(msg explorer.ConnFormSubmitMsg) (tea.Model,
 		m.cfg.Connections = append(m.cfg.Connections, conn)
 	}
 	if err := config.Save(m.cfg); err != nil {
-		m.statusMsg = "Error saving config: " + err.Error()
-	} else {
-		m.statusMsg = "Connection saved."
+		return m, m.setStatus("Error saving config: " + err.Error())
 	}
 	m.showForm = false
 	m.connForm = nil
 	m.explorer.SetConfig(m.cfg)
-	return m, nil
+	return m, m.setStatus("Connection saved.")
 }
 
 func (m *Model) findConn(connID string) *config.Connection {

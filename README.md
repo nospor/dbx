@@ -61,7 +61,8 @@ Config is stored in `~/.config/dbx/config.json`:
     "explorer_width_pct": 25,
     "editor_height_pct": 50
   },
-  "theme": "dark"
+  "theme": "dark",
+  "status_message_seconds": 5
 }
 ```
 

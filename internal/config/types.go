@@ -25,4 +25,5 @@ type Config struct {
 	Connections []Connection `json:"connections"`
 	Layout      Layout       `json:"layout"`
 	Theme       string       `json:"theme"` // "dark", "light", "terminal"
+	StatusMessageSeconds int `json:"status_message_seconds"` // default 5
 }

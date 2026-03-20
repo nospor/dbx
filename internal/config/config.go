@@ -74,6 +74,7 @@ func defaults() *Config {
 			EditorHeightPct:  50,
 		},
 		Theme: "terminal",
+		StatusMessageSeconds: 5,
 	}
 }
 
@@ -86,5 +87,8 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Theme == "" {
 		cfg.Theme = "terminal"
+	}
+	if cfg.StatusMessageSeconds <= 0 {
+		cfg.StatusMessageSeconds = 5
 	}
 }
