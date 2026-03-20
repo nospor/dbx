@@ -16,13 +16,17 @@ type Store struct {
 	tabs map[string]string // conn_key -> full editor text
 }
 
-// New loads ~/.config/dbx/query-contents.json. Corrupt files are backed up and replaced.
+// New loads ~/.cache/dbx/query-contents.json. Corrupt files are backed up and replaced.
 func New() (*Store, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(home, ".config", "dbx", contentsFile)
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = filepath.Join(home, ".cache")
+	}
+	path := filepath.Join(cache, "dbx", contentsFile)
 	s := &Store{path: path, tabs: make(map[string]string)}
 	if err := s.load(); err != nil {
 		_ = os.Rename(path, path+".bak")
@@ -37,9 +41,13 @@ func New() (*Store, error) {
 func NewOrEmpty() *Store {
 	s, err := New()
 	if err != nil || s == nil {
-		path := ".config/dbx/" + contentsFile
+		path := ".cache/dbx/" + contentsFile
 		if home, err2 := os.UserHomeDir(); err2 == nil {
-			path = filepath.Join(home, ".config", "dbx", contentsFile)
+			cache, err3 := os.UserCacheDir()
+			if err3 != nil {
+				cache = filepath.Join(home, ".cache")
+			}
+			path = filepath.Join(cache, "dbx", contentsFile)
 		}
 		out := &Store{path: path, tabs: make(map[string]string)}
 		_ = out.ensureFile()

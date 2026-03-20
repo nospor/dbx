@@ -34,29 +34,10 @@ go build -o dbx .
 
 ## Configuration
 
-Config is stored in `~/.config/dbx/config.json`:
+Config is stored in `~/.config/dbx/config.json` (UI settings only):
 
 ```json
 {
-  "connections": [
-    {
-      "id": "my-pg",
-      "name": "My Postgres",
-      "driver": "postgres",
-      "host": "localhost",
-      "port": 5432,
-      "user": "postgres",
-      "password": "secret",
-      "database": "",
-      "ssl_mode": "prefer"
-    },
-    {
-      "id": "my-sqlite",
-      "name": "Local DB",
-      "driver": "sqlite",
-      "file_path": "/path/to/database.db"
-    }
-  ],
   "layout": {
     "explorer_width_pct": 25,
     "editor_height_pct": 50
@@ -68,15 +49,18 @@ Config is stored in `~/.config/dbx/config.json`:
 
 Available `theme` values: `terminal`, `dark`, `light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, `gruvbox-dark`.
 
+Connections are stored separately in `~/.cache/dbx/connections.json`.
+
 **`database` field**: Leave empty to show all databases. Use a comma-separated list (e.g. `"db1,db2"`) to show specific databases.
 
-## Data files (`~/.config/dbx/`)
+## Data files
 
 | File | Purpose |
 | ---- | ------- |
-| `config.json` | Connections and UI preferences |
-| `history.json` | Executed queries (history popup / ctrl+p n) |
-| `query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
+| `~/.config/dbx/config.json` | UI preferences (theme, layout, status message duration) |
+| `~/.cache/dbx/connections.json` | Saved connections |
+| `~/.cache/dbx/history.json` | Executed queries (history popup / ctrl+p n) |
+| `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 
 ## Layout
 
@@ -142,7 +126,7 @@ The **active cell** uses a stronger highlight than the rest of the cursor row.
 
 ## History
 
-Query history is saved per connection/database to `~/.config/dbx/history.json`. To use it:
+Query history is saved per connection/database to `~/.cache/dbx/history.json`. To use it:
 
 1. **Select a database** in the explorer (expand a connection, then select a database). History is loaded when you select a database.
 2. **Execute a query** — it is saved to history for that connection/database.

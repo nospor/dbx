@@ -17,7 +17,7 @@ type Entry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// History manages query history persisted to ~/.config/dbx/history.json.
+// History manages query history persisted to ~/.cache/dbx/history.json.
 type History struct {
 	entries []Entry
 	path    string
@@ -30,7 +30,11 @@ func New() (*History, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(home, ".config", "dbx", historyFile)
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = filepath.Join(home, ".cache")
+	}
+	path := filepath.Join(cache, "dbx", historyFile)
 	h := &History{path: path, entries: []Entry{}}
 	if err := h.load(); err != nil {
 		// Corrupt or unreadable — backup and start fresh
@@ -48,9 +52,13 @@ func NewOrEmpty() *History {
 		_ = h.EnsureFile()
 		return h
 	}
-	path := ".config/dbx/history.json"
+	path := ".cache/dbx/history.json"
 	if home, err := os.UserHomeDir(); err == nil {
-		path = filepath.Join(home, ".config", "dbx", historyFile)
+		cache, err2 := os.UserCacheDir()
+		if err2 != nil {
+			cache = filepath.Join(home, ".cache")
+		}
+		path = filepath.Join(cache, "dbx", historyFile)
 	}
 	hist := &History{path: path, entries: []Entry{}}
 	_ = hist.EnsureFile()

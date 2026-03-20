@@ -20,9 +20,11 @@ type Layout struct {
 	EditorHeightPct  int `json:"editor_height_pct"`  // default 50
 }
 
-// Config is the root configuration structure persisted to ~/.config/dbx/config.json.
+// Config is the root runtime configuration.
+// UI preferences are persisted to ~/.config/dbx/config.json.
+// Connections are persisted separately to ~/.cache/dbx/connections.json.
 type Config struct {
-	Connections []Connection `json:"connections"`
+	Connections []Connection `json:"-"`
 	Layout      Layout       `json:"layout"`
 	Theme       string       `json:"theme"` // terminal, dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark
 	StatusMessageSeconds int `json:"status_message_seconds"` // default 5
