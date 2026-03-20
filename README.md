@@ -29,8 +29,20 @@ Or build from source:
 ```bash
 git clone ...
 cd dbx
+
+# to quickly build
 go build -o dbx .
+
+# or (builds slower, but binary is smaller)
+go build -trimpath -ldflags="-s -w" -o dbx .
+
+# then run
+./dbx
+
+# you may also want to copy the binary to your PATH (and run it from any place), e.g.:
+sudo cp dbx /usr/local/bin/
 ```
+
 
 ## Configuration
 
