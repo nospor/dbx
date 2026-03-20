@@ -276,7 +276,7 @@ func (m Model) renderHScrollBar(totalCols int) string {
 
 	// If everything fits, no scrollbar needed
 	if visibleColCount >= totalCols {
-		return m.theme.Dimmed.Render("h/l: scroll cols  0/$: first/last col")
+		return m.theme.Dimmed.Render(fitToWidth("h/l: scroll cols  0/$: first/last col", m.width))
 	}
 
 	barWidth := m.width - 2
@@ -307,12 +307,25 @@ func (m Model) renderHScrollBar(totalCols int) string {
 		}
 	}
 
-	left := m.theme.Dimmed.Render("◀")
-	right := m.theme.Dimmed.Render("▶")
-	bar := m.theme.Dimmed.Render(string(track))
-	hint := m.theme.Dimmed.Render(fmt.Sprintf(" col %d/%d  h/l: scroll  0/$: first/last", m.scrollLeft+1, totalCols))
+	line := "◀" + string(track) + "▶"
+	info := fmt.Sprintf(" %d/%d", m.scrollLeft+1, totalCols)
+	if len([]rune(line))+len([]rune(info)) <= m.width {
+		line += info
+	}
+	return m.theme.Dimmed.Render(fitToWidth(line, m.width))
+}
 
-	return left + bar + right + hint
+// fitToWidth returns a single-line string that never exceeds width columns.
+func fitToWidth(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = strings.ReplaceAll(s, "\n", " ")
+	r := []rune(s)
+	if len(r) > width {
+		r = r[:width]
+	}
+	return string(r)
 }
 
 // Result returns the current query result, or nil.
