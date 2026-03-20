@@ -1,4 +1,4 @@
-# dbx — TUI Database Client
+# Dbx — TUI Database Client
 
 A terminal-based database client written in Go with vim-mode editing, multi-database support, and a command palette.
 
@@ -74,7 +74,7 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 | `~/.cache/dbx/connections.json`    | Saved connections                                                                      |
 | `~/.cache/dbx/history.json`        | Executed queries (history popup / ctrl+p n)                                            |
 | `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
-| `~/.cache/dbx/open-tabs.json`     | Ordered list of open query tabs (`connection_id:database` keys) for session restore     |
+| `~/.cache/dbx/open-tabs.json`      | Ordered list of open query tabs (`connection_id:database` keys) for session restore    |
 
 ## Layout
 
@@ -147,7 +147,7 @@ The **active cell** uses a stronger highlight than the rest of the cursor row.
 | Panel    | Commands                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------- |
 | Explorer | `a` add, `e` edit, `d` delete, `R` refresh, `t` toggle, `f` fullscreen                            |
-| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `f` fullscreen               |
+| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `f` fullscreen              |
 | Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `f` fullscreen |
 
 ## History
@@ -158,3 +158,12 @@ Query history is saved per connection/database to `~/.cache/dbx/history.json`. T
 2. **Execute a query** — it is saved to history for that connection/database.
 3. **Browse history** with `ctrl+p` (older) and `ctrl+n` (newer) in the editor — works in both Normal and Insert mode (replaces the buffer).
 4. **History popup** (normal mode): `backspace` opens a list; `j`/`k` or `ctrl+p`/`ctrl+n` to move; `enter` appends the chosen query at the end of the editor; `d` opens an in-popup confirmation showing the exact query; `y` deletes it from history (`n`, `esc`, or `d` again cancels).
+
+## License
+
+Dbx is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Thanks For Visiting
+
+Hope you liked it. Wanna **[buy Me a coffee](https://www.buymeacoffee.com/nospor)**?
+
