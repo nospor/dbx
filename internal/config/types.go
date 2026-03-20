@@ -24,6 +24,6 @@ type Layout struct {
 type Config struct {
 	Connections []Connection `json:"connections"`
 	Layout      Layout       `json:"layout"`
-	Theme       string       `json:"theme"` // "dark", "light", "terminal"
+	Theme       string       `json:"theme"` // terminal, dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark
 	StatusMessageSeconds int `json:"status_message_seconds"` // default 5
 }

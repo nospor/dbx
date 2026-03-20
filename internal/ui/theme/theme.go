@@ -157,6 +157,146 @@ func Light() Theme {
 	return t
 }
 
+// CatppuccinMocha theme — popular Catppuccin dark variant.
+func CatppuccinMocha() Theme {
+	t := Terminal()
+	t.Name = "catppuccin-mocha"
+
+	t.BorderFocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#89b4fa"))
+	t.BorderUnfocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#45475a"))
+
+	t.StatusBar = lipgloss.NewStyle().Background(lipgloss.Color("#1e1e2e")).Foreground(lipgloss.Color("#cdd6f4")).Padding(0, 1)
+	t.StatusBarMode = lipgloss.NewStyle().Background(lipgloss.Color("#89b4fa")).Foreground(lipgloss.Color("#1e1e2e")).Bold(true).Padding(0, 1)
+
+	t.Normal = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
+	t.Dimmed = lipgloss.NewStyle().Foreground(lipgloss.Color("#6c7086"))
+	t.Error = lipgloss.NewStyle().Foreground(lipgloss.Color("#f38ba8")).Bold(true)
+	t.Success = lipgloss.NewStyle().Foreground(lipgloss.Color("#a6e3a1"))
+
+	t.TreeSelected = lipgloss.NewStyle().Background(lipgloss.Color("#313244")).Foreground(lipgloss.Color("#89b4fa"))
+	t.TreeConnection = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true)
+	t.TreeDatabase = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5"))
+	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
+	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#7f849c"))
+
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#89b4fa")).Background(lipgloss.Color("#1e1e2e")).Padding(0, 1)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa"))
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true)
+
+	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")).Underline(true)
+	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")).Background(lipgloss.Color("#313244")).Underline(true)
+	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#181825")).Foreground(lipgloss.Color("#cdd6f4"))
+	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#313244")).Foreground(lipgloss.Color("#89b4fa")).Bold(true)
+
+	return t
+}
+
+// CatppuccinLatte theme — popular Catppuccin light variant.
+func CatppuccinLatte() Theme {
+	t := Terminal()
+	t.Name = "catppuccin-latte"
+
+	t.BorderFocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#1e66f5"))
+	t.BorderUnfocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#9ca0b0"))
+
+	t.StatusBar = lipgloss.NewStyle().Background(lipgloss.Color("#eff1f5")).Foreground(lipgloss.Color("#4c4f69")).Padding(0, 1)
+	t.StatusBarMode = lipgloss.NewStyle().Background(lipgloss.Color("#1e66f5")).Foreground(lipgloss.Color("#eff1f5")).Bold(true).Padding(0, 1)
+
+	t.Normal = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c4f69"))
+	t.Dimmed = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca0b0"))
+	t.Error = lipgloss.NewStyle().Foreground(lipgloss.Color("#d20f39")).Bold(true)
+	t.Success = lipgloss.NewStyle().Foreground(lipgloss.Color("#40a02b"))
+
+	t.TreeSelected = lipgloss.NewStyle().Background(lipgloss.Color("#ccd0da")).Foreground(lipgloss.Color("#1e66f5"))
+	t.TreeConnection = lipgloss.NewStyle().Foreground(lipgloss.Color("#df8e1d")).Bold(true)
+	t.TreeDatabase = lipgloss.NewStyle().Foreground(lipgloss.Color("#179299"))
+	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c4f69"))
+	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca0b0"))
+
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#1e66f5")).Background(lipgloss.Color("#eff1f5")).Padding(0, 1)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5"))
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c4f69"))
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#df8e1d")).Bold(true)
+
+	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")).Underline(true)
+	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")).Background(lipgloss.Color("#ccd0da")).Underline(true)
+	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#e6e9ef")).Foreground(lipgloss.Color("#4c4f69"))
+	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#ccd0da")).Foreground(lipgloss.Color("#1e66f5")).Bold(true)
+
+	return t
+}
+
+// Nord theme — inspired by the Nord color palette.
+func Nord() Theme {
+	t := Terminal()
+	t.Name = "nord"
+
+	t.BorderFocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#81a1c1"))
+	t.BorderUnfocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4c566a"))
+
+	t.StatusBar = lipgloss.NewStyle().Background(lipgloss.Color("#2e3440")).Foreground(lipgloss.Color("#d8dee9")).Padding(0, 1)
+	t.StatusBarMode = lipgloss.NewStyle().Background(lipgloss.Color("#88c0d0")).Foreground(lipgloss.Color("#2e3440")).Bold(true).Padding(0, 1)
+
+	t.Normal = lipgloss.NewStyle().Foreground(lipgloss.Color("#d8dee9"))
+	t.Dimmed = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c566a"))
+	t.Error = lipgloss.NewStyle().Foreground(lipgloss.Color("#bf616a")).Bold(true)
+	t.Success = lipgloss.NewStyle().Foreground(lipgloss.Color("#a3be8c"))
+
+	t.TreeSelected = lipgloss.NewStyle().Background(lipgloss.Color("#3b4252")).Foreground(lipgloss.Color("#81a1c1"))
+	t.TreeConnection = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebcb8b")).Bold(true)
+	t.TreeDatabase = lipgloss.NewStyle().Foreground(lipgloss.Color("#8fbcbb"))
+	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#d8dee9"))
+	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#616e88"))
+
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#81a1c1")).Background(lipgloss.Color("#2e3440")).Padding(0, 1)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1"))
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#d8dee9"))
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebcb8b")).Bold(true)
+
+	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1")).Underline(true)
+	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1")).Background(lipgloss.Color("#3b4252")).Underline(true)
+	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#2a303b")).Foreground(lipgloss.Color("#d8dee9"))
+	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#3b4252")).Foreground(lipgloss.Color("#88c0d0")).Bold(true)
+
+	return t
+}
+
+// GruvboxDark theme — inspired by the Gruvbox dark palette.
+func GruvboxDark() Theme {
+	t := Terminal()
+	t.Name = "gruvbox-dark"
+
+	t.BorderFocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#83a598"))
+	t.BorderUnfocused = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#665c54"))
+
+	t.StatusBar = lipgloss.NewStyle().Background(lipgloss.Color("#282828")).Foreground(lipgloss.Color("#ebdbb2")).Padding(0, 1)
+	t.StatusBarMode = lipgloss.NewStyle().Background(lipgloss.Color("#458588")).Foreground(lipgloss.Color("#fbf1c7")).Bold(true).Padding(0, 1)
+
+	t.Normal = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebdbb2"))
+	t.Dimmed = lipgloss.NewStyle().Foreground(lipgloss.Color("#7c6f64"))
+	t.Error = lipgloss.NewStyle().Foreground(lipgloss.Color("#fb4934")).Bold(true)
+	t.Success = lipgloss.NewStyle().Foreground(lipgloss.Color("#b8bb26"))
+
+	t.TreeSelected = lipgloss.NewStyle().Background(lipgloss.Color("#3c3836")).Foreground(lipgloss.Color("#83a598"))
+	t.TreeConnection = lipgloss.NewStyle().Foreground(lipgloss.Color("#fabd2f")).Bold(true)
+	t.TreeDatabase = lipgloss.NewStyle().Foreground(lipgloss.Color("#8ec07c"))
+	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebdbb2"))
+	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#928374"))
+
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#83a598")).Background(lipgloss.Color("#282828")).Padding(0, 1)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598"))
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebdbb2"))
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#fabd2f")).Bold(true)
+
+	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598")).Underline(true)
+	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598")).Background(lipgloss.Color("#3c3836")).Underline(true)
+	t.TableCursorRow = lipgloss.NewStyle().Background(lipgloss.Color("#32302f")).Foreground(lipgloss.Color("#ebdbb2"))
+	t.TableCursorCell = lipgloss.NewStyle().Background(lipgloss.Color("#3c3836")).Foreground(lipgloss.Color("#fabd2f")).Bold(true)
+
+	return t
+}
+
 // Get returns the theme matching the given name (falls back to Terminal).
 func Get(name string) Theme {
 	switch name {
@@ -164,6 +304,14 @@ func Get(name string) Theme {
 		return Dark()
 	case "light":
 		return Light()
+	case "catppuccin-mocha":
+		return CatppuccinMocha()
+	case "catppuccin-latte":
+		return CatppuccinLatte()
+	case "nord":
+		return Nord()
+	case "gruvbox-dark":
+		return GruvboxDark()
 	default:
 		return Terminal()
 	}

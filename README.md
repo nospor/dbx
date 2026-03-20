@@ -16,7 +16,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Fullscreen** any panel with space+f
 - **Export** results to CSV or JSON
 - **Copy** cell or row to clipboard
-- **Themes**: terminal (default), dark, light — configurable in config file
+- **Themes**: terminal (default), dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark — configurable in config file
 
 ## Install
 
@@ -61,10 +61,12 @@ Config is stored in `~/.config/dbx/config.json`:
     "explorer_width_pct": 25,
     "editor_height_pct": 50
   },
-  "theme": "dark",
+  "theme": "catppuccin-mocha",
   "status_message_seconds": 5
 }
 ```
+
+Available `theme` values: `terminal`, `dark`, `light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, `gruvbox-dark`.
 
 **`database` field**: Leave empty to show all databases. Use a comma-separated list (e.g. `"db1,db2"`) to show specific databases.
 
