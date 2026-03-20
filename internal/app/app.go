@@ -59,6 +59,7 @@ type Model struct {
 	connForm *explorer.ConnForm
 	showForm bool
 	showHelp bool
+	helpScroll int
 
 	spinner    spinner.Model
 	isLoading  bool
@@ -188,6 +189,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDDLPopupKey(msg)
 		}
 
+		if m.showHelp {
+			return m.handleHelpPopupKey(msg)
+		}
+
 		if m.palette.IsVisible() {
 			var cmd tea.Cmd
 			m.palette, cmd = m.palette.Update(msg)
@@ -231,14 +236,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			if !editorInsert {
 				m.showHelp = !m.showHelp
+				if m.showHelp {
+					m.helpScroll = 0
+				}
 				return m, nil
 			}
 
-		case "esc":
-			if m.showHelp {
-				m.showHelp = false
-				return m, nil
-			}
 		}
 
 	case cmdpalette.ExecuteCommandMsg:
@@ -918,6 +921,95 @@ func (m *Model) fetchTableDDLCmd(connID, dbName, table string, isView bool) tea.
 	}
 }
 
+func (m Model) handleHelpPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	raw := strings.TrimLeft(helpScreenText, "\n")
+	lines := strings.Split(raw, "\n")
+	visible := m.helpPopupInnerLines()
+	maxTop := max(0, len(lines)-visible)
+	switch msg.String() {
+	case "esc", "enter", "?", "q":
+		m.showHelp = false
+		m.helpScroll = 0
+	case "j", "down":
+		if m.helpScroll < maxTop {
+			m.helpScroll++
+		}
+	case "k", "up":
+		if m.helpScroll > 0 {
+			m.helpScroll--
+		}
+	case "pgdown", "ctrl+f":
+		m.helpScroll += visible
+		if m.helpScroll > maxTop {
+			m.helpScroll = maxTop
+		}
+	case "pgup", "ctrl+b":
+		m.helpScroll -= visible
+		if m.helpScroll < 0 {
+			m.helpScroll = 0
+		}
+	case "g":
+		m.helpScroll = 0
+	case "G":
+		m.helpScroll = maxTop
+	}
+	return m, nil
+}
+
+func (m Model) helpPopupInnerLines() int {
+	return m.ddlPopupInnerLines()
+}
+
+// helpScreenText is the full help document (one screen line per \n).
+const helpScreenText = `
+  dbx — TUI Database Client
+
+  NAVIGATION
+    e           Focus explorer
+    q           Focus editor
+    r           Focus results
+    space       Open command palette (context-aware)
+    space+f     Toggle fullscreen for current panel
+    ?           Toggle this help
+
+  EXPLORER
+    j/k         Navigate up/down
+    enter/l     Expand/collapse node (incl. table columns)
+    h           Collapse current branch
+    s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
+    v           DDL popup for table/view (CREATE + indexes; driver-specific)
+
+  EDITOR (Normal mode)
+    i/a/o       Enter insert mode
+    enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
+    u           Undo edit (whole insert session until esc; normal edits undo separately)
+    ctrl+r      Redo edit
+    ctrl+p/n    Browse query history (replace buffer)
+    backspace   History popup (d = delete confirm panel, y confirm)
+    dd          Delete line
+    gg/G        Go to top/bottom
+
+  EDITOR (Insert mode)
+    esc         Return to normal mode
+    tab         Trigger autocomplete
+    ctrl+enter  Execute query
+    ctrl+r      Execute query
+
+  RESULTS
+    j/k         Navigate rows
+    h/l         Navigate columns
+    g/G         First/last row
+    s           Toggle mark on current row (for delete draft)
+    S           Mark current row + band-select while moving j/k/g/G (esc clears marks)
+    d           Append DELETE draft(s) for marked rows (or cursor row); WHERE uses PK cols when possible
+    v           View full selected cell popup (y copy, esc close)
+
+  COMMAND PALETTE (space)
+    Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen
+    Editor:     x=execute  c=clear  t=toggle explorer  f=fullscreen
+    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  f=fullscreen
+`
+
 func (m Model) handleDDLPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	lines := strings.Split(strings.ReplaceAll(m.ddlPopupText, "\r\n", "\n"), "\n")
 	visible := m.ddlPopupInnerLines()
@@ -1244,6 +1336,9 @@ func (m Model) View() string {
 		boxed := m.theme.BorderFocused.Width(m.width - 2).Height(m.height - 3).Render(content)
 		border := m.embedPanelTopTitle(boxed, m.panelTitleFor(m.fullscreenPanel), true)
 		view := lipgloss.JoinVertical(lipgloss.Left, border, m.renderStatusBar())
+		if m.showHelp {
+			view = overlayCentered(view, m.renderHelp(), m.width, m.height)
+		}
 		if m.ddlPopupOpen {
 			view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
 		}
@@ -1467,59 +1562,47 @@ func (m Model) renderStatusBar() string {
 }
 
 func (m Model) renderHelp() string {
-	help := `
-  dbx — TUI Database Client
+	boxW := m.width - 4
+	boxH := m.height - 2
+	if boxW < 20 {
+		boxW = m.width
+	}
+	if boxH < 6 {
+		boxH = m.height
+	}
+	innerW := boxW - 4
+	innerH := boxH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
 
-  NAVIGATION
-    e           Focus explorer
-    q           Focus editor
-    r           Focus results
-    space       Open command palette (context-aware)
-    space+f     Toggle fullscreen for current panel
-    ?           Toggle this help
+	raw := strings.TrimLeft(helpScreenText, "\n")
+	lines := strings.Split(raw, "\n")
+	maxTop := max(0, len(lines)-innerH)
+	scroll := min(m.helpScroll, maxTop)
 
-  EXPLORER
-    j/k         Navigate up/down
-    enter/l     Expand/collapse node (incl. table columns)
-    h           Collapse current branch
-    s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
-    v           DDL popup for table/view (CREATE + indexes; driver-specific)
+	var sb strings.Builder
+	for i := scroll; i < len(lines) && i < scroll+innerH; i++ {
+		sb.WriteString(ansi.Truncate(lines[i], innerW, "…"))
+		sb.WriteString("\n")
+	}
+	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
 
-  EDITOR (Normal mode)
-    i/a/o       Enter insert mode
-    enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
-    u           Undo edit (whole insert session until esc; normal edits undo separately)
-    ctrl+r      Redo edit
-    ctrl+p/n    Browse query history (replace buffer)
-    backspace   History popup (d = delete confirm panel, y confirm)
-    dd          Delete line
-    gg/G        Go to top/bottom
+	footerKey := "j/k  g/G  pgup/pgdn  enter/?/esc/q close"
+	var footer string
+	if maxTop == 0 {
+		footer = footerKey
+	} else {
+		end := min(scroll+innerH, len(lines))
+		footer = fmt.Sprintf("%d–%d / %d  ·  %s", scroll+1, end, len(lines), footerKey)
+	}
 
-  EDITOR (Insert mode)
-    esc         Return to normal mode
-    tab         Trigger autocomplete
-    ctrl+enter  Execute query
-    ctrl+r      Execute query
-
-  RESULTS
-    j/k         Navigate rows
-    h/l         Navigate columns
-    g/G         First/last row
-    s           Toggle mark on current row (for delete draft)
-    S           Mark current row + band-select while moving j/k/g/G (esc clears marks)
-    d           Append DELETE draft(s) for marked rows (or cursor row); WHERE uses PK cols when possible
-    v           View full selected cell popup (y copy, esc close)
-
-  COMMAND PALETTE (space)
-    Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen
-    Editor:     x=execute  c=clear  t=toggle explorer  f=fullscreen
-    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  f=fullscreen
-
-  Press ? or esc to close
-`
-	return m.theme.BorderFocused.Width(m.width - 6).Render(
-		lipgloss.NewStyle().Padding(1, 2).Render(strings.TrimLeft(help, "\n")),
-	)
+	popup := m.theme.BorderFocused.Width(boxW - 2).Height(boxH - 2).Render(body)
+	popup = m.embedDDLPopupBorderLabels(popup, "dbx — Help", footer)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
 }
 
 // spliceOverlayLine composites overlay onto base at startCol without breaking ANSI sequences.

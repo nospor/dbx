@@ -75,7 +75,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `q`      | Focus editor         |
 | `r`      | Focus results        |
 | `space`  | Open command palette |
-| `?`      | Toggle help          |
+| `?`      | Toggle help (fixed-size popup; `j`/`k`, `g`/`G`, PgUp/PgDn scroll; `enter`/`?`/`esc`/`q` close) |
 | `ctrl+c` | Quit                 |
 
 ### Explorer
