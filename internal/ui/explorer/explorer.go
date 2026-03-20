@@ -350,6 +350,51 @@ func (m *Model) SetChildren(connID, dbName string, children []*Node) {
 	}
 }
 
+// CollapseConnection folds a connection node and all descendants (used by app when switching tabs).
+func (m *Model) CollapseConnection(connID string) {
+	if connID == "" {
+		return
+	}
+	for _, n := range m.nodes {
+		if n.ConnID == connID && n.Kind == NodeConnection {
+			collapseSubtree(n)
+			m.flatten()
+			return
+		}
+	}
+}
+
+// CollapseDatabaseSubtree folds one database branch under a connection (tables/views/columns).
+func (m *Model) CollapseDatabaseSubtree(connID, dbName string) {
+	if connID == "" || dbName == "" {
+		return
+	}
+	var conn *Node
+	for _, n := range m.nodes {
+		if n.ConnID == connID && n.Kind == NodeConnection {
+			conn = n
+			break
+		}
+	}
+	if conn == nil {
+		return
+	}
+	for _, c := range conn.Children {
+		if c.Kind == NodeDatabase && c.DBName == dbName {
+			collapseSubtree(c)
+			m.flatten()
+			return
+		}
+	}
+}
+
+func collapseSubtree(n *Node) {
+	n.Expanded = false
+	for _, c := range n.Children {
+		collapseSubtree(c)
+	}
+}
+
 // SelectDatabaseNode expands the path to connID and dbName and moves the cursor there.
 // Returns false if the connection or database node is not present yet (e.g. databases not loaded).
 func (m *Model) SelectDatabaseNode(connID, dbName string) bool {

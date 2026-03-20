@@ -821,7 +821,11 @@ func (m *Model) persistOpenTabs() {
 // syncActiveFromEditorTab applies app + explorer state when the editor active tab changes (keyboard).
 func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 	var cmds []tea.Cmd
+	prevConn, prevDB := m.activeConnID, m.activeDB
 	if connKey == "" {
+		if prevConn != "" {
+			m.explorer.CollapseConnection(prevConn)
+		}
 		m.activeConnID = ""
 		m.activeDB = ""
 		m.results.SetResult(nil)
@@ -829,6 +833,15 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 		return cmds
 	}
 	connID, dbName := splitConnKey(connKey)
+	if prevConn != "" && (prevConn != connID || prevDB != dbName) {
+		if prevConn != connID {
+			m.explorer.CollapseConnection(prevConn)
+		} else if prevDB != "" {
+			m.explorer.CollapseDatabaseSubtree(prevConn, prevDB)
+		} else {
+			m.explorer.CollapseConnection(prevConn)
+		}
+	}
 	m.activeConnID = connID
 	m.activeDB = dbName
 	if m.explorer.SelectDatabaseNode(connID, dbName) {
