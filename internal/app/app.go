@@ -169,6 +169,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case results.DeleteDraftRequestMsg:
 		return m, m.buildDeleteDraftCmd(msg)
 
+	case results.UpdateDraftMsg:
+		if msg.Err != "" {
+			return m, m.setStatus(msg.Err)
+		}
+		m.editor.AppendInline(msg.SQL)
+		m.persistEditorDraft()
+		return m, m.setStatus("UPDATE draft appended — review before running.")
+
+	case results.UpdateDraftRequestMsg:
+		return m, m.buildUpdateDraftCmd(msg)
+
 	case explorer.ConnFormSubmitMsg:
 		return m.handleConnFormSubmit(msg)
 
@@ -895,6 +906,39 @@ func (m *Model) buildDeleteDraftCmd(msg results.DeleteDraftRequestMsg) tea.Cmd {
 	}
 }
 
+func (m *Model) buildUpdateDraftCmd(msg results.UpdateDraftRequestMsg) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		conn := m.findConn(m.activeConnID)
+		if conn == nil {
+			return results.UpdateDraftMsg{Err: "No active connection."}
+		}
+		drv, err := db.New(*conn)
+		if err != nil {
+			return results.UpdateDraftMsg{Err: err.Error()}
+		}
+		if err := drv.Connect(ctx, *conn); err != nil {
+			return results.UpdateDraftMsg{Err: err.Error()}
+		}
+		defer drv.Close()
+
+		schema, tbl := sqlutil.ParseTableRef(msg.TableExpr, msg.Driver)
+		var whereCols []string
+		pkCols, pkErr := drv.PrimaryKeyColumns(ctx, msg.Database, schema, tbl)
+		if pkErr == nil && len(pkCols) > 0 {
+			if matched := sqlutil.MatchResultColumnsForPK(msg.Columns, pkCols); matched != nil {
+				whereCols = matched
+			}
+		}
+		sqlText, err := sqlutil.UpdateForRow(msg.Driver, msg.TableExpr, msg.Columns, msg.Row, msg.ColName, msg.NewValue, whereCols)
+		if err != nil {
+			return results.UpdateDraftMsg{Err: err.Error()}
+		}
+		return results.UpdateDraftMsg{SQL: sqlText}
+	}
+}
+
 func (m *Model) fetchTableDDLCmd(connID, dbName, table string, isView bool) tea.Cmd {
 	conn := m.findConn(connID)
 	kind := "table"
@@ -1002,6 +1046,7 @@ const helpScreenText = `
     s           Toggle mark on current row (for delete draft)
     S           Mark current row + band-select while moving j/k/g/G (esc clears marks)
     d           Append DELETE draft(s) for marked rows (or cursor row); WHERE uses PK cols when possible
+    u           Update cell — popup to enter new value, generates UPDATE with PK WHERE
     v           View full selected cell popup (y copy, esc close)
 
   COMMAND PALETTE (space)
@@ -1423,7 +1468,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		}
 		return "Enter - run query · i - insert mode · u - undo · Ctrl+R - redo · backspace - query history · space - command palette"
 	case PanelResults:
-		return "s - toggle row mark · S - band select rows · d - append delete draft · v - full cell · space - command palette"
+		return "s - toggle row mark · S - band select rows · d - delete draft · u - update cell · v - full cell · space - command palette"
 	default:
 		return ""
 	}

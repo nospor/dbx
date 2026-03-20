@@ -307,6 +307,30 @@ func (m *Model) AppendAtEnd(text string) {
 	m.adjustScroll()
 }
 
+// AppendInline appends text at the end of the editor on the next line (no blank separator).
+// Used for accumulating UPDATE drafts without extra spacing.
+func (m *Model) AppendInline(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	m.pushUndoPoint()
+	m.vim.mode = ModeNormal
+	m.insertUndoSeeded = false
+	lines := m.lines()
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	chunk := strings.Split(text, "\n")
+	lines = append(lines, chunk...)
+	m.setLines(lines)
+	m.vim.row = len(m.lines()) - 1
+	m.vim.col = 0
+	m.compVisible = false
+	m.clampCursor()
+	m.adjustScroll()
+}
+
 func (m Model) Init() tea.Cmd {
 	return nil
 }

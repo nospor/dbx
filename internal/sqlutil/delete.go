@@ -113,6 +113,40 @@ func quoteIdent(driver, ident string) (string, error) {
 	}
 }
 
+// UpdateForRow builds a single UPDATE statement setting colName = newValue.
+// WHERE clause uses whereColumns if non-empty, otherwise all columns (same logic as DELETE).
+func UpdateForRow(driver, tableExpr string, columns []string, row []string, colName, newValue string, whereColumns []string) (string, error) {
+	if tableExpr == "" {
+		return "", fmt.Errorf("empty table")
+	}
+	if len(columns) == 0 {
+		return "", fmt.Errorf("no columns")
+	}
+	qcol, err := quoteIdent(driver, colName)
+	if err != nil {
+		return "", err
+	}
+	var setExpr string
+	if strings.EqualFold(newValue, "NULL") {
+		setExpr = qcol + " = NULL"
+	} else {
+		lit, err := formatLiteral(driver, newValue)
+		if err != nil {
+			return "", err
+		}
+		setExpr = qcol + " = " + lit
+	}
+	wc := whereColumns
+	if len(wc) == 0 {
+		wc = columns
+	}
+	where, err := rowWhereClause(driver, columns, row, wc)
+	if err != nil {
+		return "", err
+	}
+	return "UPDATE " + tableExpr + " SET " + setExpr + " WHERE " + where + ";", nil
+}
+
 func formatLiteral(driver, s string) (string, error) {
 	if reInt.MatchString(s) || reFloat.MatchString(s) {
 		return s, nil

@@ -49,6 +49,11 @@ type Model struct {
 	selectedRows map[int]struct{}
 	rangeSelect  bool
 	rangeAnchor  int
+
+	// Update-cell input popup
+	showUpdatePopup bool
+	updateInput     []rune
+	updateCursorPos int
 }
 
 // New creates a new results model.
@@ -107,6 +112,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	if m.result == nil {
 		return nil
+	}
+	if m.showUpdatePopup {
+		return m.handleUpdatePopupKey(msg)
 	}
 	if m.showCellPopup {
 		m.handleCellPopupKey(msg)
@@ -188,6 +196,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.syncRangeSelection()
 	case "d":
 		return m.deleteDraftCmd()
+	case "u":
+		m.openUpdatePopup()
 	}
 	return nil
 }
@@ -254,6 +264,9 @@ func (m Model) View() string {
 	if m.result.Error != "" {
 		errMsg := m.theme.Error.Render("Error: " + m.result.Error)
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(errMsg)
+	}
+	if m.showUpdatePopup {
+		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(m.renderUpdatePopup())
 	}
 	if m.showCellPopup {
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(m.renderCellPopup())
@@ -522,6 +535,107 @@ func (m *Model) deleteDraftCmd() tea.Cmd {
 	}
 }
 
+func (m *Model) openUpdatePopup() {
+	if m.result == nil || len(m.result.Rows) == 0 {
+		return
+	}
+	if m.cursorRow < 0 || m.cursorRow >= len(m.result.Rows) {
+		return
+	}
+	val := m.SelectedCell()
+	m.showUpdatePopup = true
+	m.updateInput = []rune(val)
+	m.updateCursorPos = len(m.updateInput)
+}
+
+func (m *Model) handleUpdatePopupKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		m.showUpdatePopup = false
+		m.updateInput = nil
+		m.updateCursorPos = 0
+		return nil
+	case "enter":
+		cmd := m.updateDraftCmd()
+		m.showUpdatePopup = false
+		m.updateInput = nil
+		m.updateCursorPos = 0
+		return cmd
+	case "backspace":
+		if m.updateCursorPos > 0 {
+			m.updateInput = append(m.updateInput[:m.updateCursorPos-1], m.updateInput[m.updateCursorPos:]...)
+			m.updateCursorPos--
+		}
+		return nil
+	case "delete":
+		if m.updateCursorPos < len(m.updateInput) {
+			m.updateInput = append(m.updateInput[:m.updateCursorPos], m.updateInput[m.updateCursorPos+1:]...)
+		}
+		return nil
+	case "left":
+		if m.updateCursorPos > 0 {
+			m.updateCursorPos--
+		}
+		return nil
+	case "right":
+		if m.updateCursorPos < len(m.updateInput) {
+			m.updateCursorPos++
+		}
+		return nil
+	case "home", "ctrl+a":
+		m.updateCursorPos = 0
+		return nil
+	case "end", "ctrl+e":
+		m.updateCursorPos = len(m.updateInput)
+		return nil
+	}
+
+	if len(msg.Runes) > 0 {
+		for _, r := range msg.Runes {
+			m.updateInput = append(m.updateInput[:m.updateCursorPos], append([]rune{r}, m.updateInput[m.updateCursorPos:]...)...)
+			m.updateCursorPos++
+		}
+	}
+	return nil
+}
+
+func (m *Model) updateDraftCmd() tea.Cmd {
+	if m.result == nil || len(m.result.Rows) == 0 {
+		return func() tea.Msg { return UpdateDraftMsg{Err: "No rows."} }
+	}
+	if strings.TrimSpace(m.result.SourceSQL) == "" {
+		return func() tea.Msg {
+			return UpdateDraftMsg{Err: "No source query — run a SELECT first, then use u."}
+		}
+	}
+	table, ok := sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	if !ok || table == "" {
+		return func() tea.Msg {
+			return UpdateDraftMsg{Err: "Can't infer table name — use a simple SELECT from one table."}
+		}
+	}
+	row := m.result.Rows[m.cursorRow]
+	cp := make([]string, len(row))
+	copy(cp, row)
+	colName := m.result.Columns[m.cursorCol]
+	newVal := string(m.updateInput)
+	driver := m.result.Driver
+	database := m.result.Database
+	cols := append([]string(nil), m.result.Columns...)
+	tbl := table
+	return func() tea.Msg {
+		return UpdateDraftRequestMsg{
+			Driver:    driver,
+			Database:  database,
+			TableExpr: tbl,
+			Columns:   cols,
+			Row:       cp,
+			ColName:   colName,
+			NewValue:  newVal,
+		}
+	}
+}
+
 // Result returns the current query result, or nil.
 func (m Model) Result() *QueryResult {
 	return m.result
@@ -749,4 +863,83 @@ func (m Model) renderPopupBorderLine(width int, label string, top bool) string {
 	}
 	style := lipgloss.NewStyle().Foreground(m.theme.BorderFocused.GetBorderTopForeground())
 	return style.Render(line)
+}
+
+func (m Model) renderUpdatePopup() string {
+	colName := ""
+	if m.cursorCol >= 0 && m.cursorCol < len(m.result.Columns) {
+		colName = m.result.Columns[m.cursorCol]
+	}
+	title := fmt.Sprintf("Update %s (row %d)", colName, m.cursorRow+1)
+	footer := "Enter - confirm · Esc - cancel"
+
+	boxW := m.width * 3 / 4
+	if boxW < 40 {
+		boxW = m.width - 4
+	}
+	if boxW < 10 {
+		boxW = m.width
+	}
+	boxH := 5
+	innerW := boxW - 4
+	if innerW < 1 {
+		innerW = 1
+	}
+
+	inputStr := string(m.updateInput)
+	displayed := inputStr
+	cursorPos := m.updateCursorPos
+
+	if ansi.StringWidth(displayed) > innerW-1 {
+		start := cursorPos - innerW/2
+		if start < 0 {
+			start = 0
+		}
+		end := start + innerW - 1
+		runes := m.updateInput
+		if end > len(runes) {
+			end = len(runes)
+			start = end - innerW + 1
+			if start < 0 {
+				start = 0
+			}
+		}
+		displayed = string(runes[start:end])
+		cursorPos = cursorPos - start
+	}
+
+	var sb strings.Builder
+	sb.WriteString(displayed)
+	dispW := ansi.StringWidth(displayed)
+	if dispW < innerW {
+		sb.WriteString(strings.Repeat(" ", innerW-dispW))
+	}
+	line := sb.String()
+
+	runes := []rune(line)
+	if cursorPos < 0 {
+		cursorPos = 0
+	}
+	if cursorPos > len(runes) {
+		cursorPos = len(runes)
+	}
+	before := string(runes[:cursorPos])
+	cursorChar := " "
+	if cursorPos < len(runes) {
+		cursorChar = string(runes[cursorPos])
+	}
+	after := ""
+	if cursorPos+1 < len(runes) {
+		after = string(runes[cursorPos+1:])
+	}
+
+	cursorStyle := lipgloss.NewStyle().Reverse(true)
+	body := before + cursorStyle.Render(cursorChar) + after
+
+	popup := m.theme.BorderFocused.
+		Width(boxW - 2).
+		Height(boxH - 2).
+		Render(lipgloss.NewStyle().Width(innerW).Render(body))
+	popup = m.embedPopupBorderLabels(popup, title, footer)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
 }

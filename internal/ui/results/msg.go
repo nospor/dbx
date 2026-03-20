@@ -14,3 +14,20 @@ type DeleteDraftRequestMsg struct {
 	Columns   []string
 	Rows      [][]string
 }
+
+// UpdateDraftMsg carries the generated UPDATE statement (or error) back from the app.
+type UpdateDraftMsg struct {
+	SQL string
+	Err string
+}
+
+// UpdateDraftRequestMsg asks the app to introspect PKs and build an UPDATE statement.
+type UpdateDraftRequestMsg struct {
+	Driver    string
+	Database  string
+	TableExpr string
+	Columns   []string
+	Row       []string
+	ColName   string // column being updated
+	NewValue  string // new value entered by the user
+}

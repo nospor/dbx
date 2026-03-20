@@ -121,6 +121,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `s`       | Toggle **mark** on the current row (highlighted); use for multi-row actions |
 | `S`       | Start **band select**: current row is marked; move with `j`/`k`/`g`/`G` to extend/shrink the marked range (all rows from anchor through cursor, inclusive) |
 | `d`       | Append **DELETE** draft(s) to the query editor for all marked rows, or for the cursor row if none marked. Requires the last result from a **simple** `SELECT` of **one** base table (no `WITH`, `JOIN`, subquery in `FROM`). The `WHERE` clause uses the table’s **primary key columns** when they appear in the result; otherwise it falls back to matching **all** visible columns. Review before executing. |
+| `u`       | **Update cell** — opens an input popup pre-filled with the current cell value. Enter a new value and press `Enter` to append an `UPDATE` statement to the query editor (`Esc` to cancel). Uses PK columns in the `WHERE` clause when possible. Multiple updates are appended without blank line separation so batch execution treats them together. |
 | `esc`     | Clear marks / exit band mode |
 | `v`       | View full cell in popup (`y` to copy) |
 
