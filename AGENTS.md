@@ -29,7 +29,6 @@ dbx/
 │   │   ├── results/        # Table view, copy, export, horizontal scroll
 │   │   └── theme/          # Light/dark/terminal themes
 │   └── util/               # Clipboard (copy/paste)
-├── spec.md                 # Original feature spec
 └── README.md               # User-facing docs
 ```
 
