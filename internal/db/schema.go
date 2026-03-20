@@ -1,9 +1,6 @@
 package db
 
-import (
-	"database/sql"
-	"fmt"
-)
+import "database/sql"
 
 // scanStringColumn scans a single-string-column result set into a slice.
 func scanStringColumn(rows *sql.Rows) ([]string, error) {
@@ -37,11 +34,7 @@ func scanSQLRows(rows *sql.Rows) (*QueryResult, error) {
 		}
 		row := make([]string, len(cols))
 		for i, v := range vals {
-			if v == nil {
-				row[i] = "NULL"
-			} else {
-				row[i] = fmt.Sprintf("%v", v)
-			}
+			row[i] = formatSQLValue(v)
 		}
 		resultRows = append(resultRows, row)
 	}

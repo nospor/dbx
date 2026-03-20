@@ -258,11 +258,7 @@ func scanRows(rows pgx.Rows) (*QueryResult, error) {
 		}
 		row := make([]string, len(vals))
 		for i, v := range vals {
-			if v == nil {
-				row[i] = "NULL"
-			} else {
-				row[i] = fmt.Sprintf("%v", v)
-			}
+			row[i] = formatSQLValue(v)
 		}
 		resultRows = append(resultRows, row)
 	}
