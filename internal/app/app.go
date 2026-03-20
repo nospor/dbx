@@ -173,7 +173,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != "" {
 			return m, m.setStatus(msg.Err)
 		}
-		m.editor.AppendInline(msg.SQL)
+		last := strings.ToUpper(strings.TrimSpace(m.editor.LastNonBlankLine()))
+		if strings.HasPrefix(last, "UPDATE ") {
+			m.editor.AppendInline(msg.SQL)
+		} else {
+			m.editor.AppendAtEnd(msg.SQL)
+		}
 		m.persistEditorDraft()
 		return m, m.setStatus("UPDATE draft appended — review before running.")
 

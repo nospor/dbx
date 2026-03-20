@@ -307,8 +307,18 @@ func (m *Model) AppendAtEnd(text string) {
 	m.adjustScroll()
 }
 
+// LastNonBlankLine returns the last non-empty line in the buffer (trimmed), or "".
+func (m *Model) LastNonBlankLine() string {
+	lines := m.lines()
+	for i := len(lines) - 1; i >= 0; i-- {
+		if s := strings.TrimSpace(lines[i]); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 // AppendInline appends text at the end of the editor on the next line (no blank separator).
-// Used for accumulating UPDATE drafts without extra spacing.
 func (m *Model) AppendInline(text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
