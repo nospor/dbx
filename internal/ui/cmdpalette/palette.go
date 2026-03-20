@@ -111,7 +111,7 @@ func (m Model) View() string {
 	for _, cmd := range m.commands {
 		key := m.theme.PaletteKey.Render(cmd.Key)
 		desc := m.theme.PaletteItem.Render(cmd.Description)
-		if w := lipgloss.Width(key + "  " + desc); w > innerW {
+		if w := lipgloss.Width(" " + key + "  " + desc); w > innerW {
 			innerW = w
 		}
 		plain := " " + cmd.Key + "  " + cmd.Description
@@ -136,7 +136,7 @@ func (m Model) View() string {
 			line = lipgloss.NewStyle().Reverse(true).Width(innerW).Align(lipgloss.Left).Render(
 				" " + cmd.Key + "  " + cmd.Description)
 		} else {
-			line = row.Render(key + "  " + desc)
+			line = row.Render(" " + key + "  " + desc)
 		}
 		sb.WriteString(line + "\n")
 	}
