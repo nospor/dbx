@@ -45,9 +45,14 @@ type Theme struct {
 
 // Terminal theme — uses terminal default colors so it works with any terminal palette.
 func Terminal() Theme {
+	accentBg := lipgloss.Color("6")       // calmer cyan instead of vivid blue
+	accentFg := lipgloss.Color("0")       // dark text on accent backgrounds
+	accentSoftBg := lipgloss.Color("8")   // muted dark-gray selection background
+	accentSoftFg := lipgloss.Color("15")  // light text for contrast
+
 	focused := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("12"))
+		BorderForeground(accentBg)
 
 	unfocused := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -59,7 +64,7 @@ func Terminal() Theme {
 		BorderUnfocused: unfocused,
 
 		StatusBar:     lipgloss.NewStyle().Background(lipgloss.Color("8")).Foreground(lipgloss.Color("15")).Padding(0, 1),
-		StatusBarMode: lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
+		StatusBarMode: lipgloss.NewStyle().Background(accentBg).Foreground(accentFg).Bold(true).Padding(0, 1),
 
 		Normal:  lipgloss.NewStyle(),
 		Dimmed:  lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
@@ -67,23 +72,23 @@ func Terminal() Theme {
 		Error:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 		Success: lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
 
-		TreeSelected:   lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")),
+		TreeSelected:   lipgloss.NewStyle().Background(accentSoftBg).Foreground(accentSoftFg),
 		TreeConnection: lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
 		TreeDatabase:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
 		TreeTable:      lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
 		TreeColumn:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 
-		PaletteBox:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("12")).Padding(0, 1),
-		PaletteTitle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")),
+		PaletteBox:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accentBg).Padding(0, 1),
+		PaletteTitle: lipgloss.NewStyle().Bold(true).Foreground(accentBg),
 		PaletteItem:  lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
 		PaletteKey:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
 
-		TableHeader:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Underline(true),
-		TableHeaderActive: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("4")).Underline(true),
+		TableHeader:       lipgloss.NewStyle().Bold(true).Foreground(accentBg).Underline(true),
+		TableHeaderActive: lipgloss.NewStyle().Bold(true).Foreground(accentFg).Background(accentBg).Underline(true),
 		TableRow:          lipgloss.NewStyle(),
 		TableRowAlt:       lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
-		TableCursorRow:    lipgloss.NewStyle().Background(lipgloss.Color("8")).Foreground(lipgloss.Color("15")),
-		TableCursorCell:   lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true),
+		TableCursorRow:    lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("7")),
+		TableCursorCell:   lipgloss.NewStyle().Background(accentSoftBg).Foreground(accentSoftFg).Bold(true),
 	}
 }
 
