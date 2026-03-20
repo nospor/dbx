@@ -57,6 +57,10 @@ type Driver interface {
 	// database is the active catalog when applicable; schema/table are logical names from the object.
 	PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error)
 
+	// TableDDL returns SQL to recreate a table (CREATE TABLE + indexes/constraints as applicable)
+	// or a view (CREATE VIEW). Quality is driver-specific (e.g. MySQL uses SHOW CREATE).
+	TableDDL(ctx context.Context, database, table string, isView bool) (string, error)
+
 	// Query executes a SELECT-like statement and returns rows.
 	Query(ctx context.Context, database, sql string) (*QueryResult, error)
 

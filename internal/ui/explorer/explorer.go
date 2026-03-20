@@ -182,6 +182,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					}
 				}
 			}
+		case "v":
+			// Table/view DDL popup (handled in app)
+			if len(m.flat) > 0 {
+				n := m.flat[m.cursor]
+				if n.Kind == NodeTable || n.Kind == NodeView {
+					m.pendingSel = &Node{
+						Kind:   n.Kind,
+						Label:  n.Label,
+						ConnID: n.ConnID,
+						DBName: n.DBName,
+						Detail: "ddl",
+					}
+				}
+			}
 		case "g":
 			m.cursor = 0
 		case "G":

@@ -85,6 +85,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `enter` / `l` | Expand/collapse (connections, databases, tables) |
 | `h`           | Collapse current branch (from child -> parent) |
 | `s`           | Append quick `SELECT * … LIMIT/TOP 100` at end of editor (blank line before it), run it; focus stays here (`r` for results) |
+| `v`           | Open popup with recreate DDL for the focused table or view (`y` copy, scroll keys, `esc` close; MySQL: `SHOW CREATE`, Postgres/SQLite/MSSQL: assembled DDL) |
 | `g` / `G`     | First / last item                     |
 
 ### Editor (Normal mode)

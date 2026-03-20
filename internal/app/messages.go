@@ -7,6 +7,13 @@ import (
 	"github.com/robertn/dbx/internal/ui/explorer"
 )
 
+// tableDDLMsg carries CREATE TABLE/VIEW-style DDL from introspection.
+type tableDDLMsg struct {
+	title string
+	ddl   string
+	err   error
+}
+
 // dbQueryResultMsg carries the result of an async query.
 type dbQueryResultMsg struct {
 	result    *db.QueryResult

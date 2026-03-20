@@ -65,6 +65,12 @@ type Model struct {
 
 	statusMsg     string
 	statusExpiry  time.Time
+
+	// Explorer table/view DDL popup (v)
+	ddlPopupOpen   bool
+	ddlPopupTitle  string
+	ddlPopupText   string
+	ddlPopupScroll int
 }
 
 func newEditorWithDrafts(t theme.Theme, drafts map[string]string) editor.Model {
@@ -140,6 +146,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tableDDLMsg:
+		if msg.err != nil {
+			return m, m.setStatus("DDL: "+msg.err.Error())
+		}
+		m.ddlPopupOpen = true
+		m.ddlPopupTitle = msg.title
+		m.ddlPopupText = msg.ddl
+		m.ddlPopupScroll = 0
+		return m, m.setStatus("")
+
 	case results.DeleteDraftMsg:
 		if msg.Err != "" {
 			return m, m.setStatus(msg.Err)
@@ -166,6 +182,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated, cmd := m.connForm.Update(msg)
 			m.connForm = &updated
 			return m, cmd
+		}
+
+		if m.ddlPopupOpen {
+			return m.handleDDLPopupKey(msg)
 		}
 
 		if m.palette.IsVisible() {
@@ -715,6 +735,13 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 		}
 
 	case explorer.NodeTable, explorer.NodeView:
+		if node.Detail == "ddl" {
+			m.activateExplorerDatabase(node.ConnID, node.DBName)
+			isView := node.Kind == explorer.NodeView
+			cmds = append(cmds, m.setStatus("Loading DDL..."))
+			cmds = append(cmds, m.fetchTableDDLCmd(node.ConnID, node.DBName, node.Label, isView))
+			return cmds
+		}
 		m.activateExplorerDatabase(node.ConnID, node.DBName)
 		if node.Detail == "select" {
 			driver := ""
@@ -863,6 +890,166 @@ func (m *Model) buildDeleteDraftCmd(msg results.DeleteDraftRequestMsg) tea.Cmd {
 		}
 		return results.DeleteDraftMsg{SQL: sqlText}
 	}
+}
+
+func (m *Model) fetchTableDDLCmd(connID, dbName, table string, isView bool) tea.Cmd {
+	conn := m.findConn(connID)
+	kind := "table"
+	if isView {
+		kind = "view"
+	}
+	title := fmt.Sprintf("DDL (%s: %s)", kind, table)
+	return func() tea.Msg {
+		if conn == nil {
+			return tableDDLMsg{title: title, err: fmt.Errorf("no connection")}
+		}
+		drv, err := db.New(*conn)
+		if err != nil {
+			return tableDDLMsg{title: title, err: err}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := drv.Connect(ctx, *conn); err != nil {
+			return tableDDLMsg{title: title, err: err}
+		}
+		defer drv.Close()
+		ddl, err := drv.TableDDL(ctx, dbName, table, isView)
+		return tableDDLMsg{title: title, ddl: ddl, err: err}
+	}
+}
+
+func (m Model) handleDDLPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	lines := strings.Split(strings.ReplaceAll(m.ddlPopupText, "\r\n", "\n"), "\n")
+	visible := m.ddlPopupInnerLines()
+	maxTop := max(0, len(lines)-visible)
+	switch msg.String() {
+	case "esc", "enter", "q":
+		m.ddlPopupOpen = false
+		m.ddlPopupText = ""
+		m.ddlPopupTitle = ""
+		m.ddlPopupScroll = 0
+	case "y":
+		if m.ddlPopupText != "" {
+			_ = util.Copy(m.ddlPopupText)
+		}
+	case "j", "down":
+		if m.ddlPopupScroll < maxTop {
+			m.ddlPopupScroll++
+		}
+	case "k", "up":
+		if m.ddlPopupScroll > 0 {
+			m.ddlPopupScroll--
+		}
+	case "pgdown", "ctrl+f":
+		m.ddlPopupScroll += visible
+		if m.ddlPopupScroll > maxTop {
+			m.ddlPopupScroll = maxTop
+		}
+	case "pgup", "ctrl+b":
+		m.ddlPopupScroll -= visible
+		if m.ddlPopupScroll < 0 {
+			m.ddlPopupScroll = 0
+		}
+	case "g":
+		m.ddlPopupScroll = 0
+	case "G":
+		m.ddlPopupScroll = maxTop
+	}
+	return m, nil
+}
+
+func (m Model) ddlPopupInnerLines() int {
+	boxH := m.height - 2
+	if boxH < 6 {
+		boxH = m.height
+	}
+	innerH := boxH - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	return innerH
+}
+
+func (m Model) renderDDLPopup() string {
+	boxW := m.width - 4
+	boxH := m.height - 2
+	if boxW < 20 {
+		boxW = m.width
+	}
+	if boxH < 6 {
+		boxH = m.height
+	}
+	innerW := boxW - 4
+	innerH := boxH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+
+	lines := strings.Split(strings.ReplaceAll(m.ddlPopupText, "\r\n", "\n"), "\n")
+	maxTop := max(0, len(lines)-innerH)
+	scroll := min(m.ddlPopupScroll, maxTop)
+
+	var sb strings.Builder
+	for i := scroll; i < len(lines) && i < scroll+innerH; i++ {
+		sb.WriteString(ansi.Truncate(lines[i], innerW, "…"))
+		sb.WriteString("\n")
+	}
+	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
+	title := m.ddlPopupTitle
+	if title == "" {
+		title = "DDL"
+	}
+	footer := "y copy  j/k  g/G  pgup/pgdn  esc close"
+	if maxTop == 0 {
+		footer = "y copy  esc close"
+	}
+	popup := m.theme.BorderFocused.Width(boxW-2).Height(boxH-2).Render(body)
+	popup = m.embedDDLPopupBorderLabels(popup, title, footer)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+}
+
+func (m Model) embedDDLPopupBorderLabels(boxed, topLabel, bottomLabel string) string {
+	ls := strings.Split(boxed, "\n")
+	if len(ls) < 2 {
+		return boxed
+	}
+	width := ansi.StringWidth(ls[0])
+	ls[0] = m.renderDDLPopupBorderLine(width, topLabel, true)
+	ls[len(ls)-1] = m.renderDDLPopupBorderLine(width, bottomLabel, false)
+	return strings.Join(ls, "\n")
+}
+
+func (m Model) renderDDLPopupBorderLine(width int, label string, top bool) string {
+	if width < 3 {
+		return strings.Repeat("─", max(0, width))
+	}
+	left, right := "╭", "╮"
+	if !top {
+		left, right = "╰", "╯"
+	}
+	sep := "─"
+	mid := width - 2
+	part := sep + " " + label + " "
+	if ansi.StringWidth(part) > mid {
+		inner := mid - ansi.StringWidth(sep+"  ")
+		if inner < 1 {
+			part = strings.Repeat(sep, mid)
+		} else {
+			part = sep + " " + ansi.Truncate(label, inner, "…") + " "
+		}
+	}
+	fill := max(0, mid-ansi.StringWidth(part))
+	var line string
+	if top {
+		line = left + part + strings.Repeat(sep, fill) + right
+	} else {
+		line = left + strings.Repeat(sep, fill) + part + right
+	}
+	st := lipgloss.NewStyle().Foreground(m.theme.BorderFocused.GetBorderTopForeground())
+	return st.Render(line)
 }
 
 func (m *Model) execQueryCmd(query string) tea.Cmd {
@@ -1056,7 +1243,11 @@ func (m Model) View() string {
 		content := m.renderPanelContent(m.fullscreenPanel)
 		boxed := m.theme.BorderFocused.Width(m.width - 2).Height(m.height - 3).Render(content)
 		border := m.embedPanelTopTitle(boxed, m.panelTitleFor(m.fullscreenPanel), true)
-		return lipgloss.JoinVertical(lipgloss.Left, border, m.renderStatusBar())
+		view := lipgloss.JoinVertical(lipgloss.Left, border, m.renderStatusBar())
+		if m.ddlPopupOpen {
+			view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
+		}
+		return view
 	}
 
 	explorerView := ""
@@ -1091,6 +1282,10 @@ func (m Model) View() string {
 	if m.showHelp {
 		helpView := m.renderHelp()
 		view = overlayCentered(view, helpView, m.width, m.height)
+	}
+
+	if m.ddlPopupOpen {
+		view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
 	}
 
 	return view
@@ -1288,6 +1483,7 @@ func (m Model) renderHelp() string {
     enter/l     Expand/collapse node (incl. table columns)
     h           Collapse current branch
     s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
+    v           DDL popup for table/view (CREATE + indexes; driver-specific)
 
   EDITOR (Normal mode)
     i/a/o       Enter insert mode
