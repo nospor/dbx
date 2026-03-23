@@ -1436,17 +1436,20 @@ func (m Model) renderTabCloseConfirmPopup() string {
 	body := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(inner)
 	popup := m.theme.BorderFocused.Width(boxW - 2).Render(body)
 	popup = m.embedDDLPopupBorderLabels(popup, "Close tab", "y / enter confirm · n · esc · q cancel")
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	// Do not use lipgloss.Place(full screen): View() composites with overlayCentered, which
+	// splices this box onto the existing layout. A full-screen Place buffer would replace every line.
+	return popup
 }
 
 func (m Model) renderDDLPopup() string {
-	boxW := m.width - 4
-	boxH := m.height - 2
+	// Smaller than the help overlay so more of the app stays visible; still scrollable.
+	boxW := min(m.width-4, max(40, m.width*75/100))
+	boxH := min(m.height-2, max(12, m.height*68/100))
 	if boxW < 20 {
-		boxW = m.width
+		boxW = min(m.width-2, 20)
 	}
 	if boxH < 6 {
-		boxH = m.height
+		boxH = min(m.height-2, 6)
 	}
 	innerW := boxW - 4
 	innerH := boxH - 2
@@ -1477,7 +1480,8 @@ func (m Model) renderDDLPopup() string {
 	}
 	popup := m.theme.BorderFocused.Width(boxW-2).Height(boxH-2).Render(body)
 	popup = m.embedDDLPopupBorderLabels(popup, title, footer)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	// Return the bordered box only; View() uses overlayCentered (see renderTabCloseConfirmPopup).
+	return popup
 }
 
 func (m Model) embedDDLPopupBorderLabels(boxed, topLabel, bottomLabel string) string {
@@ -1792,7 +1796,22 @@ func (m Model) View() string {
 	}
 
 	if m.tabCloseConfirm {
-		view = overlayCentered(view, m.renderTabCloseConfirmPopup(), m.width, m.height)
+		popup := m.renderTabCloseConfirmPopup()
+		exW := 0
+		if explorerView != "" {
+			if ls := strings.Split(explorerView, "\n"); len(ls) > 0 {
+				exW = lipgloss.Width(ls[0])
+			}
+		}
+		edLines := strings.Split(editorView, "\n")
+		edH := len(edLines)
+		edW := 0
+		for _, ln := range edLines {
+			if w := lipgloss.Width(ln); w > edW {
+				edW = w
+			}
+		}
+		view = overlayInEditorPane(view, popup, m.width, exW, 0, edW, edH)
 	}
 
 	return view
@@ -2075,7 +2094,8 @@ func (m Model) renderHelp() string {
 
 	popup := m.theme.BorderFocused.Width(boxW - 2).Height(boxH - 2).Render(body)
 	popup = m.embedDDLPopupBorderLabels(popup, "dbx — Help", footer)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	// Return the bordered box only; View() uses overlayCentered (see renderTabCloseConfirmPopup).
+	return popup
 }
 
 // spliceOverlayLine composites overlay onto base at startCol without breaking ANSI sequences.
@@ -2140,6 +2160,43 @@ func overlayCentered(base, overlay string, width, height int) string {
 		row := startRow + i
 		if row >= len(baseLines) {
 			break
+		}
+		baseLines[row] = spliceOverlayLine(baseLines[row], ol, startCol, width)
+	}
+	return strings.Join(baseLines, "\n")
+}
+
+// overlayInEditorPane places the overlay centered in the query-editor rectangle (rx, ry, rw, rh),
+// with a slight upward bias so it sits a bit above the pane’s vertical midpoint.
+func overlayInEditorPane(base, overlay string, width, rx, ry, rw, rh int) string {
+	baseLines := strings.Split(base, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+	overlayH := len(overlayLines)
+	overlayW := 0
+	for _, l := range overlayLines {
+		if lw := lipgloss.Width(l); lw > overlayW {
+			overlayW = lw
+		}
+	}
+	startRow := ry + (rh-overlayH)/2
+	if startRow > ry {
+		startRow--
+	}
+	startCol := rx + (rw-overlayW)/2
+	if startRow < 0 {
+		startRow = 0
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	if rh > 0 && overlayH > rh {
+		startRow = ry
+	}
+
+	for i, ol := range overlayLines {
+		row := startRow + i
+		if row < 0 || row >= len(baseLines) {
+			continue
 		}
 		baseLines[row] = spliceOverlayLine(baseLines[row], ol, startCol, width)
 	}
