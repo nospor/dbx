@@ -205,7 +205,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != "" {
 			return m, m.setStatus(msg.Err)
 		}
-		m.editor.AppendAtEnd(msg.SQL)
+		m.appendDeleteUpdateDraft(msg.SQL)
 		m.persistEditorDraft()
 		m.setFocus(PanelEditor)
 		return m, m.setStatus("DELETE draft appended — review before running.")
@@ -217,12 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != "" {
 			return m, m.setStatus(msg.Err)
 		}
-		last := strings.ToUpper(strings.TrimSpace(m.editor.LastNonBlankLine()))
-		if strings.HasPrefix(last, "UPDATE ") {
-			m.editor.AppendInline(msg.SQL)
-		} else {
-			m.editor.AppendAtEnd(msg.SQL)
-		}
+		m.appendDeleteUpdateDraft(msg.SQL)
 		m.persistEditorDraft()
 		return m, m.setStatus("UPDATE draft appended — review before running.")
 
@@ -1143,6 +1138,18 @@ func (m *Model) fetchColumnsCmd(connID, dbName, table string) tea.Cmd {
 		defer driver.Close()
 		cols, err := driver.Columns(ctx, dbName, table)
 		return dbColumnsMsg{connID: connID, dbName: dbName, table: table, columns: cols, err: err}
+	}
+}
+
+// appendDeleteUpdateDraft appends generated DELETE/UPDATE SQL. Inserts a blank
+// line before the first draft when the buffer already has content; chains
+// further DELETE/UPDATE statements without an extra blank line.
+func (m *Model) appendDeleteUpdateDraft(sql string) {
+	last := strings.ToUpper(strings.TrimSpace(m.editor.LastNonBlankLine()))
+	if strings.HasPrefix(last, "UPDATE ") || strings.HasPrefix(last, "DELETE ") {
+		m.editor.AppendInline(sql)
+	} else {
+		m.editor.AppendAtEnd(sql)
 	}
 }
 
