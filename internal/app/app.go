@@ -945,7 +945,13 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 	m.applyResultsForTab(connID, dbName)
 	m.pruneTabResultsCache()
 	if m.explorer.SelectDatabaseNode(connID, dbName) {
-		// explorer cursor aligned
+		// Aligning the tree does not run the same path as Enter on a database (handleExplorerSelect),
+		// so schema may never load (e.g. switching to another restored tab). Fetch if not loaded yet.
+		sk := schemaKey(connID, dbName)
+		if _, ok := m.schemaTables[sk]; !ok {
+			cmds = append(cmds, m.setStatus("Loading schema..."))
+			cmds = append(cmds, m.fetchSchemaCmd(connID, dbName))
+		}
 	} else if connID != "" && dbName != "" {
 		m.pendingExplorerSelectConnID = connID
 		m.pendingExplorerSelectDB = dbName
