@@ -338,12 +338,19 @@ func (m Model) View() string {
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(errMsg)
 	}
 	if m.showUpdatePopup {
-		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(m.renderUpdatePopup())
+		base := m.renderResultsTable()
+		return overlayCentered(base, m.renderUpdatePopup(), m.width, m.height)
 	}
 	if m.showCellPopup {
-		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(m.renderCellPopup())
+		base := m.renderResultsTable()
+		return overlayCentered(base, m.renderCellPopup(), m.width, m.height)
 	}
 
+	return m.renderResultsTable()
+}
+
+// renderResultsTable draws the full results grid (status, header, rows, h-scroll bar) at panel size.
+func (m Model) renderResultsTable() string {
 	var sb strings.Builder
 
 	// Status bar
@@ -935,9 +942,9 @@ func (m Model) renderCellPopup() string {
 	if m.cellPopupJSONFormatted {
 		title = fmt.Sprintf("Cell Value — JSON formatted (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
 	}
-	footer := "y: copy · f: JSON · h/l: col · j/k: row · PgDn/PgUp: scroll · g/G: top/bottom · esc: close"
+	footer := "y: copy · f: JSON · h/l: col · j/k: row · PgDn/PgUp: scroll · g/G: top/bottom · Esc: close"
 	if maxTop == 0 {
-		footer = "y: copy · f: JSON · h/l: col · j/k: row · esc: close"
+		footer = "y: copy · f: JSON · h/l: col · j/k: row · Esc: close"
 	}
 	popup := m.theme.BorderFocused.
 		Width(boxW - 2).
@@ -945,7 +952,7 @@ func (m Model) renderCellPopup() string {
 		Render(body)
 	popup = m.embedPopupBorderLabels(popup, title, footer)
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	return popup
 }
 
 func (m Model) embedPopupBorderLabels(boxed, topLabel, bottomLabel string) string {
@@ -1004,7 +1011,7 @@ func (m Model) renderUpdatePopup() string {
 		colName = m.result.Columns[m.cursorCol]
 	}
 	title := fmt.Sprintf("Update %s (row %d)", colName, m.cursorRow+1)
-	footer := "Enter - confirm · Esc - cancel"
+	footer := "Enter: confirm · Esc: cancel"
 
 	boxW := m.width * 3 / 4
 	if boxW < 40 {
@@ -1074,5 +1081,73 @@ func (m Model) renderUpdatePopup() string {
 		Height(boxH - 2).
 		Render(lipgloss.NewStyle().Width(innerW).Render(body))
 	popup = m.embedPopupBorderLabels(popup, title, footer)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup)
+	return popup
+}
+
+// spliceOverlayLine composites overlay onto base at startCol without breaking ANSI sequences.
+func spliceOverlayLine(baseLine, overlay string, startCol, totalWidth int) string {
+	ow := lipgloss.Width(overlay)
+	if ow == 0 {
+		return baseLine
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	maxOW := totalWidth - startCol
+	if maxOW < 1 {
+		maxOW = 1
+	}
+	if ow > maxOW {
+		overlay = ansi.Truncate(overlay, maxOW, "…")
+		ow = lipgloss.Width(overlay)
+	}
+
+	baseW := ansi.StringWidth(baseLine)
+	left := ansi.Cut(baseLine, 0, startCol)
+	if lw := ansi.StringWidth(left); lw < startCol {
+		left += strings.Repeat(" ", startCol-lw)
+	}
+
+	right := ansi.Cut(baseLine, startCol+ow, baseW)
+	merged := left + overlay + right
+	mw := ansi.StringWidth(merged)
+	switch {
+	case mw < totalWidth:
+		merged += strings.Repeat(" ", totalWidth-mw)
+	case mw > totalWidth:
+		merged = ansi.Truncate(merged, totalWidth, "")
+	}
+	return merged
+}
+
+func overlayCentered(base, overlay string, width, height int) string {
+	_ = height
+	baseLines := strings.Split(base, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+
+	overlayH := len(overlayLines)
+	overlayW := 0
+	for _, l := range overlayLines {
+		if lw := lipgloss.Width(l); lw > overlayW {
+			overlayW = lw
+		}
+	}
+
+	startRow := (len(baseLines) - overlayH) / 2
+	startCol := (width - overlayW) / 2
+	if startRow < 0 {
+		startRow = 0
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	for i, ol := range overlayLines {
+		row := startRow + i
+		if row >= len(baseLines) {
+			break
+		}
+		baseLines[row] = spliceOverlayLine(baseLines[row], ol, startCol, width)
+	}
+	return strings.Join(baseLines, "\n")
 }

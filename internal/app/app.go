@@ -1435,7 +1435,7 @@ func (m Model) renderTabCloseConfirmPopup() string {
 	)
 	body := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(inner)
 	popup := m.theme.BorderFocused.Width(boxW - 2).Render(body)
-	popup = m.embedDDLPopupBorderLabels(popup, "Close tab", "y / enter confirm · n · esc · q cancel")
+	popup = m.embedDDLPopupBorderLabels(popup, "Close tab", "Enter/y: confirm · Esc/n/q: cancel")
 	// Do not use lipgloss.Place(full screen): View() composites with overlayCentered, which
 	// splices this box onto the existing layout. A full-screen Place buffer would replace every line.
 	return popup
@@ -1474,9 +1474,9 @@ func (m Model) renderDDLPopup() string {
 	if title == "" {
 		title = "DDL"
 	}
-	footer := "y: copy · j/k  g/G  PgUp/PgDn · esc close"
+	footer := "y: copy · j/k  g/G  PgUp/PgDn · Esc: close"
 	if maxTop == 0 {
-		footer = "y: copy · esc: close"
+		footer = "y: copy · Esc: close"
 	}
 	popup := m.theme.BorderFocused.Width(boxW-2).Height(boxH-2).Render(body)
 	popup = m.embedDDLPopupBorderLabels(popup, title, footer)
@@ -1849,7 +1849,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		return "s: show rows · v: DDL · space: commands"
 	case PanelEditor:
 		if m.editor.IsInsertMode() {
-			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter: run query"
+			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter/Ctrl+r: run query"
 		}
 		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · space: commands"
 	case PanelResults:
