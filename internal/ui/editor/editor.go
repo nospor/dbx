@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -621,7 +622,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Normal mode
+	// Normal mode — history popup captures j/k (and arrows) before vim line motion
+	if m.consumeHistoryPopupNav(msg) {
+		return nil
+	}
+
 	switch msg.String() {
 	case "i":
 		m.vim.mode = ModeInsert
@@ -659,29 +664,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.vim.col++
 		}
 	case "j", "down":
-		if m.histPopupVisible {
-			if m.histPopupPendingDeleteQuery != "" {
-				return nil
-			}
-			if m.histPopupCursor < len(m.history)-1 {
-				m.histPopupCursor++
-			}
-			return nil
-		}
 		if m.vim.row < len(lines)-1 {
 			m.vim.row++
 			m.clampCol(lines)
 		}
 	case "k", "up":
-		if m.histPopupVisible {
-			if m.histPopupPendingDeleteQuery != "" {
-				return nil
-			}
-			if m.histPopupCursor > 0 {
-				m.histPopupCursor--
-			}
-			return nil
-		}
 		if m.vim.row > 0 {
 			m.vim.row--
 			m.clampCol(lines)
@@ -824,6 +811,58 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	m.clampCursor()
 	m.adjustScroll()
 	return nil
+}
+
+// consumeHistoryPopupNav handles j/k (and arrow up/down) for the history popup only.
+// Returns true if the key was consumed and vim motion must not run.
+func (m *Model) consumeHistoryPopupNav(msg tea.KeyMsg) bool {
+	if !m.histPopupVisible || len(m.history) == 0 {
+		return false
+	}
+	if m.histPopupPendingDeleteQuery != "" {
+		// Delete confirm: swallow j/k so they don't move the cursor in the buffer
+		switch msg.String() {
+		case "j", "down", "k", "up":
+			return true
+		}
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case 'j', 'k':
+				return true
+			}
+		}
+		return false
+	}
+	down := false
+	up := false
+	switch msg.String() {
+	case "j", "down":
+		down = true
+	case "k", "up":
+		up = true
+	default:
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case 'j':
+				down = true
+			case 'k':
+				up = true
+			}
+		}
+	}
+	if down {
+		if m.histPopupCursor < len(m.history)-1 {
+			m.histPopupCursor++
+		}
+		return true
+	}
+	if up {
+		if m.histPopupCursor > 0 {
+			m.histPopupCursor--
+		}
+		return true
+	}
+	return false
 }
 
 func (m *Model) clampCursor() {
@@ -1161,89 +1200,11 @@ func (m Model) View() string {
 		sb.WriteString(lipgloss.NewStyle().Width(m.width).Render(rendered) + "\n")
 	}
 
-	// Render history popup — replaces the content area, keeps the title bar
+	result := sb.String()
+
+	// History popup — centered overlay; query buffer stays visible underneath
 	if m.histPopupVisible && len(m.history) > 0 {
-		innerW := m.width - 2
-		if innerW < 10 {
-			innerW = 10
-		}
-
-		var popSb strings.Builder
-
-		if m.histPopupPendingDeleteQuery != "" {
-			// Delete confirmation: full-width sub-panel (no list navigation)
-			topHint := m.theme.Dimmed.Width(m.width).Render(" Remove from history — y confirm   n / esc cancel ")
-			popSb.WriteString(topHint + "\n")
-
-			preview := strings.ReplaceAll(m.histPopupPendingDeleteQuery, "\n", " ↵ ")
-			textW := innerW - 4
-			if textW < 8 {
-				textW = 8
-			}
-			previewLines := wrapRunesToWidth([]rune(preview), textW)
-			maxPreview := visibleLines - 5
-			if maxPreview < 2 {
-				maxPreview = 2
-			}
-			if len(previewLines) > maxPreview {
-				previewLines = previewLines[:maxPreview]
-				previewLines = append(previewLines, "...")
-			}
-			boxInner := lipgloss.NewStyle().Bold(true).Render("Delete this query?") + "\n\n" +
-				strings.Join(previewLines, "\n")
-			box := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("9")).
-				Width(innerW).
-				Padding(0, 1).
-				Render(boxInner)
-			for _, bl := range strings.Split(box, "\n") {
-				popSb.WriteString(lipgloss.NewStyle().Width(m.width).Render(bl) + "\n")
-			}
-		} else {
-			maxVisible := visibleLines - 2
-			if maxVisible < 1 {
-				maxVisible = 1
-			}
-
-			start := 0
-			if m.histPopupCursor >= maxVisible {
-				start = m.histPopupCursor - maxVisible + 1
-			}
-			end := start + maxVisible
-			if end > len(m.history) {
-				end = len(m.history)
-			}
-
-			headerText := fmt.Sprintf(" History (%d)  j/k navigate  enter insert  esc close  d delete", len(m.history))
-			header := m.theme.Dimmed.Width(m.width).Render(headerText)
-			popSb.WriteString(header + "\n")
-
-			for i := start; i < end; i++ {
-				preview := strings.ReplaceAll(m.history[i], "\n", " ↵ ")
-				runes := []rune(preview)
-				if len(runes) > innerW-2 {
-					preview = string(runes[:innerW-5]) + "..."
-				}
-				line := " " + preview
-				if i == m.histPopupCursor {
-					popSb.WriteString(m.theme.TreeSelected.Width(m.width).Render(line) + "\n")
-				} else {
-					popSb.WriteString(lipgloss.NewStyle().Width(m.width).Render(line) + "\n")
-				}
-			}
-		}
-
-		// Pad remaining lines
-		rendered := popSb.String()
-		renderedLines := strings.Count(rendered, "\n")
-		for renderedLines < visibleLines {
-			rendered += lipgloss.NewStyle().Width(m.width).Render("") + "\n"
-			renderedLines++
-		}
-
-		titleLine := strings.SplitN(sb.String(), "\n", 2)[0]
-		return titleLine + "\n" + rendered
+		return m.overlayHistoryPopup(result, visibleLines)
 	}
 
 	// Render autocomplete dropdown
@@ -1263,7 +1224,6 @@ func (m Model) View() string {
 
 		// Position the dropdown below the cursor line (after tab bar + top gutter).
 		cursorScreenRow := m.vim.row - m.scrollTop + 1 + editorTopGutterLines
-		result := sb.String()
 		resultLines := strings.Split(result, "\n")
 		compLines := strings.Split(compBox, "\n")
 		insertRow := cursorScreenRow + 1
@@ -1289,7 +1249,185 @@ func (m Model) View() string {
 		return strings.Join(resultLines, "\n")
 	}
 
-	return sb.String()
+	return result
+}
+
+// overlayHistoryPopup draws the history list or delete-confirm box centered over the editor content.
+func (m Model) overlayHistoryPopup(base string, visibleLines int) string {
+	box := m.buildHistoryPopupBox(visibleLines)
+	if box == "" {
+		return base
+	}
+	boxLines := strings.Split(box, "\n")
+	boxH := len(boxLines)
+	boxW := 0
+	for _, l := range boxLines {
+		if w := lipgloss.Width(l); w > boxW {
+			boxW = w
+		}
+	}
+	if boxH < 1 || boxW < 1 {
+		return base
+	}
+	startRow := 1 + editorTopGutterLines
+	if visibleLines > boxH {
+		startRow += (visibleLines - boxH) / 2
+	}
+	startCol := 0
+	if m.width > boxW {
+		startCol = (m.width - boxW) / 2
+	}
+	if startCol+boxW > m.width {
+		startCol = max(0, m.width-boxW)
+	}
+	return overlayStyledBlockAt(base, box, startRow, startCol, m.width)
+}
+
+func (m Model) buildHistoryPopupBox(visibleLines int) string {
+	innerW := m.width - 8
+	if innerW < 20 {
+		innerW = 20
+	}
+	if innerW > m.width-4 {
+		innerW = m.width - 4
+	}
+
+	if m.histPopupPendingDeleteQuery != "" {
+		preview := strings.ReplaceAll(m.histPopupPendingDeleteQuery, "\n", " ↵ ")
+		textW := innerW - 4
+		if textW < 8 {
+			textW = 8
+		}
+		previewLines := wrapRunesToWidth([]rune(preview), textW)
+		maxPreview := visibleLines - 6
+		if maxPreview < 2 {
+			maxPreview = 2
+		}
+		if len(previewLines) > maxPreview {
+			previewLines = previewLines[:maxPreview]
+			previewLines = append(previewLines, "...")
+		}
+		hint := m.theme.Dimmed.Render("Remove from history — y: confirm · Esc/n: cancel")
+		inner := lipgloss.NewStyle().Bold(true).Render("Delete this query?") + "\n\n" +
+			strings.Join(previewLines, "\n") + "\n\n" + hint
+		return lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("9")).
+			Width(innerW).
+			Padding(0, 1).
+			Render(inner)
+	}
+
+	maxListRows := visibleLines - 4
+	if maxListRows < 1 {
+		maxListRows = 1
+	}
+
+	start := 0
+	if m.histPopupCursor >= maxListRows {
+		start = m.histPopupCursor - maxListRows + 1
+	}
+	end := start + maxListRows
+	if end > len(m.history) {
+		end = len(m.history)
+	}
+
+	var b strings.Builder
+	b.WriteString(m.theme.Dimmed.Render(fmt.Sprintf(" History (%d)", len(m.history))))
+	b.WriteString("\n")
+
+	textW := innerW - 6
+	if textW < 8 {
+		textW = 8
+	}
+	for i := start; i < end; i++ {
+		preview := strings.ReplaceAll(m.history[i], "\n", " ↵ ")
+		runes := []rune(preview)
+		if len(runes) > textW {
+			preview = string(runes[:textW-3]) + "..."
+		}
+		line := " " + preview
+		if i == m.histPopupCursor {
+			b.WriteString(m.theme.TreeSelected.Width(innerW - 2).Render(line))
+		} else {
+			b.WriteString(lipgloss.NewStyle().Width(innerW - 2).Render(line))
+		}
+		b.WriteString("\n")
+	}
+	inner := strings.TrimSuffix(b.String(), "\n")
+	borderFG := lipgloss.Color("12")
+	main := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderFG).
+		Width(innerW).
+		Padding(0, 1).
+		BorderBottom(false).
+		Render(inner)
+	lines := strings.Split(main, "\n")
+	if len(lines) == 0 {
+		return main
+	}
+	w := lipgloss.Width(lines[0])
+	hint := m.theme.Dimmed.Render(" j/k: navigate · Enter: insert · Esc: close · d: delete ")
+	bottom := renderHistoryPopupBottomBorder(w, hint, borderFG)
+	return strings.Join(lines, "\n") + "\n" + bottom
+}
+
+// renderHistoryPopupBottomBorder draws the rounded bottom edge with a right-aligned hint.
+func renderHistoryPopupBottomBorder(totalW int, hintStyled string, borderFG lipgloss.TerminalColor) string {
+	if totalW < 3 {
+		return ""
+	}
+	hw := ansi.StringWidth(hintStyled)
+	mid := totalW - 2 // between ╰ and ╯
+	if hw > mid {
+		hintStyled = ansi.Truncate(hintStyled, mid, "")
+		hw = ansi.StringWidth(hintStyled)
+	}
+	dashN := mid - hw
+	if dashN < 0 {
+		dashN = 0
+	}
+	edge := lipgloss.NewStyle().Foreground(borderFG)
+	return edge.Render("╰") + edge.Render(strings.Repeat("─", dashN)) + hintStyled + edge.Render("╯")
+}
+
+// overlayStyledBlockAt merges a lipgloss-styled overlay onto base using display-cell widths
+// (ANSI-safe). Rune-by-rune overlay breaks escape sequences and clips rounded borders.
+func overlayStyledBlockAt(base string, overlay string, startRow, startCol int, width int) string {
+	baseLines := strings.Split(base, "\n")
+	overLines := strings.Split(overlay, "\n")
+	for i, ol := range overLines {
+		row := startRow + i
+		if row < 0 || row >= len(baseLines) {
+			continue
+		}
+		line := baseLines[row]
+		ow := ansi.StringWidth(ol)
+		if ow == 0 {
+			continue
+		}
+		nc := startCol
+		if nc < 0 {
+			nc = 0
+		}
+		if nc >= width {
+			continue
+		}
+		if nc+ow > width {
+			ol = ansi.Truncate(ol, width-nc, "")
+			ow = ansi.StringWidth(ol)
+			if ow == 0 {
+				continue
+			}
+		}
+		lineW := ansi.StringWidth(line)
+		left := ansi.Cut(line, 0, nc)
+		right := ansi.Cut(line, nc+ow, lineW)
+		merged := left + ol + right
+		baseLines[row] = lipgloss.NewStyle().Width(width).Render(merged)
+	}
+	return strings.Join(baseLines, "\n")
 }
 
 // wrapRunesToWidth splits runes into lines of at most width runes each.
