@@ -3,6 +3,7 @@ package editor
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
 	tea "github.com/charmbracelet/bubbletea"
@@ -86,6 +87,8 @@ type Model struct {
 	histPopupVisible            bool
 	histPopupCursor             int
 	histPopupPendingDeleteQuery string // non-empty = showing delete confirmation for this exact query
+	histPopupFilter             string // substring filter (case-insensitive); typing while popup is open
+	histPopupFilteredIdx        []int  // indices into history matching histPopupFilter (newest-first order preserved)
 
 	// Per-tab undo/redo (see undo.go)
 	tabUndo          map[string]*tabUndoState
@@ -136,39 +139,59 @@ func (m *Model) SetHistory(entries []string) {
 	m.history = entries
 	m.histCursor = -1
 	m.histBrowsing = false
+	m.closeHistoryPopup()
+}
+
+func (m *Model) closeHistoryPopup() {
 	m.histPopupVisible = false
 	m.histPopupCursor = 0
 	m.histPopupPendingDeleteQuery = ""
+	m.histPopupFilter = ""
+	m.histPopupFilteredIdx = nil
+}
+
+func (m *Model) rebuildHistoryPopupFilter() {
+	needle := strings.ToLower(m.histPopupFilter)
+	m.histPopupFilteredIdx = m.histPopupFilteredIdx[:0]
+	for i, h := range m.history {
+		if needle == "" || strings.Contains(strings.ToLower(h), needle) {
+			m.histPopupFilteredIdx = append(m.histPopupFilteredIdx, i)
+		}
+	}
+	if len(m.histPopupFilteredIdx) == 0 {
+		m.histPopupCursor = 0
+	} else if m.histPopupCursor >= len(m.histPopupFilteredIdx) {
+		m.histPopupCursor = len(m.histPopupFilteredIdx) - 1
+	}
 }
 
 // ReplaceHistoryEntries updates the in-memory history list without closing the popup.
 func (m *Model) ReplaceHistoryEntries(entries []string) {
 	m.history = entries
 	if len(entries) == 0 {
-		m.histPopupVisible = false
-		m.histPopupCursor = 0
-		m.histPopupPendingDeleteQuery = ""
+		m.closeHistoryPopup()
 		return
 	}
-	if m.histPopupCursor >= len(entries) {
-		m.histPopupCursor = len(entries) - 1
+	if m.histPopupVisible {
+		m.rebuildHistoryPopupFilter()
 	}
 }
 
 // acceptHistoryPopup appends the selected history entry to the editor content.
 func (m *Model) acceptHistoryPopup() {
-	if !m.histPopupVisible || len(m.history) == 0 {
+	if !m.histPopupVisible || len(m.history) == 0 || len(m.histPopupFilteredIdx) == 0 {
 		return
 	}
-	if m.histPopupCursor >= len(m.history) {
+	if m.histPopupCursor >= len(m.histPopupFilteredIdx) {
 		m.histPopupCursor = 0
 	}
+	histIdx := m.histPopupFilteredIdx[m.histPopupCursor]
 	existing := m.lines()
 	// Strip trailing blank lines from existing content
 	for len(existing) > 0 && strings.TrimSpace(existing[len(existing)-1]) == "" {
 		existing = existing[:len(existing)-1]
 	}
-	newLines := strings.Split(m.history[m.histPopupCursor], "\n")
+	newLines := strings.Split(m.history[histIdx], "\n")
 	// Separate with a blank line if there's existing content
 	if len(existing) > 0 {
 		existing = append(existing, "")
@@ -178,8 +201,7 @@ func (m *Model) acceptHistoryPopup() {
 	m.setLines(combined)
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
-	m.histPopupVisible = false
-	m.histPopupPendingDeleteQuery = ""
+	m.closeHistoryPopup()
 }
 
 // BrowseHistoryPrev loads the previous history entry into the editor.
@@ -267,8 +289,7 @@ func (m *Model) switchToIdle() {
 	m.scrollTop = 0
 	m.insertUndoSeeded = false
 	m.compVisible = false
-	m.histPopupVisible = false
-	m.histPopupPendingDeleteQuery = ""
+	m.closeHistoryPopup()
 	m.histBrowsing = false
 	m.histCursor = -1
 }
@@ -284,8 +305,7 @@ func (m *Model) activateTabIndex(i int) {
 	m.scrollTop = 0
 	m.insertUndoSeeded = false
 	m.compVisible = false
-	m.histPopupVisible = false
-	m.histPopupPendingDeleteQuery = ""
+	m.closeHistoryPopup()
 	m.histBrowsing = false
 	m.histCursor = -1
 }
@@ -404,6 +424,11 @@ func (m *Model) SetTheme(t theme.Theme) {
 // IsInsertMode returns true when the editor is in vim insert mode.
 func (m Model) IsInsertMode() bool {
 	return m.vim.mode == ModeInsert
+}
+
+// HistoryPopupVisible returns true while the query history overlay is open (filtering or delete confirm).
+func (m Model) HistoryPopupVisible() bool {
+	return m.histPopupVisible
 }
 
 // CurrentQuery returns the query block under the cursor.
@@ -627,9 +652,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Normal mode — history popup captures j/k (and arrows) before vim line motion
-	if m.consumeHistoryPopupNav(msg) {
-		return nil
+	// Normal mode — history popup: ↑/↓ navigate list; typing filters; backspace edits filter or closes
+	if m.histPopupVisible && len(m.history) > 0 {
+		if m.consumeHistoryPopupNav(msg) {
+			return nil
+		}
+		if m.histPopupPendingDeleteQuery == "" {
+			if m.consumeHistoryPopupFilter(msg) {
+				return nil
+			}
+		}
 	}
 
 	switch msg.String() {
@@ -720,11 +752,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.vim.pendingD = false
 			return nil
 		}
-		if m.histPopupVisible && m.histPopupCursor < len(m.history) {
-			m.histPopupPendingDeleteQuery = m.history[m.histPopupCursor]
-			m.vim.pendingD = false
-			return nil
-		}
 		if m.vim.pendingD {
 			m.pushUndoPoint()
 			lines = m.deleteLine(lines)
@@ -732,6 +759,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.vim.pendingD = false
 		} else {
 			m.vim.pendingD = true
+		}
+	case "ctrl+d":
+		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
+			return nil
+		}
+		if m.histPopupVisible && len(m.histPopupFilteredIdx) > 0 && m.histPopupCursor < len(m.histPopupFilteredIdx) {
+			m.histPopupPendingDeleteQuery = m.history[m.histPopupFilteredIdx[m.histPopupCursor]]
+			m.vim.pendingD = false
+			return nil
 		}
 	case "y":
 		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
@@ -767,10 +803,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		q := m.currentQuery(lines)
 		return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
 	case "backspace":
-		if len(m.history) > 0 {
+		if !m.histPopupVisible && len(m.history) > 0 {
 			m.histPopupVisible = true
 			m.histPopupCursor = 0
 			m.histPopupPendingDeleteQuery = ""
+			m.histPopupFilter = ""
+			m.rebuildHistoryPopupFilter()
 		}
 		return nil
 	case "esc":
@@ -778,32 +816,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.histPopupPendingDeleteQuery != "" {
 				m.histPopupPendingDeleteQuery = ""
 			} else {
-				m.histPopupVisible = false
+				m.closeHistoryPopup()
 			}
 			return nil
 		}
 	case "ctrl+p":
-		if m.histPopupVisible {
-			if m.histPopupPendingDeleteQuery != "" {
-				return nil
-			}
-			if m.histPopupCursor > 0 {
-				m.histPopupCursor--
-			}
-			return nil
-		}
 		m.BrowseHistoryPrev()
 		return nil
 	case "ctrl+n":
-		if m.histPopupVisible {
-			if m.histPopupPendingDeleteQuery != "" {
-				return nil
-			}
-			if m.histPopupCursor < len(m.history)-1 {
-				m.histPopupCursor++
-			}
-			return nil
-		}
 		if m.histBrowsing {
 			m.BrowseHistoryNext()
 		}
@@ -818,54 +838,81 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// consumeHistoryPopupNav handles j/k (and arrow up/down) for the history popup only.
+// consumeHistoryPopupNav handles arrow up/down and ctrl+p/n for the history popup list only.
 // Returns true if the key was consumed and vim motion must not run.
 func (m *Model) consumeHistoryPopupNav(msg tea.KeyMsg) bool {
 	if !m.histPopupVisible || len(m.history) == 0 {
 		return false
 	}
 	if m.histPopupPendingDeleteQuery != "" {
-		// Delete confirm: swallow j/k so they don't move the cursor in the buffer
+		// Delete confirm: swallow arrows so they don't move the cursor in the buffer
 		switch msg.String() {
-		case "j", "down", "k", "up":
+		case "down", "up", "ctrl+n", "ctrl+p":
 			return true
-		}
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			switch msg.Runes[0] {
-			case 'j', 'k':
-				return true
-			}
 		}
 		return false
 	}
+	n := len(m.histPopupFilteredIdx)
 	down := false
 	up := false
 	switch msg.String() {
-	case "j", "down":
+	case "down", "ctrl+n":
 		down = true
-	case "k", "up":
+	case "up", "ctrl+p":
 		up = true
-	default:
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			switch msg.Runes[0] {
-			case 'j':
-				down = true
-			case 'k':
-				up = true
-			}
-		}
 	}
 	if down {
-		if m.histPopupCursor < len(m.history)-1 {
+		if n > 0 && m.histPopupCursor < n-1 {
 			m.histPopupCursor++
 		}
 		return true
 	}
 	if up {
-		if m.histPopupCursor > 0 {
+		if n > 0 && m.histPopupCursor > 0 {
 			m.histPopupCursor--
 		}
 		return true
+	}
+	return false
+}
+
+// consumeHistoryPopupFilter handles backspace (edit filter or close) and typed filter text.
+func (m *Model) consumeHistoryPopupFilter(msg tea.KeyMsg) bool {
+	if !m.histPopupVisible || len(m.history) == 0 || m.histPopupPendingDeleteQuery != "" {
+		return false
+	}
+	switch msg.String() {
+	case "backspace":
+		if m.histPopupFilter == "" {
+			m.closeHistoryPopup()
+		} else {
+			r := []rune(m.histPopupFilter)
+			m.histPopupFilter = string(r[:len(r)-1])
+			m.rebuildHistoryPopupFilter()
+			m.histPopupCursor = 0
+		}
+		return true
+	}
+	// Let navigation keys fall through (handled before this function is called).
+	switch msg.String() {
+	case "up", "down", "ctrl+p", "ctrl+n", "enter", "esc", "tab", "shift+tab", "backtab":
+		return false
+	}
+	// Space is KeySpace, not KeyRunes, in bubbletea.
+	if msg.Type == tea.KeySpace {
+		m.histPopupFilter += " "
+		m.rebuildHistoryPopupFilter()
+		m.histPopupCursor = 0
+		return true
+	}
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+		if unicode.IsPrint(r) {
+			m.histPopupFilter += string(r)
+			m.rebuildHistoryPopupFilter()
+			m.histPopupCursor = 0
+			return true
+		}
 	}
 	return false
 }
@@ -1312,36 +1359,53 @@ func (m Model) buildHistoryPopupBox(visibleLines int) string {
 		maxListRows = 1
 	}
 
+	fr := m.histPopupFilteredIdx
+	n := len(fr)
 	start := 0
-	if m.histPopupCursor >= maxListRows {
+	if n > 0 && m.histPopupCursor >= maxListRows {
 		start = m.histPopupCursor - maxListRows + 1
 	}
 	end := start + maxListRows
-	if end > len(m.history) {
-		end = len(m.history)
+	if end > n {
+		end = n
 	}
 
 	var b strings.Builder
-	b.WriteString(m.theme.Dimmed.Render(fmt.Sprintf(" History (%d)", len(m.history))))
+	if m.histPopupFilter != "" {
+		q := m.histPopupFilter
+		if len([]rune(q)) > 36 {
+			rq := []rune(q)
+			q = string(rq[:33]) + "..."
+		}
+		b.WriteString(m.theme.Dimmed.Render(fmt.Sprintf(" %d matches · %q", n, q)))
+	} else {
+		b.WriteString(m.theme.Dimmed.Render(fmt.Sprintf(" History (%d)", n)))
+	}
 	b.WriteString("\n")
 
 	textW := innerW - 6
 	if textW < 8 {
 		textW = 8
 	}
-	for i := start; i < end; i++ {
-		preview := strings.ReplaceAll(m.history[i], "\n", " ↵ ")
-		runes := []rune(preview)
-		if len(runes) > textW {
-			preview = string(runes[:textW-3]) + "..."
-		}
-		line := " " + preview
-		if i == m.histPopupCursor {
-			b.WriteString(m.theme.TreeSelected.Width(innerW - 2).Render(line))
-		} else {
-			b.WriteString(lipgloss.NewStyle().Width(innerW - 2).Render(line))
-		}
+	if n == 0 {
+		b.WriteString(" " + m.theme.Dimmed.Render("No matching queries"))
 		b.WriteString("\n")
+	} else {
+		for i := start; i < end; i++ {
+			histIdx := fr[i]
+			preview := strings.ReplaceAll(m.history[histIdx], "\n", " ↵ ")
+			runes := []rune(preview)
+			if len(runes) > textW {
+				preview = string(runes[:textW-3]) + "..."
+			}
+			line := " " + preview
+			if i == m.histPopupCursor {
+				b.WriteString(m.theme.TreeSelected.Width(innerW - 2).Render(line))
+			} else {
+				b.WriteString(lipgloss.NewStyle().Width(innerW - 2).Render(line))
+			}
+			b.WriteString("\n")
+		}
 	}
 	inner := strings.TrimSuffix(b.String(), "\n")
 	borderFG := lipgloss.Color("12")
@@ -1357,7 +1421,7 @@ func (m Model) buildHistoryPopupBox(visibleLines int) string {
 		return main
 	}
 	w := lipgloss.Width(lines[0])
-	hint := m.theme.Dimmed.Render(" j/k: navigate · Enter: insert · Esc: close · d: delete ")
+	hint := m.theme.Dimmed.Render(" ↑↓: navigate · Enter: insert · Esc: close · type to filter · Ctrl+d: delete ")
 	bottom := renderHistoryPopupBottomBorder(w, hint, borderFG)
 	return strings.Join(lines, "\n") + "\n" + bottom
 }

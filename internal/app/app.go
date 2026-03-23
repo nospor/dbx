@@ -286,8 +286,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		// Global keys — only active when editor is NOT in insert mode
+		// Global keys — suppressed in insert mode and while the history popup is open (filter typing).
 		editorInsert := m.editor.IsInsertMode()
+		historyPopup := m.editor.HistoryPopupVisible()
+		suppressGlobals := editorInsert || historyPopup
 
 		switch msg.String() {
 		case "ctrl+c":
@@ -297,31 +299,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "e":
-			if !editorInsert {
+			if !suppressGlobals {
 				m.setFocus(PanelExplorer)
 				return m, nil
 			}
 
 		case "q":
-			if !editorInsert && m.focus != PanelEditor {
+			if !suppressGlobals && m.focus != PanelEditor {
 				m.setFocus(PanelEditor)
 				return m, nil
 			}
 
 		case "r":
-			if !editorInsert {
+			if !suppressGlobals {
 				m.setFocus(PanelResults)
 				return m, nil
 			}
 
 		case " ":
-			if !editorInsert {
+			if !suppressGlobals {
 				m.openPalette()
 				return m, nil
 			}
 
 		case "?":
-			if !editorInsert {
+			if !suppressGlobals {
 				m.showHelp = !m.showHelp
 				if m.showHelp {
 					m.helpScroll = 0
@@ -1330,7 +1332,7 @@ const helpScreenText = `
     u           Undo edit (whole insert session until esc; normal edits undo separately)
     ctrl+r      Redo edit
     ctrl+p/n    Browse query history (replace buffer)
-    backspace   History popup (d = delete confirm panel, y confirm)
+    backspace   History popup (type to filter, ↑↓ navigate, Ctrl+D delete confirm, y confirm)
     dd          Delete line
     gg/G        Go to top/bottom
 
