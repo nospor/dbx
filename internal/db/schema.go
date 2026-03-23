@@ -21,6 +21,10 @@ func scanSQLRows(rows *sql.Rows) (*QueryResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
 
 	var resultRows [][]string
 	for rows.Next() {
@@ -34,7 +38,11 @@ func scanSQLRows(rows *sql.Rows) (*QueryResult, error) {
 		}
 		row := make([]string, len(cols))
 		for i, v := range vals {
-			row[i] = formatSQLValue(v)
+			var ct *sql.ColumnType
+			if i < len(colTypes) {
+				ct = colTypes[i]
+			}
+			row[i] = formatSQLValueWithColumn(ct, v)
 		}
 		resultRows = append(resultRows, row)
 	}

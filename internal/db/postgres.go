@@ -328,7 +328,11 @@ func scanRows(rows pgx.Rows) (*QueryResult, error) {
 		}
 		row := make([]string, len(vals))
 		for i, v := range vals {
-			row[i] = formatSQLValue(v)
+			oid := uint32(0)
+			if i < len(fields) {
+				oid = fields[i].DataTypeOID
+			}
+			row[i] = formatPGValue(oid, v)
 		}
 		resultRows = append(resultRows, row)
 	}
