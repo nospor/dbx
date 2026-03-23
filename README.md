@@ -10,7 +10,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
 - **Tab autocomplete** for table names, column names, and SQL keywords (columns are loaded automatically when you expand a database / refresh schema—no need to open each table first)
-- **Query history** per connection/database (ctrl+p/n to browse) — stored in `history.json`
+- **Query history** per connection/database — `ctrl+p` / `ctrl+n` replace the buffer with older/newer entries; `backspace` (normal mode) opens a **filterable** popup — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
 - **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs are restored on startup (`open-tabs.json`)
 - **Command palette** (space) with context-aware commands per panel
@@ -66,7 +66,7 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 | ---------------------------------- | -------------------------------------------------------------------------------------- |
 | `~/.config/dbx/config.json`        | UI preferences (theme, layout, status message duration)                                |
 | `~/.cache/dbx/connections.json`    | Saved connections                                                                      |
-| `~/.cache/dbx/history.json`        | Executed queries (history popup / ctrl+p n)                                            |
+| `~/.cache/dbx/history.json`        | Executed queries (filterable history popup, ctrl+p/n buffer browse)                    |
 | `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 | `~/.cache/dbx/open-tabs.json`      | Ordered list of open query tabs (`connection_id:database` keys) for session restore    |
 
@@ -106,7 +106,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `u`                 | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits                                                                       |
 | `ctrl+r`            | Redo (normal mode only; see insert mode for run-query)                                                                                                                                                            |
 | `ctrl+p` / `ctrl+n` | Browse history (replace buffer)                                                                                                                                                                                   |
-| `backspace`         | History popup: pick a query to append                                                                                                                                                                             |
+| `backspace`         | Open **history popup** — filter and pick a query to append (see **History** below)                                                                                                                                |
 | `dd`                | Delete line                                                                                                                                                                                                       |
 | `gg` / `G`          | Go to top / bottom                                                                                                                                                                                                |
 | `h/j/k/l`           | Move cursor                                                                                                                                                                                                       |
@@ -151,7 +151,12 @@ Query history is saved per connection/database to `~/.cache/dbx/history.json`. T
 1. **Select a database** in the explorer (expand a connection, then select a database). History is loaded when you select a database.
 2. **Execute a query** — it is saved to history for that connection/database.
 3. **Browse history** with `ctrl+p` (older) and `ctrl+n` (newer) in the editor — works in both Normal and Insert mode (replaces the buffer).
-4. **History popup** (normal mode): `backspace` opens a list; `j`/`k` or `ctrl+p`/`ctrl+n` to move; `enter` appends the chosen query at the end of the editor; `d` opens an in-popup confirmation showing the exact query; `y` deletes it from history (`n`, `esc`, or `d` again cancels).
+4. **History popup** (normal mode only): `backspace` opens a centered list of past queries.
+   - **Filter**: type to narrow the list — substring match, case-insensitive. 
+   - **Move**: `↑` / `↓` .
+   - **Insert**: `enter` appends the selected query at the end of the editor buffer.
+   - **Close**: `esc`, or `backspace` when the filter is empty (otherwise `backspace` deletes the last filter character).
+   - **Delete from history**: `ctrl+d` opens a confirmation for the highlighted entry. 
 
 ## License
 

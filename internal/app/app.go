@@ -1342,7 +1342,7 @@ const helpScreenText = `
     u           Undo edit (whole insert session until esc; normal edits undo separately)
     ctrl+r      Redo edit
     ctrl+p/n    Browse query history (replace buffer)
-    backspace   History popup (type to filter, ↑↓ navigate, Ctrl+D delete confirm, y confirm)
+    backspace   History popup (type to filter, ↑↓ navigate, Ctrl+d delete)
     dd          Delete line
     gg/G        Go to top/bottom
 
