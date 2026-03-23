@@ -208,14 +208,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
+	rows := m.result.Rows
+	cols := m.result.Columns
+	_, _, _, innerH := m.cellPopupLayout()
 	lines := m.selectedCellLines()
 	maxTop := 0
-	visible := m.height - 8
+	visible := innerH
 	if visible < 1 {
 		visible = 1
 	}
 	if len(lines) > visible {
 		maxTop = len(lines) - visible
+	}
+	if m.cellPopupTop > maxTop {
+		m.cellPopupTop = maxTop
 	}
 
 	switch msg.String() {
@@ -226,13 +232,29 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 		if err := util.Copy(m.SelectedCell()); err != nil {
 			m.cellPopupMsg = "Clipboard unavailable: " + err.Error()
 		}
-	case "j", "down":
-		if m.cellPopupTop < maxTop {
-			m.cellPopupTop++
+	case "h", "left":
+		if m.cursorCol > 0 {
+			m.cursorCol--
+			m.cellPopupTop = 0
+			m.cellPopupMsg = ""
+		}
+	case "l", "right":
+		if m.cursorCol < len(cols)-1 {
+			m.cursorCol++
+			m.cellPopupTop = 0
+			m.cellPopupMsg = ""
 		}
 	case "k", "up":
-		if m.cellPopupTop > 0 {
-			m.cellPopupTop--
+		if m.cursorRow > 0 {
+			m.cursorRow--
+			m.cellPopupTop = 0
+			m.cellPopupMsg = ""
+		}
+	case "j", "down":
+		if m.cursorRow < len(rows)-1 {
+			m.cursorRow++
+			m.cellPopupTop = 0
+			m.cellPopupMsg = ""
 		}
 	case "pgdown", "ctrl+f":
 		m.cellPopupTop += visible
@@ -767,35 +789,42 @@ func (m Model) selectedCellLines() []string {
 	return lines
 }
 
-func (m Model) renderCellPopup() string {
-	boxW := m.width - 4
-	boxH := m.height - 2
+// cellPopupLayout returns the same box and inner dimensions as renderCellPopup (for scroll bounds).
+func (m Model) cellPopupLayout() (boxW, boxH, innerW, innerH int) {
+	boxW = m.width - 4
+	boxH = m.height - 2
 	if boxW < 20 {
 		boxW = m.width
 	}
 	if boxH < 6 {
 		boxH = m.height
 	}
-	innerW := boxW - 4
-	innerH := boxH - 2
+	innerW = boxW - 4
+	innerH = boxH - 2
 	if innerW < 1 {
 		innerW = 1
 	}
 	if innerH < 1 {
 		innerH = 1
 	}
+	return boxW, boxH, innerW, innerH
+}
+
+func (m Model) renderCellPopup() string {
+	boxW, boxH, innerW, innerH := m.cellPopupLayout()
 
 	lines := m.selectedCellLines()
 	maxTop := 0
 	if len(lines) > innerH {
 		maxTop = len(lines) - innerH
 	}
-	if m.cellPopupTop > maxTop {
-		m.cellPopupTop = maxTop
+	top := m.cellPopupTop
+	if top > maxTop {
+		top = maxTop
 	}
 
 	var sb strings.Builder
-	for i := m.cellPopupTop; i < len(lines) && i < m.cellPopupTop+innerH; i++ {
+	for i := top; i < len(lines) && i < top+innerH; i++ {
 		sb.WriteString(truncate(lines[i], innerW))
 		sb.WriteString("\n")
 	}
@@ -807,9 +836,9 @@ func (m Model) renderCellPopup() string {
 	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
 
 	title := fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
-	footer := "y copy  j/k scroll  g/G top/bottom  esc close"
+	footer := "y copy  h/l col  j/k row  PgDn/ctrl+f scroll  g/G top/bottom  esc close"
 	if maxTop == 0 {
-		footer = "y copy  esc close"
+		footer = "y copy  h/l col  j/k row  esc close"
 	}
 	popup := m.theme.BorderFocused.
 		Width(boxW - 2).
