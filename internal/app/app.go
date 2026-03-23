@@ -1341,7 +1341,7 @@ const helpScreenText = `
     S           Mark current row + band-select while moving j/k/g/G (esc clears marks)
     d           Append DELETE draft(s) for marked rows (or cursor row); WHERE uses PK cols when possible
     u           Update cell — popup to enter new value, generates UPDATE with PK WHERE
-    v           View full cell popup (y copy, h/l adjacent col, j/k adjacent row, esc)
+    v           View full cell popup (y copy, f JSON format persists across cells, h/l adjacent col, j/k adjacent row, esc)
 
   COMMAND PALETTE (space)
     Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen

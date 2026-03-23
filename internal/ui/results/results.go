@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/robertn/dbx/internal/sqlutil"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/robertn/dbx/internal/sqlutil"
 
 	"github.com/robertn/dbx/internal/ui/theme"
 	"github.com/robertn/dbx/internal/util"
@@ -34,16 +34,17 @@ type Model struct {
 	height  int
 	focused bool
 
-	result    *QueryResult
-	cursorRow int
-	cursorCol int
-	scrollTop int
+	result     *QueryResult
+	cursorRow  int
+	cursorCol  int
+	scrollTop  int
 	scrollLeft int
-	loading   bool
+	loading    bool
 
-	showCellPopup bool
-	cellPopupTop  int
-	cellPopupMsg  string
+	showCellPopup          bool
+	cellPopupTop           int
+	cellPopupMsg           string
+	cellPopupJSONFormatted bool
 
 	// Row marks for bulk delete draft (s / S); rangeSelect + rangeAnchor for Shift+S band selection
 	selectedRows map[int]struct{}
@@ -93,6 +94,7 @@ func (m *Model) SetResult(r *QueryResult) {
 	m.showCellPopup = false
 	m.cellPopupTop = 0
 	m.cellPopupMsg = ""
+	m.cellPopupJSONFormatted = false
 	m.selectedRows = nil
 	m.rangeSelect = false
 	m.rangeAnchor = 0
@@ -182,6 +184,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.showCellPopup = true
 		m.cellPopupTop = 0
 		m.cellPopupMsg = ""
+		m.cellPopupJSONFormatted = false
 	case "esc":
 		m.rangeSelect = false
 		m.selectedRows = nil
@@ -210,8 +213,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 	rows := m.result.Rows
 	cols := m.result.Columns
-	_, _, _, innerH := m.cellPopupLayout()
-	lines := m.selectedCellLines()
+	_, _, innerW, innerH := m.cellPopupLayout()
+	lines := m.cellPopupDisplayLines(innerW)
 	maxTop := 0
 	visible := innerH
 	if visible < 1 {
@@ -228,9 +231,24 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 	case "esc", "enter", "q", "v":
 		m.showCellPopup = false
 		m.cellPopupMsg = ""
+		m.cellPopupJSONFormatted = false
 	case "y":
 		if err := util.Copy(m.SelectedCell()); err != nil {
 			m.cellPopupMsg = "Clipboard unavailable: " + err.Error()
+		}
+	case "f":
+		if m.cellPopupJSONFormatted {
+			m.cellPopupJSONFormatted = false
+			m.cellPopupTop = 0
+			m.cellPopupMsg = ""
+		} else {
+			if _, ok := tryPrettyJSON(m.SelectedCell()); ok {
+				m.cellPopupJSONFormatted = true
+				m.cellPopupTop = 0
+				m.cellPopupMsg = ""
+			} else {
+				m.cellPopupMsg = "Not valid JSON"
+			}
 		}
 	case "h", "left":
 		if m.cursorCol > 0 {
@@ -778,8 +796,20 @@ func sanitizeTableCell(s string) string {
 	return s
 }
 
-func (m Model) selectedCellLines() []string {
-	val := m.SelectedCell()
+func (m Model) cellPopupSourceText() string {
+	s := m.SelectedCell()
+	if !m.cellPopupJSONFormatted {
+		return s
+	}
+	pretty, ok := tryPrettyJSON(s)
+	if ok {
+		return pretty
+	}
+	return s
+}
+
+func (m Model) cellPopupContentLines() []string {
+	val := m.cellPopupSourceText()
 	val = strings.ReplaceAll(val, "\r\n", "\n")
 	val = strings.ReplaceAll(val, "\r", "\n")
 	lines := strings.Split(val, "\n")
@@ -787,6 +817,34 @@ func (m Model) selectedCellLines() []string {
 		return []string{""}
 	}
 	return lines
+}
+
+// wrapLinesToWidth breaks each line into segments of at most width runes (for cell popup).
+func wrapLinesToWidth(lines []string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var out []string
+	for _, line := range lines {
+		runes := []rune(line)
+		if len(runes) == 0 {
+			out = append(out, "")
+			continue
+		}
+		for len(runes) > 0 {
+			if len(runes) <= width {
+				out = append(out, string(runes))
+				break
+			}
+			out = append(out, string(runes[:width]))
+			runes = runes[width:]
+		}
+	}
+	return out
+}
+
+func (m Model) cellPopupDisplayLines(innerW int) []string {
+	return wrapLinesToWidth(m.cellPopupContentLines(), innerW)
 }
 
 // cellPopupLayout returns the same box and inner dimensions as renderCellPopup (for scroll bounds).
@@ -813,7 +871,7 @@ func (m Model) cellPopupLayout() (boxW, boxH, innerW, innerH int) {
 func (m Model) renderCellPopup() string {
 	boxW, boxH, innerW, innerH := m.cellPopupLayout()
 
-	lines := m.selectedCellLines()
+	lines := m.cellPopupDisplayLines(innerW)
 	maxTop := 0
 	if len(lines) > innerH {
 		maxTop = len(lines) - innerH
@@ -825,20 +883,27 @@ func (m Model) renderCellPopup() string {
 
 	var sb strings.Builder
 	for i := top; i < len(lines) && i < top+innerH; i++ {
-		sb.WriteString(truncate(lines[i], innerW))
+		sb.WriteString(lines[i])
 		sb.WriteString("\n")
 	}
 	if m.cellPopupMsg != "" {
 		sb.WriteString("\n")
-		sb.WriteString(m.theme.Success.Render(truncate(m.cellPopupMsg, innerW)))
+		msgStyle := m.theme.Success
+		if m.cellPopupMsg == "Not valid JSON" {
+			msgStyle = m.theme.Error
+		}
+		sb.WriteString(msgStyle.Render(truncate(m.cellPopupMsg, innerW)))
 		sb.WriteString("\n")
 	}
 	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
 
 	title := fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
-	footer := "y copy  h/l col  j/k row  PgDn/ctrl+f scroll  g/G top/bottom  esc close"
+	if m.cellPopupJSONFormatted {
+		title = fmt.Sprintf("Cell Value — JSON formatted (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
+	}
+	footer := "y copy  f JSON  h/l col  j/k row  PgDn/ctrl+f scroll  g/G top/bottom  esc close"
 	if maxTop == 0 {
-		footer = "y copy  h/l col  j/k row  esc close"
+		footer = "y copy  f JSON  h/l col  j/k row  esc close"
 	}
 	popup := m.theme.BorderFocused.
 		Width(boxW - 2).
