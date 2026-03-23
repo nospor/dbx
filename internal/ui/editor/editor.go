@@ -45,6 +45,11 @@ func tabStoreKey(connKey string) string {
 // editorTopGutterLines is blank rows between the tab bar and query text.
 const editorTopGutterLines = 1
 
+// completionPopupEdgeMargin is extra bottom (and placement) slack so the bordered popup
+// is not clipped: the editor View ends with a newline-split empty line, and lipgloss borders
+// need the full last row merged into real buffer lines.
+const completionPopupEdgeMargin = 2
+
 // Model is the bubbletea model for the query editor panel.
 type Model struct {
 	theme   theme.Theme
@@ -1222,31 +1227,15 @@ func (m Model) View() string {
 			BorderForeground(lipgloss.Color("12")).
 			Render(compSb.String())
 
-		// Position the dropdown below the cursor line (after tab bar + top gutter).
+		// Merge with overlayStyledBlockAt so ANSI on the line below the cursor is not split.
+		// Vertically: prefer below the cursor; if the box would extend past the pane, flip above;
+		// else pin to the bottom content row (overlayStyledBlockAt drops rows past the last line).
 		cursorScreenRow := m.vim.row - m.scrollTop + 1 + editorTopGutterLines
-		resultLines := strings.Split(result, "\n")
-		compLines := strings.Split(compBox, "\n")
-		insertRow := cursorScreenRow + 1
+		baseLines := strings.Split(result, "\n")
+		boxH := lipgloss.Height(compBox)
+		insertRow := completionPopupStartRow(cursorScreenRow, boxH, len(baseLines))
 		insertCol := m.vim.col + 2
-		for i, cl := range compLines {
-			row := insertRow + i
-			if row >= len(resultLines) {
-				break
-			}
-			line := []rune(resultLines[row])
-			for len(line) < insertCol+lipgloss.Width(cl) {
-				line = append(line, ' ')
-			}
-			clRunes := []rune(cl)
-			for j, r := range clRunes {
-				pos := insertCol + j
-				if pos < len(line) {
-					line[pos] = r
-				}
-			}
-			resultLines[row] = string(line)
-		}
-		return strings.Join(resultLines, "\n")
+		return overlayStyledBlockAt(result, compBox, insertRow, insertCol, m.width)
 	}
 
 	return result
@@ -1390,6 +1379,38 @@ func renderHistoryPopupBottomBorder(totalW int, hintStyled string, borderFG lipg
 	}
 	edge := lipgloss.NewStyle().Foreground(borderFG)
 	return edge.Render("╰") + edge.Render(strings.Repeat("─", dashN)) + hintStyled + edge.Render("╯")
+}
+
+// completionPopupStartRow returns the top row index for the autocomplete box so it stays
+// inside the rendered editor string. Prefer below the cursor; if that overflows the pane,
+// place above (insertRow >= 1 so the tab bar row is not covered); else pin to the bottom.
+// Placement uses completionPopupEdgeMargin so we do not use trailing buffer rows (split
+// artifact) or the last row without enough space for the full rounded border.
+func completionPopupStartRow(cursorScreenRow, boxH, totalRows int) int {
+	m := completionPopupEdgeMargin
+	if boxH <= 0 {
+		return cursorScreenRow + 1
+	}
+	// Last row index the popup may occupy (reserve bottom margin).
+	last := totalRows - 1 - m
+	if last < 1 {
+		last = 1
+	}
+	belowStart := cursorScreenRow + 1
+	belowEnd := belowStart + boxH - 1
+	if belowEnd <= last {
+		return belowStart
+	}
+	// Above cursor: last popup row is cursorScreenRow-1.
+	aboveStart := cursorScreenRow - boxH
+	if aboveStart >= 1 && cursorScreenRow-1 <= last {
+		return aboveStart
+	}
+	insertRow := last - boxH + 1
+	if insertRow < 1 {
+		insertRow = 1
+	}
+	return insertRow
 }
 
 // overlayStyledBlockAt merges a lipgloss-styled overlay onto base using display-cell widths
