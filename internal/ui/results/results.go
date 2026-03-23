@@ -210,22 +210,45 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
-	rows := m.result.Rows
-	cols := m.result.Columns
+// cellPopupContentLinesHeight is how many lines show scrollable cell text (inner height minus
+// one line reserved for transient messages such as clipboard errors).
+func (m Model) cellPopupContentLinesHeight(innerH int) int {
+	if innerH < 1 {
+		innerH = 1
+	}
+	if m.cellPopupMsg != "" {
+		if innerH <= 1 {
+			return 0
+		}
+		return innerH - 1
+	}
+	return innerH
+}
+
+func (m Model) cellPopupScrollBounds() (visible, maxTop int) {
 	_, _, innerW, innerH := m.cellPopupLayout()
 	lines := m.cellPopupDisplayLines(innerW)
-	maxTop := 0
-	visible := innerH
-	if visible < 1 {
-		visible = 1
+	ch := m.cellPopupContentLinesHeight(innerH)
+	if ch < 1 {
+		return 1, 0
 	}
-	if len(lines) > visible {
-		maxTop = len(lines) - visible
+	maxTop = 0
+	if len(lines) > ch {
+		maxTop = len(lines) - ch
 	}
+	return ch, maxTop
+}
+
+func (m *Model) clampCellPopupScroll() {
+	_, maxTop := m.cellPopupScrollBounds()
 	if m.cellPopupTop > maxTop {
 		m.cellPopupTop = maxTop
 	}
+}
+
+func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
+	rows := m.result.Rows
+	cols := m.result.Columns
 
 	switch msg.String() {
 	case "esc", "enter", "q", "v":
@@ -275,11 +298,13 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 			m.cellPopupMsg = ""
 		}
 	case "pgdown", "ctrl+f":
+		visible, maxTop := m.cellPopupScrollBounds()
 		m.cellPopupTop += visible
 		if m.cellPopupTop > maxTop {
 			m.cellPopupTop = maxTop
 		}
 	case "pgup", "ctrl+b":
+		visible, _ := m.cellPopupScrollBounds()
 		m.cellPopupTop -= visible
 		if m.cellPopupTop < 0 {
 			m.cellPopupTop = 0
@@ -287,8 +312,10 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 	case "g":
 		m.cellPopupTop = 0
 	case "G":
+		_, maxTop := m.cellPopupScrollBounds()
 		m.cellPopupTop = maxTop
 	}
+	m.clampCellPopupScroll()
 }
 
 func (m Model) View() string {
@@ -872,38 +899,45 @@ func (m Model) renderCellPopup() string {
 	boxW, boxH, innerW, innerH := m.cellPopupLayout()
 
 	lines := m.cellPopupDisplayLines(innerW)
+	contentH := m.cellPopupContentLinesHeight(innerH)
 	maxTop := 0
-	if len(lines) > innerH {
-		maxTop = len(lines) - innerH
+	if contentH > 0 && len(lines) > contentH {
+		maxTop = len(lines) - contentH
 	}
 	top := m.cellPopupTop
 	if top > maxTop {
 		top = maxTop
 	}
 
-	var sb strings.Builder
-	for i := top; i < len(lines) && i < top+innerH; i++ {
-		sb.WriteString(lines[i])
-		sb.WriteString("\n")
+	var rows []string
+	if contentH > 0 {
+		for i := top; i < len(lines) && i < top+contentH; i++ {
+			rows = append(rows, lines[i])
+		}
 	}
 	if m.cellPopupMsg != "" {
-		sb.WriteString("\n")
 		msgStyle := m.theme.Success
 		if m.cellPopupMsg == "Not valid JSON" {
 			msgStyle = m.theme.Error
 		}
-		sb.WriteString(msgStyle.Render(truncate(m.cellPopupMsg, innerW)))
-		sb.WriteString("\n")
+		rows = append(rows, msgStyle.Render(truncate(m.cellPopupMsg, innerW)))
 	}
-	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
+	for len(rows) < innerH {
+		rows = append(rows, "")
+	}
+	if len(rows) > innerH {
+		rows = rows[:innerH]
+	}
+	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(strings.Join(rows, "\n"))
+	body = lipgloss.Place(innerW, innerH, lipgloss.Left, lipgloss.Top, body)
 
 	title := fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
 	if m.cellPopupJSONFormatted {
 		title = fmt.Sprintf("Cell Value — JSON formatted (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
 	}
-	footer := "y copy  f JSON  h/l col  j/k row  PgDn/ctrl+f scroll  g/G top/bottom  esc close"
+	footer := "y: copy · f: JSON · h/l: col · j/k: row · PgDn/PgUp: scroll · g/G: top/bottom · esc: close"
 	if maxTop == 0 {
-		footer = "y copy  f JSON  h/l col  j/k row  esc close"
+		footer = "y: copy · f: JSON · h/l: col · j/k: row · esc: close"
 	}
 	popup := m.theme.BorderFocused.
 		Width(boxW - 2).

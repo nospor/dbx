@@ -1474,9 +1474,9 @@ func (m Model) renderDDLPopup() string {
 	if title == "" {
 		title = "DDL"
 	}
-	footer := "y copy  j/k  g/G  pgup/pgdn  esc close"
+	footer := "y: copy · j/k  g/G  PgUp/PgDn · esc close"
 	if maxTop == 0 {
-		footer = "y copy  esc close"
+		footer = "y: copy · esc: close"
 	}
 	popup := m.theme.BorderFocused.Width(boxW-2).Height(boxH-2).Render(body)
 	popup = m.embedDDLPopupBorderLabels(popup, title, footer)
@@ -1846,14 +1846,14 @@ func (m Model) rightColumnWidth() int {
 func (m Model) panelBottomHintFor(p Panel) string {
 	switch p {
 	case PanelExplorer:
-		return "s - show rows · v - DDL · space - commands"
+		return "s: show rows · v: DDL · space: commands"
 	case PanelEditor:
 		if m.editor.IsInsertMode() {
-			return "Esc - normal mode · Tab - autocomplete · Ctrl+Enter - run query"
+			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter: run query"
 		}
-		return "Enter - run query · Tab - next tab · Sh-Tab - prev tab · i - insert · space - commands"
+		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · space: commands"
 	case PanelResults:
-		return "s - toggle row mark · S - band select rows · d - delete draft · u - update cell · v - full cell · space - commands"
+		return "s: toggle row mark · S: band select rows · d: delete draft · u: update cell · v: full cell · space: commands"
 	default:
 		return ""
 	}
