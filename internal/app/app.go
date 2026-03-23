@@ -103,7 +103,17 @@ func newEditorWithDrafts(t theme.Theme, drafts map[string]string, cfg *config.Co
 			valid = append(valid, k)
 		}
 	}
-	ed.RestoreOpenTabs(valid, func(s string) string { return tabLabelForConfig(cfg, s) })
+	wantActive := ot.ActiveKey()
+	validActive := ""
+	if wantActive != "" {
+		for _, k := range valid {
+			if k == wantActive {
+				validActive = wantActive
+				break
+			}
+		}
+	}
+	ed.RestoreOpenTabs(valid, validActive, func(s string) string { return tabLabelForConfig(cfg, s) })
 	return ed
 }
 
@@ -907,7 +917,7 @@ func (m *Model) persistOpenTabs() {
 	if m.openTabsStore == nil {
 		return
 	}
-	_ = m.openTabsStore.Save(m.editor.OpenTabKeys())
+	_ = m.openTabsStore.Save(m.editor.OpenTabKeys(), m.editor.EditorConnKey())
 }
 
 // syncActiveFromEditorTab applies app + explorer state when the editor active tab changes (keyboard).

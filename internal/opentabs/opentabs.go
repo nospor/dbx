@@ -1,6 +1,7 @@
 package opentabs
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,10 +10,17 @@ import (
 
 const fileName = "open-tabs.json"
 
-// Store persists ordered connection:database keys for restored editor tabs.
+// snapshot is the on-disk JSON shape (v2). Legacy files are a bare JSON array of keys.
+type snapshot struct {
+	Keys   []string `json:"keys"`
+	Active string   `json:"active,omitempty"`
+}
+
+// Store persists ordered connection:database keys for restored editor tabs and which tab was active.
 type Store struct {
-	path string
-	keys []string
+	path       string
+	keys       []string
+	activeKey  string
 }
 
 // New loads ~/.cache/dbx/open-tabs.json.
@@ -30,6 +38,7 @@ func New() (*Store, error) {
 	if err := s.load(); err != nil {
 		_ = os.Rename(path, path+".bak")
 		s.keys = nil
+		s.activeKey = ""
 	}
 	_ = s.ensureFile()
 	return s, nil
@@ -65,7 +74,7 @@ func (s *Store) ensureFile() error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return s.saveBytes([]string{})
+	return s.saveSnapshot(nil, "")
 }
 
 func (s *Store) load() error {
@@ -76,22 +85,41 @@ func (s *Store) load() error {
 	if err != nil {
 		return err
 	}
-	if len(data) == 0 {
+	if len(bytes.TrimSpace(data)) == 0 {
 		return nil
 	}
-	var keys []string
-	if err := json.Unmarshal(data, &keys); err != nil {
+	keys, active, err := parseOpenTabsFile(data)
+	if err != nil {
 		return err
 	}
 	s.keys = keys
+	s.activeKey = active
 	return nil
 }
 
-func (s *Store) saveBytes(keys []string) error {
+func parseOpenTabsFile(data []byte) (keys []string, active string, err error) {
+	trim := bytes.TrimSpace(data)
+	if len(trim) == 0 {
+		return nil, "", nil
+	}
+	if trim[0] == '[' {
+		if err := json.Unmarshal(trim, &keys); err != nil {
+			return nil, "", err
+		}
+		return keys, "", nil
+	}
+	var snap snapshot
+	if err := json.Unmarshal(trim, &snap); err != nil {
+		return nil, "", err
+	}
+	return snap.Keys, snap.Active, nil
+}
+
+func (s *Store) saveSnapshot(keys []string, activeKey string) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(keys, "", "  ")
+	data, err := json.MarshalIndent(snapshot{Keys: keys, Active: activeKey}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -116,11 +144,20 @@ func (s *Store) Keys() []string {
 	return out
 }
 
-// Save persists the ordered tab keys.
-func (s *Store) Save(keys []string) error {
+// ActiveKey returns the last saved active tab connection key (connID:db), or "" if none / legacy file.
+func (s *Store) ActiveKey() string {
+	if s == nil {
+		return ""
+	}
+	return s.activeKey
+}
+
+// Save persists the ordered tab keys and which tab was active (conn key; empty if none).
+func (s *Store) Save(keys []string, activeKey string) error {
 	if s == nil {
 		return nil
 	}
 	s.keys = append([]string(nil), keys...)
-	return s.saveBytes(s.keys)
+	s.activeKey = activeKey
+	return s.saveSnapshot(s.keys, s.activeKey)
 }

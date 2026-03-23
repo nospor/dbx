@@ -311,7 +311,8 @@ func (m *Model) activateTabIndex(i int) {
 }
 
 // RestoreOpenTabs rebuilds visible tabs from persisted keys (after SeedQueryTabs).
-func (m *Model) RestoreOpenTabs(keys []string, labelFor func(string) string) {
+// activeKey is the connID:database key for the tab that should be selected; if empty or not found, the first tab is activated.
+func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(string) string) {
 	m.openTabs = m.openTabs[:0]
 	for _, k := range keys {
 		if k == "" || k == "_" {
@@ -331,7 +332,16 @@ func (m *Model) RestoreOpenTabs(keys []string, labelFor func(string) string) {
 		m.switchToIdle()
 		return
 	}
-	m.activateTabIndex(0)
+	idx := 0
+	if activeKey != "" {
+		for i, t := range m.openTabs {
+			if t.ConnKey == activeKey {
+				idx = i
+				break
+			}
+		}
+	}
+	m.activateTabIndex(idx)
 }
 
 // OpenTab opens or activates a tab for the given connection key.
