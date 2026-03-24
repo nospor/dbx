@@ -1873,7 +1873,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		}
 		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · backspace: history · space: commands"
 	case PanelResults:
-		return "s: toggle row mark · S: band select rows · d: delete draft · u: update cell · v: full cell · space: commands"
+		return "h/l, 0/$, PgUp/PgDn: movement, s: toggle row mark · S: band select rows · d: delete draft · u: update cell · v: full cell · space: commands"
 	default:
 		return ""
 	}

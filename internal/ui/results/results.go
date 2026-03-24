@@ -505,7 +505,7 @@ func (m Model) renderHScrollBar(totalCols int) string {
 
 	// If everything fits, no scrollbar needed
 	if visibleColCount >= totalCols {
-		return m.theme.Dimmed.Render(fitToWidth("h/l: scroll cols  0/$: first/last col", m.width))
+		return m.theme.Dimmed.Render(fitToWidth("", m.width))
 	}
 
 	barWidth := m.width - 2
