@@ -174,6 +174,34 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.scrollTop = m.cursorRow - visibleRows + 1
 		}
 		m.syncRangeSelection()
+	case "pgdown":
+		if len(rows) == 0 {
+			break
+		}
+		delta := visibleRows
+		if m.cursorRow+delta >= len(rows) {
+			m.cursorRow = len(rows) - 1
+		} else {
+			m.cursorRow += delta
+		}
+		if m.cursorRow >= m.scrollTop+visibleRows {
+			m.scrollTop = m.cursorRow - visibleRows + 1
+		}
+		m.syncRangeSelection()
+	case "pgup":
+		if len(rows) == 0 {
+			break
+		}
+		delta := visibleRows
+		if m.cursorRow-delta < 0 {
+			m.cursorRow = 0
+		} else {
+			m.cursorRow -= delta
+		}
+		if m.cursorRow < m.scrollTop {
+			m.scrollTop = m.cursorRow
+		}
+		m.syncRangeSelection()
 	case "0":
 		m.cursorCol = 0
 		m.scrollLeft = 0
@@ -297,13 +325,13 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 			m.cellPopupTop = 0
 			m.cellPopupMsg = ""
 		}
-	case "pgdown", "ctrl+f":
+	case "pgdown":
 		visible, maxTop := m.cellPopupScrollBounds()
 		m.cellPopupTop += visible
 		if m.cellPopupTop > maxTop {
 			m.cellPopupTop = maxTop
 		}
-	case "pgup", "ctrl+b":
+	case "pgup":
 		visible, _ := m.cellPopupScrollBounds()
 		m.cellPopupTop -= visible
 		if m.cellPopupTop < 0 {

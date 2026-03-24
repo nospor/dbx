@@ -1293,12 +1293,12 @@ func (m Model) handleHelpPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.helpScroll > 0 {
 			m.helpScroll--
 		}
-	case "pgdown", "ctrl+f":
+	case "pgdown":
 		m.helpScroll += visible
 		if m.helpScroll > maxTop {
 			m.helpScroll = maxTop
 		}
-	case "pgup", "ctrl+b":
+	case "pgup":
 		m.helpScroll -= visible
 		if m.helpScroll < 0 {
 			m.helpScroll = 0
@@ -1354,6 +1354,7 @@ const helpScreenText = `
 
   RESULTS
     j/k         Navigate rows
+    pgup/pgdn   Page up/down rows 
     h/l         Navigate columns
     g/G         First/last row
     s           Toggle mark on current row (for delete draft)
@@ -1390,12 +1391,12 @@ func (m Model) handleDDLPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.ddlPopupScroll > 0 {
 			m.ddlPopupScroll--
 		}
-	case "pgdown", "ctrl+f":
+	case "pgdown":
 		m.ddlPopupScroll += visible
 		if m.ddlPopupScroll > maxTop {
 			m.ddlPopupScroll = maxTop
 		}
-	case "pgup", "ctrl+b":
+	case "pgup":
 		m.ddlPopupScroll -= visible
 		if m.ddlPopupScroll < 0 {
 			m.ddlPopupScroll = 0
