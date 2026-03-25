@@ -1356,6 +1356,7 @@ const helpScreenText = `
   RESULTS
     j/k         Navigate rows
     pgup/pgdn   Page up/down rows 
+    ctrl+d/u    Scroll down / up by half page                                                                                                                                                                                                                                                                                                                                                                                  |
     h/l         Navigate columns
     g/G         First/last row
     s           Toggle mark on current row (for delete draft)
@@ -2104,7 +2105,7 @@ func (m Model) renderHelp() string {
 	}
 	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(sb.String())
 
-	footerKey := "j/k  g/G  pgup/pgdn  enter/?/esc/q close"
+	footerKey := "j/k  g/G  PgUp/PgDn  ?/esc/q close"
 	var footer string
 	if maxTop == 0 {
 		footer = footerKey

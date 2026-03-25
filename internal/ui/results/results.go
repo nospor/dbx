@@ -202,6 +202,40 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.scrollTop = m.cursorRow
 		}
 		m.syncRangeSelection()
+	case "ctrl+d":
+		if len(rows) == 0 {
+			break
+		}
+		delta := visibleRows / 2
+		if delta < 1 {
+			delta = 1
+		}
+		if m.cursorRow+delta >= len(rows) {
+			m.cursorRow = len(rows) - 1
+		} else {
+			m.cursorRow += delta
+		}
+		if m.cursorRow >= m.scrollTop+visibleRows {
+			m.scrollTop = m.cursorRow - visibleRows + 1
+		}
+		m.syncRangeSelection()
+	case "ctrl+u":
+		if len(rows) == 0 {
+			break
+		}
+		delta := visibleRows / 2
+		if delta < 1 {
+			delta = 1
+		}
+		if m.cursorRow-delta < 0 {
+			m.cursorRow = 0
+		} else {
+			m.cursorRow -= delta
+		}
+		if m.cursorRow < m.scrollTop {
+			m.scrollTop = m.cursorRow
+		}
+		m.syncRangeSelection()
 	case "0":
 		m.cursorCol = 0
 		m.scrollLeft = 0
