@@ -5,9 +5,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/x/ansi"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/robertn/dbx/internal/ui/theme"
 	"github.com/robertn/dbx/internal/util"
@@ -79,9 +79,9 @@ type Model struct {
 	compVisible bool
 
 	// History browsing
-	history       []string
-	histCursor    int
-	histBrowsing  bool
+	history      []string
+	histCursor   int
+	histBrowsing bool
 
 	// History popup
 	histPopupVisible            bool
@@ -720,6 +720,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.vim.row--
 			m.clampCol(lines)
 		}
+	case "J":
+		if nextRow := m.jumpToNextQuery(lines); nextRow >= 0 {
+			m.vim.row = nextRow
+			m.vim.col = 0
+			m.clampCursor()
+			m.adjustScroll()
+		}
+	case "K":
+		if prevRow := m.jumpToPrevQuery(lines); prevRow >= 0 {
+			m.vim.row = prevRow
+			m.vim.col = 0
+			m.clampCursor()
+			m.adjustScroll()
+		}
 	case "tab":
 		if msg := m.CycleTab(1); msg != nil {
 			return func() tea.Msg { return *msg }
@@ -1163,7 +1177,7 @@ func (m *Model) acceptCompletion(lines []string) []string {
 		start--
 	}
 	completion := []rune(m.completions[m.compCursor])
-	newRunes := make([]rune, 0, len(runes)-( end-start)+len(completion))
+	newRunes := make([]rune, 0, len(runes)-(end-start)+len(completion))
 	newRunes = append(newRunes, runes[:start]...)
 	newRunes = append(newRunes, completion...)
 	newRunes = append(newRunes, runes[end:]...)
@@ -1206,6 +1220,55 @@ func (m *Model) currentQuery(lines []string) string {
 		return strings.TrimSpace(strings.Join(lines[above:row], "\n"))
 	}
 	return ""
+}
+
+func (m *Model) jumpToNextQuery(lines []string) int {
+	if len(lines) == 0 {
+		return -1
+	}
+	row := m.vim.row
+	if row >= len(lines) {
+		row = len(lines) - 1
+	}
+	start := row
+	for start < len(lines) && strings.TrimSpace(lines[start]) != "" {
+		start++
+	}
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	if start >= len(lines) {
+		return -1
+	}
+	return start
+}
+
+func (m *Model) jumpToPrevQuery(lines []string) int {
+	if len(lines) == 0 {
+		return -1
+	}
+	row := m.vim.row
+	if row >= len(lines) {
+		row = len(lines) - 1
+	}
+	end := row
+	for end > 0 && strings.TrimSpace(lines[end]) != "" {
+		end--
+	}
+	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	if end <= 0 {
+		return 0
+	}
+	start := end
+	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
+		start--
+	}
+	if start == end {
+		return 0
+	}
+	return start
 }
 
 func (m Model) View() string {

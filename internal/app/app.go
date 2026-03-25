@@ -42,36 +42,36 @@ type Model struct {
 
 	focus Panel
 
-	explorerHidden bool
-	fullscreenOn   bool
+	explorerHidden  bool
+	fullscreenOn    bool
 	fullscreenPanel Panel
 
 	// Active connection state
 	activeConnID string
 	activeDB     string
-	drivers      map[string]db.Driver // connID -> driver
-	schemaTables map[string][]string  // connID:db -> tables/views
-	schemaCols   map[string][]string  // connID:db -> column tokens
+	drivers      map[string]db.Driver       // connID -> driver
+	schemaTables map[string][]string        // connID:db -> tables/views
+	schemaCols   map[string][]string        // connID:db -> column tokens
 	tableCols    map[string][]db.ColumnInfo // connID:db:table -> columns (cache + explorer)
 
 	// Per editor-tab results for this session only (key = connID:dbName).
 	tabResultCache   map[string]*results.QueryResult
 	tabResultLoading map[string]bool
 
-	explorer explorer.Model
-	editor   editor.Model
-	results  results.Model
-	palette  cmdpalette.Model
-	connForm *explorer.ConnForm
-	showForm bool
-	showHelp bool
+	explorer   explorer.Model
+	editor     editor.Model
+	results    results.Model
+	palette    cmdpalette.Model
+	connForm   *explorer.ConnForm
+	showForm   bool
+	showHelp   bool
 	helpScroll int
 
-	spinner    spinner.Model
-	isLoading  bool
+	spinner   spinner.Model
+	isLoading bool
 
-	statusMsg     string
-	statusExpiry  time.Time
+	statusMsg    string
+	statusExpiry time.Time
 
 	// Explorer table/view DDL popup (v)
 	ddlPopupOpen   bool
@@ -80,7 +80,7 @@ type Model struct {
 	ddlPopupScroll int
 
 	// Editor tabs + restore
-	tabCloseConfirm           bool
+	tabCloseConfirm             bool
 	pendingExplorerSelectConnID string
 	pendingExplorerSelectDB     string
 }
@@ -129,25 +129,25 @@ func New(cfg *config.Config) Model {
 	sp.Spinner = spinner.Dot
 
 	m := Model{
-		cfg:             cfg,
-		theme:           t,
-		keymap:          DefaultKeyMap(),
-		history:         hist,
-		queryContents:   qc,
-		openTabsStore:   ot,
-		focus:           PanelExplorer,
-		fullscreenPanel: PanelExplorer,
-		drivers:         make(map[string]db.Driver),
-		schemaTables:    make(map[string][]string),
-		schemaCols:      make(map[string][]string),
+		cfg:              cfg,
+		theme:            t,
+		keymap:           DefaultKeyMap(),
+		history:          hist,
+		queryContents:    qc,
+		openTabsStore:    ot,
+		focus:            PanelExplorer,
+		fullscreenPanel:  PanelExplorer,
+		drivers:          make(map[string]db.Driver),
+		schemaTables:     make(map[string][]string),
+		schemaCols:       make(map[string][]string),
 		tableCols:        make(map[string][]db.ColumnInfo),
 		tabResultCache:   make(map[string]*results.QueryResult),
 		tabResultLoading: make(map[string]bool),
 		explorer:         explorer.New(cfg, t),
 		editor:           newEditorWithDrafts(t, qc.All(), cfg, ot),
 		results:          results.New(t),
-		palette:         cmdpalette.New(t),
-		spinner:         sp,
+		palette:          cmdpalette.New(t),
+		spinner:          sp,
 	}
 	if kt := m.editor.OpenTabKeys(); len(kt) > 0 {
 		connID, dbName := splitConnKey(m.editor.EditorConnKey())
@@ -203,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tableDDLMsg:
 		if msg.err != nil {
-			return m, m.setStatus("DDL: "+msg.err.Error())
+			return m, m.setStatus("DDL: " + msg.err.Error())
 		}
 		m.ddlPopupOpen = true
 		m.ddlPopupTitle = msg.title
@@ -1345,6 +1345,7 @@ const helpScreenText = `
     backspace   History popup (type to filter, ↑↓ navigate, Ctrl+d delete)
     dd          Delete line
     gg/G        Go to top/bottom
+    J/K         Jump to next/prev query block
 
   EDITOR (Insert mode)
     esc         Return to normal mode
@@ -1498,7 +1499,7 @@ func (m Model) renderDDLPopup() string {
 	if maxTop == 0 {
 		footer = "y: copy · Esc: close"
 	}
-	popup := m.theme.BorderFocused.Width(boxW-2).Height(boxH-2).Render(body)
+	popup := m.theme.BorderFocused.Width(boxW - 2).Height(boxH - 2).Render(body)
 	popup = m.embedDDLPopupBorderLabels(popup, title, footer)
 	// Return the bordered box only; View() uses overlayCentered (see renderTabCloseConfirmPopup).
 	return popup
@@ -1884,7 +1885,7 @@ func (m Model) panelTitleFor(p Panel) string {
 	case PanelExplorer:
 		return "[e] Explorer"
 	case PanelEditor:
-		return "[q] Query Editor " 
+		return "[q] Query Editor "
 	case PanelResults:
 		return "[r] Results"
 	default:

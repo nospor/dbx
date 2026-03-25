@@ -109,6 +109,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `backspace`         | Open **history popup** — filter and pick a query to append (see **History** below)                                                                                                                                |
 | `dd`                | Delete line                                                                                                                                                                                                       |
 | `gg` / `G`          | Go to top / bottom                                                                                                                                                                                                |
+| `J` / `K`           | Jump to next / previous query block (queries separated by blank lines)                                                                                                                                          |
 | `h/j/k/l`           | Move cursor                                                                                                                                                                                                       |
 | `w` / `b`           | Word forward / backward                                                                                                                                                                                           |
 
