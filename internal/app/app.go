@@ -296,10 +296,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		// Global keys — suppressed in insert mode and while the history popup is open (filter typing).
+		// Global keys — suppressed in insert mode, history popup, and explorer filtering.
 		editorInsert := m.editor.IsInsertMode()
 		historyPopup := m.editor.HistoryPopupVisible()
-		suppressGlobals := editorInsert || historyPopup
+		explorerFiltering := m.explorer.IsFiltering()
+		suppressGlobals := editorInsert || historyPopup || explorerFiltering
 
 		switch msg.String() {
 		case "ctrl+c":
@@ -1333,6 +1334,7 @@ const helpScreenText = `
     h           Collapse current branch
     s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
     v           DDL popup for table/view (CREATE + indexes; driver-specific)
+    f           Set filter for tables
 
   EDITOR (Normal mode)
     tab         Next query tab
@@ -1871,7 +1873,7 @@ func (m Model) rightColumnWidth() int {
 func (m Model) panelBottomHintFor(p Panel) string {
 	switch p {
 	case PanelExplorer:
-		return "s: show rows · v: DDL · space: commands"
+		return "f: filter · s: show rows · v: DDL · space: commands"
 	case PanelEditor:
 		if m.editor.IsInsertMode() {
 			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter/Ctrl+r: run query"

@@ -3,6 +3,7 @@ package explorer
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -46,13 +47,23 @@ type Model struct {
 	flat       []*Node // flattened visible nodes for rendering
 	cursor     int
 	pendingSel *Node   // set when user presses Enter/s on a node
+
+	filterInput textinput.Model
+	filtering   bool
+	filterText  string
 }
 
 // New creates a new explorer model.
 func New(cfg *config.Config, t theme.Theme) Model {
+	ti := textinput.New()
+	ti.Prompt = "/"
+	ti.Placeholder = "Filter tables..."
+	ti.CharLimit = 100
+
 	m := Model{
-		cfg:   cfg,
-		theme: t,
+		cfg:         cfg,
+		theme:       t,
+		filterInput: ti,
 	}
 	m.buildTree()
 	return m
@@ -79,6 +90,12 @@ func (m *Model) flatten() {
 }
 
 func (m *Model) flattenNode(n *Node) {
+	if m.filterText != "" && (n.Kind == NodeTable || n.Kind == NodeView || n.Kind == NodeColumn) {
+		if !strings.Contains(strings.ToLower(n.Label), m.filterText) {
+			return
+		}
+	}
+
 	m.flat = append(m.flat, n)
 	if n.Expanded {
 		for _, child := range n.Children {
@@ -123,13 +140,48 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// IsFiltering returns true if the user is currently typing in the filter prompt.
+func (m Model) IsFiltering() bool {
+	return m.filtering
+}
+
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if !m.focused {
 		return m, nil
 	}
+
+	var cmd tea.Cmd
+
+	if m.filtering {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "enter", "esc":
+				m.filtering = false
+				m.filterInput.Blur()
+				return m, nil
+			}
+		}
+
+		m.filterInput, cmd = m.filterInput.Update(msg)
+		newFilterText := strings.ToLower(m.filterInput.Value())
+		if newFilterText != m.filterText {
+			m.filterText = newFilterText
+			m.flatten()
+			if m.cursor >= len(m.flat) {
+				m.cursor = max(0, len(m.flat)-1)
+			}
+		}
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "f":
+			m.filtering = true
+			m.filterInput.Focus()
+			return m, textinput.Blink
 		case "j", "down":
 			if m.cursor < len(m.flat)-1 {
 				m.cursor++
@@ -214,7 +266,7 @@ func (m Model) View() string {
 
 	var sb strings.Builder
 
-	if len(m.flat) == 0 {
+	if len(m.flat) == 0 && m.filterText == "" {
 		hint := m.theme.Dimmed.Render("No connections.\nPress space → add connection")
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(hint)
 	}
@@ -222,20 +274,44 @@ func (m Model) View() string {
 	// Match previous inner line budget: was 1 title + (height-2) tree rows (= height-1 rows).
 	// Border title moved outside; keep total inner lines at height-1 so the panel doesn't overflow.
 	visibleLines := m.height - 1
-	if visibleLines < 0 {
-		visibleLines = 0
-	}
-	start := 0
-	if m.cursor >= visibleLines {
-		start = m.cursor - visibleLines + 1
+	treeLines := visibleLines
+	if m.filtering || m.filterText != "" {
+		treeLines-- // reserve line for the prompt
 	}
 
-	for i := start; i < len(m.flat) && i < start+visibleLines; i++ {
-		if i > start {
+	if treeLines < 0 {
+		treeLines = 0
+	}
+	start := 0
+	if m.cursor >= treeLines {
+		start = m.cursor - treeLines + 1
+	}
+
+	linesRendered := 0
+	for i := start; i < len(m.flat) && i < start+treeLines; i++ {
+		if linesRendered > 0 {
 			sb.WriteByte('\n')
 		}
 		n := m.flat[i]
 		sb.WriteString(m.renderNode(n, i == m.cursor))
+		linesRendered++
+	}
+
+	for linesRendered < treeLines {
+		sb.WriteByte('\n')
+		linesRendered++
+	}
+
+	if m.filtering || m.filterText != "" {
+		if linesRendered > 0 {
+			sb.WriteByte('\n')
+		}
+		if m.filtering {
+			sb.WriteString(m.filterInput.View())
+		} else {
+			prompt := m.theme.Dimmed.Render("Filter: ") + m.theme.TreeTable.Render(m.filterText)
+			sb.WriteString(prompt)
+		}
 	}
 
 	return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(sb.String())
