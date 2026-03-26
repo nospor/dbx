@@ -814,7 +814,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		if m.vim.pendingY {
 			if len(lines) > 0 && m.vim.row < len(lines) {
-				util.Copy(lines[m.vim.row] + "\n")
+				util.Copy(lines[m.vim.row])
 			}
 			m.vim.pendingY = false
 		} else {
@@ -1416,7 +1416,59 @@ func (m Model) View() string {
 		boxH := lipgloss.Height(compBox)
 		insertRow := completionPopupStartRow(cursorScreenRow, boxH, len(baseLines))
 		insertCol := m.vim.col + 2
-		return overlayStyledBlockAt(result, compBox, insertRow, insertCol, m.width)
+		result = overlayStyledBlockAt(result, compBox, insertRow, insertCol, m.width)
+	}
+
+	// Render pending operator popup
+	if m.vim.pendingD || m.vim.pendingY {
+		title := "Delete"
+		cmdKey := "d"
+		actionDesc := "Line"
+		if m.vim.pendingY {
+			title = "Yank"
+			cmdKey = "y"
+		}
+		
+		desc1 := "Current " + actionDesc
+		desc2 := "Current Query"
+		
+		innerW := lipgloss.Width(m.theme.PaletteTitle.Render(title))
+		w1 := lipgloss.Width(" " + cmdKey + "  " + desc1)
+		w2 := lipgloss.Width(" q  " + desc2)
+		if w1 > innerW {
+			innerW = w1
+		}
+		if w2 > innerW {
+			innerW = w2
+		}
+		if innerW < 12 {
+			innerW = 12
+		}
+		
+		rowStyler := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Left)
+		var opSb strings.Builder
+		opSb.WriteString(rowStyler.Render(m.theme.PaletteTitle.Render(title)) + "\n")
+		
+		key1 := m.theme.PaletteKey.Render(cmdKey)
+		d1 := m.theme.PaletteItem.Render(desc1)
+		opSb.WriteString(rowStyler.Render(" " + key1 + "  " + d1) + "\n")
+		
+		key2 := m.theme.PaletteKey.Render("q")
+		d2 := m.theme.PaletteItem.Render(desc2)
+		opSb.WriteString(rowStyler.Render(" " + key2 + "  " + d2) + "\n")
+		
+		box := m.theme.PaletteBox.Render(opSb.String())
+		
+		boxH := lipgloss.Height(box)
+		boxW := lipgloss.Width(box)
+		
+		totalLines := 1 + editorTopGutterLines + visibleLines
+		startRow := totalLines - boxH
+		if startRow < 0 { startRow = 0 }
+		startCol := m.width - boxW - 2
+		if startCol < 0 { startCol = 0 }
+		
+		result = overlayStyledBlockAt(result, box, startRow, startCol, m.width)
 	}
 
 	return result
