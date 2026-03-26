@@ -784,6 +784,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.vim.pendingD = true
 		}
+	case "q":
+		if m.vim.pendingD {
+			m.pushUndoPoint()
+			lines = m.deleteQuery(lines)
+			m.setLines(lines)
+			m.vim.pendingD = false
+		} else if m.vim.pendingY {
+			q := m.currentQuery(lines)
+			if q != "" {
+				util.Copy(q)
+			}
+			m.vim.pendingY = false
+		}
 	case "ctrl+d":
 		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
 			return nil
@@ -798,6 +811,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			q := m.histPopupPendingDeleteQuery
 			m.histPopupPendingDeleteQuery = ""
 			return func() tea.Msg { return DeleteHistoryEntryMsg{Query: q} }
+		}
+		if m.vim.pendingY {
+			if len(lines) > 0 && m.vim.row < len(lines) {
+				util.Copy(lines[m.vim.row] + "\n")
+			}
+			m.vim.pendingY = false
+		} else {
+			m.vim.pendingY = true
 		}
 	case "n":
 		if m.histPopupVisible {
@@ -844,6 +865,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 			return nil
 		}
+		m.vim.pendingG = false
+		m.vim.pendingD = false
+		m.vim.pendingY = false
 	case "ctrl+p":
 		m.BrowseHistoryPrev()
 		return nil
@@ -855,6 +879,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	default:
 		m.vim.pendingG = false
 		m.vim.pendingD = false
+		m.vim.pendingY = false
 	}
 
 	m.clampCursor()
@@ -1186,19 +1211,17 @@ func (m *Model) acceptCompletion(lines []string) []string {
 	return lines
 }
 
-// currentQuery returns the query block that the cursor is currently in.
-// Queries are separated by at least one blank line.
-// If the cursor is on a blank line, the block above (if any) is used.
-func (m *Model) currentQuery(lines []string) string {
+// currentQueryBounds returns the start and end row indices of the query block the cursor is in.
+// Returns start > end if no block is found.
+func (m *Model) currentQueryBounds(lines []string) (int, int) {
 	if len(lines) == 0 {
-		return ""
+		return 0, -1
 	}
 	row := m.vim.row
 	if row >= len(lines) {
 		row = len(lines) - 1
 	}
 
-	// If cursor is on a blank line, use the preceding non-empty block
 	start := row
 	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
 		start--
@@ -1209,17 +1232,55 @@ func (m *Model) currentQuery(lines []string) string {
 	}
 	q := strings.TrimSpace(strings.Join(lines[start:end+1], "\n"))
 	if q != "" {
-		return q
+		return start, end
 	}
+
 	// Cursor on blank line: find the block above
 	if row > 0 {
-		above := row - 1
-		for above > 0 && strings.TrimSpace(lines[above-1]) != "" {
-			above--
+		endAbove := row - 1
+		for endAbove >= 0 && strings.TrimSpace(lines[endAbove]) == "" {
+			endAbove--
 		}
-		return strings.TrimSpace(strings.Join(lines[above:row], "\n"))
+		if endAbove >= 0 {
+			startAbove := endAbove
+			for startAbove > 0 && strings.TrimSpace(lines[startAbove-1]) != "" {
+				startAbove--
+			}
+			return startAbove, endAbove
+		}
+	}
+	return 0, -1
+}
+
+// currentQuery returns the query block that the cursor is currently in.
+// Queries are separated by at least one blank line.
+// If the cursor is on a blank line, the block above (if any) is used.
+func (m *Model) currentQuery(lines []string) string {
+	start, end := m.currentQueryBounds(lines)
+	if start <= end {
+		return strings.TrimSpace(strings.Join(lines[start:end+1], "\n"))
 	}
 	return ""
+}
+
+// deleteQuery deletes the current query block and returns the updated lines.
+func (m *Model) deleteQuery(lines []string) []string {
+	start, end := m.currentQueryBounds(lines)
+	if start > end {
+		return lines
+	}
+	lines = append(lines[:start], lines[end+1:]...)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	m.vim.row = start
+	if m.vim.row >= len(lines) {
+		m.vim.row = len(lines) - 1
+	}
+	if m.vim.row < 0 {
+		m.vim.row = 0
+	}
+	return lines
 }
 
 func (m *Model) jumpToNextQuery(lines []string) int {

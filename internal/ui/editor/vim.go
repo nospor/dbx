@@ -24,6 +24,7 @@ type VimState struct {
 	col      int
 	pendingG bool
 	pendingD bool
+	pendingY bool
 }
 
 func newVimState() *VimState {

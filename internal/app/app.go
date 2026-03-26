@@ -1344,6 +1344,9 @@ const helpScreenText = `
     ctrl+p/n    Browse query history (replace buffer)
     backspace   History popup (type to filter, ↑↓ navigate, Ctrl+d delete)
     dd          Delete line
+    dq          Delete query
+    yy          Yank/copy line
+    yq          Yank/copy query
     gg/G        Go to top/bottom
     J/K         Jump to next/prev query block
 
