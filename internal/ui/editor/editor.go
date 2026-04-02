@@ -1590,6 +1590,43 @@ func (m *Model) currentQuery(lines []string) string {
 	return ""
 }
 
+// MoveCursorToQueryBlockIfPresent moves the cursor to the start of the first query block
+// whose trimmed text equals target (after trim). Query blocks are separated by blank lines,
+// matching CurrentQuery boundaries. Returns true if a matching block was found.
+func (m *Model) MoveCursorToQueryBlockIfPresent(target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	lines := m.lines()
+	i := 0
+	for i < len(lines) {
+		for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+			i++
+		}
+		if i >= len(lines) {
+			break
+		}
+		start := i
+		for i < len(lines) && strings.TrimSpace(lines[i]) != "" {
+			i++
+		}
+		end := i - 1
+		q := strings.TrimSpace(strings.Join(lines[start:end+1], "\n"))
+		if q == target {
+			m.vim.mode = ModeNormal
+			m.insertUndoSeeded = false
+			m.vim.row = start
+			m.vim.col = 0
+			m.compVisible = false
+			m.clampCursor()
+			m.adjustScroll()
+			return true
+		}
+	}
+	return false
+}
+
 // deleteQuery deletes the current query block and returns the updated lines.
 // If the next line after the block is blank (query separator), it is removed too
 // so two queries do not end up separated by multiple empty lines.

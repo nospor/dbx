@@ -1056,8 +1056,10 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 				driver = conn.Driver
 			}
 			query := quickSelectQuery(driver, node.DBName, node.Label)
-			m.editor.AppendAtEnd(query)
-			m.persistEditorDraft()
+			if !m.editor.MoveCursorToQueryBlockIfPresent(query) {
+				m.editor.AppendAtEnd(query)
+				m.persistEditorDraft()
+			}
 			// Keep focus in explorer; user can press r to view results.
 			m.beginQueryForActiveTab()
 			cmds = append(cmds, m.execQueryCmd(query))
