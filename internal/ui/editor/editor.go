@@ -587,6 +587,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.beforeInsertEdit()
 			lines = m.deleteBackspace(lines)
 			m.refreshCompletions(lines)
+		case "delete":
+			m.beforeInsertEdit()
+			lines = m.deleteForward(lines)
+			m.refreshCompletions(lines)
 		case "enter":
 			m.beforeInsertEdit()
 			lines = m.insertNewline(lines)
@@ -1181,6 +1185,24 @@ func (m *Model) deleteBackspace(lines []string) []string {
 		lines = append(lines[:row], lines[row+1:]...)
 		m.vim.row--
 		m.vim.col = prevLen
+	}
+	return lines
+}
+
+func (m *Model) deleteForward(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	row, col := m.vim.row, m.vim.col
+	runes := []rune(lines[row])
+	if col < len(runes) {
+		runes = append(runes[:col], runes[col+1:]...)
+		lines[row] = string(runes)
+		return lines
+	}
+	if row < len(lines)-1 {
+		lines[row] = lines[row] + lines[row+1]
+		lines = append(lines[:row+1], lines[row+2:]...)
 	}
 	return lines
 }
