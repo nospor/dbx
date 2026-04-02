@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -73,8 +74,12 @@ func New(cfg *config.Config, t theme.Theme) Model {
 }
 
 func (m *Model) buildTree() {
-	m.nodes = make([]*Node, 0, len(m.cfg.Connections))
-	for _, conn := range m.cfg.Connections {
+	conns := append([]config.Connection(nil), m.cfg.Connections...)
+	sort.Slice(conns, func(i, j int) bool {
+		return strings.ToLower(conns[i].Name) < strings.ToLower(conns[j].Name)
+	})
+	m.nodes = make([]*Node, 0, len(conns))
+	for _, conn := range conns {
 		n := &Node{
 			Kind:   NodeConnection,
 			Label:  conn.Name,
