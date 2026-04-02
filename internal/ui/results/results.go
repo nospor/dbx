@@ -885,12 +885,12 @@ func (m *Model) computeColWidths() []int {
 	}
 	colWidths := make([]int, len(m.result.Columns))
 	for i, col := range m.result.Columns {
-		colWidths[i] = len([]rune(col))
+		colWidths[i] = ansi.StringWidth(col)
 	}
 	for _, row := range m.result.Rows {
 		for i, cell := range row {
 			if i < len(colWidths) {
-				if w := len([]rune(sanitizeTableCell(cell))); w > colWidths[i] {
+				if w := ansi.StringWidth(sanitizeTableCell(cell)); w > colWidths[i] {
 					colWidths[i] = w
 				}
 			}
@@ -908,21 +908,24 @@ func (m *Model) computeColWidths() []int {
 }
 
 func padRight(s string, n int) string {
-	if len(s) >= n {
-		return s[:n]
+	sw := ansi.StringWidth(s)
+	if sw >= n {
+		if sw == n {
+			return s
+		}
+		return ansi.Truncate(s, n, "")
 	}
-	return s + strings.Repeat(" ", n-len(s))
+	return s + strings.Repeat(" ", n-sw)
 }
 
 func truncate(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
+	if ansi.StringWidth(s) <= n {
 		return s
 	}
 	if n <= 3 {
-		return string(runes[:n])
+		return ansi.Truncate(s, n, "")
 	}
-	return string(runes[:n-3]) + "..."
+	return ansi.Truncate(s, n, "...")
 }
 
 func sanitizeTableCell(s string) string {
