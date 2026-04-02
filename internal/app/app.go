@@ -707,6 +707,9 @@ func (m *Model) setFocus(p Panel) {
 	m.explorer.SetFocused(p == PanelExplorer)
 	m.editor.SetFocused(p == PanelEditor)
 	m.results.SetFocused(p == PanelResults)
+	if m.fullscreenOn {
+		m.fullscreenPanel = p
+	}
 }
 
 func (m *Model) connKey() string {
