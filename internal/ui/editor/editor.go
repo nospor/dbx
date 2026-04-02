@@ -1413,12 +1413,18 @@ func (m *Model) currentQuery(lines []string) string {
 }
 
 // deleteQuery deletes the current query block and returns the updated lines.
+// If the next line after the block is blank (query separator), it is removed too
+// so two queries do not end up separated by multiple empty lines.
 func (m *Model) deleteQuery(lines []string) []string {
 	start, end := m.currentQueryBounds(lines)
 	if start > end {
 		return lines
 	}
-	lines = append(lines[:start], lines[end+1:]...)
+	delEnd := end
+	if delEnd+1 < len(lines) && strings.TrimSpace(lines[delEnd+1]) == "" {
+		delEnd++
+	}
+	lines = append(lines[:start], lines[delEnd+1:]...)
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
