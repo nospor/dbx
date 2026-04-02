@@ -1356,8 +1356,14 @@ const helpScreenText = `
     backspace   History popup (type to filter, ↑↓ navigate, Ctrl+d delete)
     dd          Delete line
     dq          Delete query
+    dw          Delete current word                                                                                                                                                                                               |
+    d$          Delete to end of line                                                                                                                                                                                             |
+    d0          Delete to start of line                                                                                                                                                                                           |
     yy          Yank/copy line
     yq          Yank/copy query
+    yw          Yank/copy current word                                                                                                                                                                                            |
+    y$          Yank/copy to end of line                                                                                                                                                                                             |
+    y0          Yank/copy to start of line                                                                                                                                                                                           |
     gg/G        Go to top/bottom
     J/K         Jump to next/prev query block
 
@@ -1902,7 +1908,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		if m.editor.IsInsertMode() {
 			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter/Ctrl+r: run query"
 		}
-		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · backspace: history · space: commands"
+		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · d: delete · y: yank/copy · backspace: history · space: commands"
 	case PanelResults:
 		return "h/l, 0/$, PgUp/PgDn: movement, s: toggle row mark · S: band select rows · d: delete draft · i: insert draft · u: update cell · v: full cell · space: commands"
 	default:

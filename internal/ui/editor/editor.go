@@ -748,9 +748,27 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return func() tea.Msg { return *msg }
 		}
 	case "0":
-		m.vim.col = 0
+		if m.vim.pendingD {
+			m.pushUndoPoint()
+			lines = m.deleteToLineStart(lines)
+			m.setLines(lines)
+			m.vim.pendingD = false
+		} else if m.vim.pendingY {
+			m.yankToLineStart(lines)
+			m.vim.pendingY = false
+		} else {
+			m.vim.col = 0
+		}
 	case "$":
-		if len(lines) > 0 {
+		if m.vim.pendingD {
+			m.pushUndoPoint()
+			lines = m.deleteToLineEnd(lines)
+			m.setLines(lines)
+			m.vim.pendingD = false
+		} else if m.vim.pendingY {
+			m.yankToLineEnd(lines)
+			m.vim.pendingY = false
+		} else if len(lines) > 0 {
 			l := len([]rune(lines[m.vim.row]))
 			if l > 0 {
 				m.vim.col = l - 1
@@ -768,7 +786,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.vim.row = len(lines) - 1
 		m.vim.col = 0
 	case "w":
-		m.vim.row, m.vim.col = wordForward(lines, m.vim.row, m.vim.col)
+		if m.vim.pendingD {
+			m.pushUndoPoint()
+			lines = m.deleteWordForward(lines)
+			m.setLines(lines)
+			m.vim.pendingD = false
+		} else if m.vim.pendingY {
+			m.yankWordForward(lines)
+			m.vim.pendingY = false
+		} else {
+			m.vim.row, m.vim.col = wordForward(lines, m.vim.row, m.vim.col)
+		}
 	case "b":
 		m.vim.row, m.vim.col = wordBackward(lines, m.vim.row, m.vim.col)
 	case "x":
@@ -1275,6 +1303,134 @@ func (m *Model) deleteLine(lines []string) []string {
 	return lines
 }
 
+// currentWordBounds returns [start, end) rune indices of the word at or next to col,
+// using the same alphanumeric+underscore rule as autocomplete (isWordRune).
+func currentWordBounds(line string, col int) (start, end int, ok bool) {
+	runes := []rune(line)
+	if col < 0 {
+		col = 0
+	}
+	if col > len(runes) {
+		col = len(runes)
+	}
+	if len(runes) == 0 {
+		return 0, 0, false
+	}
+	if col < len(runes) && isWordRune(runes[col]) {
+		start = col
+		for start > 0 && isWordRune(runes[start-1]) {
+			start--
+		}
+		end = col + 1
+		for end < len(runes) && isWordRune(runes[end]) {
+			end++
+		}
+		return start, end, true
+	}
+	// On whitespace / punctuation: prefer the next word to the right (e.g. space between SELECT and foo).
+	for c := col; c < len(runes); c++ {
+		if isWordRune(runes[c]) {
+			start = c
+			end = c + 1
+			for end < len(runes) && isWordRune(runes[end]) {
+				end++
+			}
+			return start, end, true
+		}
+	}
+	if col > 0 && isWordRune(runes[col-1]) {
+		end = col
+		start = col - 1
+		for start > 0 && isWordRune(runes[start-1]) {
+			start--
+		}
+		return start, end, true
+	}
+	return 0, 0, false
+}
+
+func (m *Model) deleteWordForward(lines []string) []string {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return lines
+	}
+	row := m.vim.row
+	line := lines[row]
+	start, end, ok := currentWordBounds(line, m.vim.col)
+	if !ok || end <= start {
+		return lines
+	}
+	runes := []rune(line)
+	lines[row] = string(append(append([]rune{}, runes[:start]...), runes[end:]...))
+	m.vim.col = start
+	return lines
+}
+
+func (m *Model) deleteToLineEnd(lines []string) []string {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return lines
+	}
+	runes := []rune(lines[m.vim.row])
+	if m.vim.col >= len(runes) {
+		return lines
+	}
+	lines[m.vim.row] = string(runes[:m.vim.col])
+	return lines
+}
+
+// deleteToLineStart removes text from column 0 up to (but not including) the cursor.
+func (m *Model) deleteToLineStart(lines []string) []string {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return lines
+	}
+	runes := []rune(lines[m.vim.row])
+	col := m.vim.col
+	if col > len(runes) {
+		col = len(runes)
+	}
+	lines[m.vim.row] = string(runes[col:])
+	m.vim.col = 0
+	return lines
+}
+
+func (m *Model) yankWordForward(lines []string) {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return
+	}
+	line := lines[m.vim.row]
+	start, end, ok := currentWordBounds(line, m.vim.col)
+	if !ok || end <= start {
+		return
+	}
+	runes := []rune(line)
+	_ = util.Copy(string(runes[start:end]))
+}
+
+func (m *Model) yankToLineEnd(lines []string) {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return
+	}
+	runes := []rune(lines[m.vim.row])
+	if m.vim.col >= len(runes) {
+		return
+	}
+	_ = util.Copy(string(runes[m.vim.col:]))
+}
+
+func (m *Model) yankToLineStart(lines []string) {
+	if len(lines) == 0 || m.vim.row >= len(lines) {
+		return
+	}
+	runes := []rune(lines[m.vim.row])
+	col := m.vim.col
+	if col > len(runes) {
+		col = len(runes)
+	}
+	if col <= 0 {
+		return
+	}
+	_ = util.Copy(string(runes[:col]))
+}
+
 func (m *Model) refreshCompletions(lines []string) {
 	prefix := m.wordBeforeCursor(lines)
 	before := m.beforeCursorText(lines)
@@ -1574,39 +1730,38 @@ func (m Model) View() string {
 	if m.vim.pendingD || m.vim.pendingY {
 		title := "Delete"
 		cmdKey := "d"
-		actionDesc := "Line"
+		actionDesc := "line"
 		if m.vim.pendingY {
 			title = "Yank"
 			cmdKey = "y"
 		}
 		
-		desc1 := "Current " + actionDesc
-		desc2 := "Current Query"
-		
-		innerW := lipgloss.Width(m.theme.PaletteTitle.Render(title))
-		w1 := lipgloss.Width(" " + cmdKey + "  " + desc1)
-		w2 := lipgloss.Width(" q  " + desc2)
-		if w1 > innerW {
-			innerW = w1
+		rows := []struct{ key, desc string }{
+			{cmdKey, "Current " + actionDesc},
+			{"q", "Current query"},
+			{"w", "Current word"},
+			{"$", "To end of line"},
+			{"0", "To start of line"},
 		}
-		if w2 > innerW {
-			innerW = w2
+		innerW := lipgloss.Width(m.theme.PaletteTitle.Render(title))
+		for _, r := range rows {
+			lineW := lipgloss.Width(" " + r.key + "  " + r.desc)
+			if lineW > innerW {
+				innerW = lineW
+			}
 		}
 		if innerW < 12 {
 			innerW = 12
 		}
-		
+
 		rowStyler := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Left)
 		var opSb strings.Builder
 		opSb.WriteString(rowStyler.Render(m.theme.PaletteTitle.Render(title)) + "\n")
-		
-		key1 := m.theme.PaletteKey.Render(cmdKey)
-		d1 := m.theme.PaletteItem.Render(desc1)
-		opSb.WriteString(rowStyler.Render(" " + key1 + "  " + d1) + "\n")
-		
-		key2 := m.theme.PaletteKey.Render("q")
-		d2 := m.theme.PaletteItem.Render(desc2)
-		opSb.WriteString(rowStyler.Render(" " + key2 + "  " + d2) + "\n")
+		for _, r := range rows {
+			k := m.theme.PaletteKey.Render(r.key)
+			d := m.theme.PaletteItem.Render(r.desc)
+			opSb.WriteString(rowStyler.Render(" "+k+"  "+d) + "\n")
+		}
 		
 		box := m.theme.PaletteBox.Render(opSb.String())
 		

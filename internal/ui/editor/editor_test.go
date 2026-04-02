@@ -70,3 +70,31 @@ func TestGlobalCursorDisplayRow_secondLogicalLine(t *testing.T) {
 		t.Fatalf("globalCursorDisplayRow got %d want %d (first line wrapped height)", got, first)
 	}
 }
+
+func TestCurrentWordBounds(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		line       string
+		col        int
+		wantStart  int
+		wantEnd    int
+		wantOK     bool
+	}{
+		{"SELECT foo", 7, 7, 10, true},   // cursor on 'f' in foo
+		{"SELECT foo", 6, 7, 10, true},   // cursor on space before foo → word to right
+		{"SELECT foo", 9, 7, 10, true},   // cursor on last 'o'
+		{"hello world", 3, 0, 5, true},   // middle of hello
+		{"hello world", 5, 6, 11, true},  // cursor on space between → word to the right (world)
+		{"(bar)", 1, 1, 4, true},         // cursor after '(' → bar
+		{"   x", 0, 3, 4, true},          // skip spaces to x
+		{"", 0, 0, 0, false},
+		{"   ", 1, 0, 0, false},
+	}
+	for _, tc := range tests {
+		gotS, gotE, gotOK := currentWordBounds(tc.line, tc.col)
+		if gotOK != tc.wantOK || gotS != tc.wantStart || gotE != tc.wantEnd {
+			t.Errorf("currentWordBounds(%q, %d) = (%d,%d,%v) want (%d,%d,%v)",
+				tc.line, tc.col, gotS, gotE, gotOK, tc.wantStart, tc.wantEnd, tc.wantOK)
+		}
+	}
+}
