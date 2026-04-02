@@ -23,6 +23,9 @@ const (
 	NodeColumn
 )
 
+// Rows of context kept below the cursor when scrolling (cursor stays off the bottom edge).
+const explorerScrollMargin = 10
+
 // Node is a single item in the explorer tree.
 type Node struct {
 	Kind     NodeKind
@@ -259,6 +262,34 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// explorerScrollStart is the flat index of the first visible tree row.
+// Keeps the cursor explorerScrollMargin rows above the bottom of the viewport when possible
+// so items below the selection stay visible; at the end of the list the window clamps.
+func explorerScrollStart(cursor, treeLines, flatLen int) int {
+	if treeLines <= 0 || flatLen <= 0 {
+		return 0
+	}
+	margin := explorerScrollMargin
+	if margin > treeLines-2 {
+		margin = max(0, treeLines-2)
+	}
+	maxRowFromTop := treeLines - 1 - margin
+	if maxRowFromTop < 0 {
+		maxRowFromTop = 0
+	}
+	start := cursor - maxRowFromTop
+	if start < 0 {
+		start = 0
+	}
+	if start+treeLines > flatLen {
+		start = flatLen - treeLines
+		if start < 0 {
+			start = 0
+		}
+	}
+	return start
+}
+
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
@@ -282,10 +313,7 @@ func (m Model) View() string {
 	if treeLines < 0 {
 		treeLines = 0
 	}
-	start := 0
-	if m.cursor >= treeLines {
-		start = m.cursor - treeLines + 1
-	}
+	start := explorerScrollStart(m.cursor, treeLines, len(m.flat))
 
 	linesRendered := 0
 	for i := start; i < len(m.flat) && i < start+treeLines; i++ {
