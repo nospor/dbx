@@ -21,6 +21,12 @@ type UpdateDraftMsg struct {
 	Err string
 }
 
+// InsertDraftMsg asks the app to append generated INSERT statement(s) to the query editor.
+type InsertDraftMsg struct {
+	SQL string
+	Err string
+}
+
 // UpdateDraftRequestMsg asks the app to introspect PKs and build an UPDATE statement.
 type UpdateDraftRequestMsg struct {
 	Driver    string

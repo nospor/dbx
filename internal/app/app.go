@@ -223,6 +223,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case results.DeleteDraftRequestMsg:
 		return m, m.buildDeleteDraftCmd(msg)
 
+	case results.InsertDraftMsg:
+		if msg.Err != "" {
+			return m, m.setStatus(msg.Err)
+		}
+		m.appendDeleteUpdateDraft(msg.SQL)
+		m.persistEditorDraft()
+		m.setFocus(PanelEditor)
+		return m, m.setStatus("INSERT draft appended — review before running.")
+
 	case results.UpdateDraftMsg:
 		if msg.Err != "" {
 			return m, m.setStatus(msg.Err)
@@ -1154,12 +1163,12 @@ func (m *Model) fetchColumnsCmd(connID, dbName, table string) tea.Cmd {
 	}
 }
 
-// appendDeleteUpdateDraft appends generated DELETE/UPDATE SQL. Inserts a blank
+// appendDeleteUpdateDraft appends generated DELETE/UPDATE/INSERT SQL. Inserts a blank
 // line before the first draft when the buffer already has content; chains
-// further DELETE/UPDATE statements without an extra blank line.
+// further DELETE/UPDATE/INSERT statements without an extra blank line.
 func (m *Model) appendDeleteUpdateDraft(sql string) {
 	last := strings.ToUpper(strings.TrimSpace(m.editor.LastNonBlankLine()))
-	if strings.HasPrefix(last, "UPDATE ") || strings.HasPrefix(last, "DELETE ") {
+	if strings.HasPrefix(last, "UPDATE ") || strings.HasPrefix(last, "DELETE ") || strings.HasPrefix(last, "INSERT ") {
 		m.editor.AppendInline(sql)
 	} else {
 		m.editor.AppendAtEnd(sql)
@@ -1364,9 +1373,10 @@ const helpScreenText = `
     ctrl+d/u    Scroll down / up by half page                                                                                                                                                                                                                                                                                                                                                                                  |
     h/l         Navigate columns
     g/G         First/last row
-    s           Toggle mark on current row (for delete draft)
+    s           Toggle mark on current row (for delete/insert drafts)
     S           Mark current row + band-select while moving j/k/g/G (esc clears marks)
     d           Append DELETE draft(s) for marked rows (or cursor row); WHERE uses PK cols when possible
+    i           Append INSERT draft(s) for marked rows (or cursor row); VALUES from result columns
     u           Update cell — popup to enter new value, generates UPDATE with PK WHERE
     v           View full cell popup (y copy, f JSON format persists across cells, h/l adjacent col, j/k adjacent row, esc)
 
@@ -1880,7 +1890,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		}
 		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · backspace: history · space: commands"
 	case PanelResults:
-		return "h/l, 0/$, PgUp/PgDn: movement, s: toggle row mark · S: band select rows · d: delete draft · u: update cell · v: full cell · space: commands"
+		return "h/l, 0/$, PgUp/PgDn: movement, s: toggle row mark · S: band select rows · d: delete draft · i: insert draft · u: update cell · v: full cell · space: commands"
 	default:
 		return ""
 	}

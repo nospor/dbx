@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/robertn/dbx/internal/ui/theme"
 	"github.com/robertn/dbx/internal/util"
@@ -69,7 +70,7 @@ type Model struct {
 	// Vim state
 	vim *VimState
 
-	// Scroll offset (line index of top visible line)
+	// Scroll offset: first visible terminal row in the wrapped document (not logical buffer line).
 	scrollTop int
 
 	// Autocomplete
@@ -1009,16 +1010,142 @@ func (m *Model) clampCol(lines []string) {
 	}
 }
 
+// lineVisualForWrap returns the string passed to the wrapper for logical line i, matching View
+// (syntax-highlighted, or plain with reversed cursor cell when focused on that line).
+func (m Model) lineVisualForWrap(lines []string, i int) string {
+	if i < 0 || i >= len(lines) {
+		return ""
+	}
+	lineStr := lines[i]
+	lineRunes := []rune(lineStr)
+	rendered := renderHighlighted(lineStr, m.theme)
+	if m.focused && i == m.vim.row {
+		col := m.vim.col
+		if col > len(lineRunes) {
+			col = len(lineRunes)
+		}
+		before := string(lineRunes[:col])
+		var cursorChar string
+		if col < len(lineRunes) {
+			cursorChar = string(lineRunes[col])
+		} else {
+			cursorChar = " "
+		}
+		after := ""
+		if col+1 < len(lineRunes) {
+			after = string(lineRunes[col+1:])
+		}
+		_ = rendered
+		rendered = before + lipgloss.NewStyle().Reverse(true).Render(cursorChar) + after
+	}
+	return rendered
+}
+
+// wrappedRowsForVisual returns display lines for one logical row after wrapping (same algorithm as lipgloss Width).
+func wrappedRowsForVisual(visual string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if visual == "" {
+		return []string{""}
+	}
+	out := cellbuf.Wrap(visual, width, "")
+	if out == "" {
+		return []string{""}
+	}
+	return strings.Split(out, "\n")
+}
+
+func (m Model) wrappedRowCount(lines []string, i, width int) int {
+	return len(wrappedRowsForVisual(m.lineVisualForWrap(lines, i), width))
+}
+
+// cursorSentinel marks the cursor column when mapping to wrapped rows (avoids ambiguous strings.Index).
+const cursorSentinel = "\ufffc"
+
+func (m Model) cursorSubRowInWrappedLine(lines []string, lineIdx, width int) int {
+	if !m.focused || lineIdx != m.vim.row || lineIdx < 0 || lineIdx >= len(lines) {
+		return 0
+	}
+	lineStr := lines[lineIdx]
+	lineRunes := []rune(lineStr)
+	col := m.vim.col
+	if col > len(lineRunes) {
+		col = len(lineRunes)
+	}
+	before := string(lineRunes[:col])
+	after := ""
+	if col < len(lineRunes) {
+		after = string(lineRunes[col+1:])
+	}
+	probe := before + cursorSentinel + after
+	wrapped := cellbuf.Wrap(probe, width, "")
+	idx := strings.Index(wrapped, cursorSentinel)
+	if idx < 0 {
+		return 0
+	}
+	return strings.Count(wrapped[:idx], "\n")
+}
+
+func (m Model) globalCursorDisplayRow(lines []string, width int) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	row := m.vim.row
+	if row >= len(lines) {
+		row = len(lines) - 1
+	}
+	total := 0
+	for i := 0; i < row; i++ {
+		total += m.wrappedRowCount(lines, i, width)
+	}
+	total += m.cursorSubRowInWrappedLine(lines, row, width)
+	return total
+}
+
+func (m Model) totalWrappedDisplayRows(lines []string, width int) int {
+	if len(lines) == 0 {
+		return 1
+	}
+	n := 0
+	for i := 0; i < len(lines); i++ {
+		n += m.wrappedRowCount(lines, i, width)
+	}
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 func (m *Model) adjustScroll() {
-	visibleLines := m.height - 3 - editorTopGutterLines
-	if visibleLines < 1 {
-		visibleLines = 1
+	viewportRows := m.height - 3 - editorTopGutterLines
+	if viewportRows < 1 {
+		viewportRows = 1
 	}
-	if m.vim.row < m.scrollTop {
-		m.scrollTop = m.vim.row
+	width := m.width
+	if width < 1 {
+		width = 1
 	}
-	if m.vim.row >= m.scrollTop+visibleLines {
-		m.scrollTop = m.vim.row - visibleLines + 1
+	lines := m.lines()
+
+	cursorY := m.globalCursorDisplayRow(lines, width)
+	total := m.totalWrappedDisplayRows(lines, width)
+	maxScroll := max(0, total-viewportRows)
+	if m.scrollTop > maxScroll {
+		m.scrollTop = maxScroll
+	}
+
+	if cursorY < m.scrollTop {
+		m.scrollTop = cursorY
+	}
+	if cursorY >= m.scrollTop+viewportRows {
+		m.scrollTop = cursorY - viewportRows + 1
+	}
+	if m.scrollTop > maxScroll {
+		m.scrollTop = maxScroll
+	}
+	if m.scrollTop < 0 {
+		m.scrollTop = 0
 	}
 }
 
@@ -1339,9 +1466,13 @@ func (m Model) View() string {
 
 	lines := m.lines()
 	// Tab row + gutter + editor rows: same total inner height as before gutter (height-2 content rows under the pane chrome).
-	visibleLines := m.height - 3 - editorTopGutterLines
-	if visibleLines < 1 {
-		visibleLines = 1
+	viewportRows := m.height - 3 - editorTopGutterLines
+	if viewportRows < 1 {
+		viewportRows = 1
+	}
+	width := m.width
+	if width < 1 {
+		width = 1
 	}
 
 	var sb strings.Builder
@@ -1352,45 +1483,33 @@ func (m Model) View() string {
 		sb.WriteString(lipgloss.NewStyle().Width(m.width).Render("") + "\n")
 	}
 
-	// Render visible lines
-	for i := m.scrollTop; i < m.scrollTop+visibleLines; i++ {
-		var lineStr string
-		if i < len(lines) {
-			lineStr = lines[i]
+	// Render visible wrapped rows; scrollTop is a display-row offset into the wrapped document.
+	remainingSkip := m.scrollTop
+	emitted := 0
+	for i := 0; i < len(lines) && emitted < viewportRows; i++ {
+		vis := m.lineVisualForWrap(lines, i)
+		for _, p := range wrappedRowsForVisual(vis, width) {
+			if remainingSkip > 0 {
+				remainingSkip--
+				continue
+			}
+			sb.WriteString(lipgloss.NewStyle().Width(width).Render(p) + "\n")
+			emitted++
+			if emitted >= viewportRows {
+				break
+			}
 		}
-
-		lineRunes := []rune(lineStr)
-		rendered := renderHighlighted(lineStr, m.theme)
-
-		// Draw cursor
-		if i == m.vim.row && m.focused {
-			col := m.vim.col
-			if col > len(lineRunes) {
-				col = len(lineRunes)
-			}
-			before := string(lineRunes[:col])
-			var cursorChar string
-			if col < len(lineRunes) {
-				cursorChar = string(lineRunes[col])
-			} else {
-				cursorChar = " "
-			}
-			after := ""
-			if col+1 < len(lineRunes) {
-				after = string(lineRunes[col+1:])
-			}
-			_ = rendered
-			rendered = before + lipgloss.NewStyle().Reverse(true).Render(cursorChar) + after
-		}
-
-		sb.WriteString(lipgloss.NewStyle().Width(m.width).Render(rendered) + "\n")
+	}
+	for emitted < viewportRows {
+		sb.WriteString(lipgloss.NewStyle().Width(width).Render("") + "\n")
+		emitted++
 	}
 
 	result := sb.String()
 
 	// History popup — centered overlay; query buffer stays visible underneath
 	if m.histPopupVisible && len(m.history) > 0 {
-		return m.overlayHistoryPopup(result, visibleLines)
+		return m.overlayHistoryPopup(result, viewportRows)
 	}
 
 	// Render autocomplete dropdown
@@ -1411,7 +1530,11 @@ func (m Model) View() string {
 		// Merge with overlayStyledBlockAt so ANSI on the line below the cursor is not split.
 		// Vertically: prefer below the cursor; if the box would extend past the pane, flip above;
 		// else pin to the bottom content row (overlayStyledBlockAt drops rows past the last line).
-		cursorScreenRow := m.vim.row - m.scrollTop + 1 + editorTopGutterLines
+		cursorDisplayRow := m.globalCursorDisplayRow(lines, width)
+		cursorScreenRow := 1 + editorTopGutterLines + (cursorDisplayRow - m.scrollTop)
+		if cursorScreenRow < 1+editorTopGutterLines {
+			cursorScreenRow = 1 + editorTopGutterLines
+		}
 		baseLines := strings.Split(result, "\n")
 		boxH := lipgloss.Height(compBox)
 		insertRow := completionPopupStartRow(cursorScreenRow, boxH, len(baseLines))
@@ -1462,7 +1585,7 @@ func (m Model) View() string {
 		boxH := lipgloss.Height(box)
 		boxW := lipgloss.Width(box)
 		
-		totalLines := 1 + editorTopGutterLines + visibleLines
+		totalLines := 1 + editorTopGutterLines + viewportRows
 		startRow := totalLines - boxH
 		if startRow < 0 { startRow = 0 }
 		startCol := m.width - boxW - 2

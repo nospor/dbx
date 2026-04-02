@@ -266,6 +266,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.syncRangeSelection()
 	case "d":
 		return m.deleteDraftCmd()
+	case "i":
+		return m.insertDraftCmd()
 	case "u":
 		m.openUpdatePopup()
 	}
@@ -673,6 +675,44 @@ func (m *Model) deleteDraftCmd() tea.Cmd {
 			Columns:   cols,
 			Rows:      data,
 		}
+	}
+}
+
+func (m *Model) insertDraftCmd() tea.Cmd {
+	if m.result == nil || len(m.result.Rows) == 0 {
+		return func() tea.Msg { return InsertDraftMsg{Err: "No rows to insert."} }
+	}
+	rowsIdx := m.deleteTargetRows()
+	if len(rowsIdx) == 0 {
+		return func() tea.Msg { return InsertDraftMsg{Err: "No rows to insert."} }
+	}
+	if strings.TrimSpace(m.result.SourceSQL) == "" {
+		return func() tea.Msg {
+			return InsertDraftMsg{Err: "No source query recorded — run a SELECT first, then use i."}
+		}
+	}
+	table, ok := sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	if !ok || table == "" {
+		return func() tea.Msg {
+			return InsertDraftMsg{Err: "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."}
+		}
+	}
+	var data [][]string
+	for _, ri := range rowsIdx {
+		row := m.result.Rows[ri]
+		cp := make([]string, len(row))
+		copy(cp, row)
+		data = append(data, cp)
+	}
+	driver := m.result.Driver
+	cols := append([]string(nil), m.result.Columns...)
+	tbl := table
+	return func() tea.Msg {
+		sqlText, err := sqlutil.InsertForRows(driver, tbl, cols, data)
+		if err != nil {
+			return InsertDraftMsg{Err: err.Error()}
+		}
+		return InsertDraftMsg{SQL: sqlText}
 	}
 }
 
