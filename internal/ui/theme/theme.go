@@ -30,6 +30,7 @@ type Theme struct {
 
 	// Command palette
 	PaletteBox     lipgloss.Style
+	PaletteFill    lipgloss.Style // panel interior bg (matches PaletteBox); use for row width padding
 	PaletteTitle   lipgloss.Style
 	PaletteItem    lipgloss.Style
 	PaletteKey     lipgloss.Style
@@ -84,6 +85,7 @@ func Terminal() Theme {
 		TreeColumn:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 
 		PaletteBox:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accentBg).Padding(0, 1),
+		PaletteFill:  lipgloss.NewStyle(),
 		PaletteTitle: lipgloss.NewStyle().Bold(true).Foreground(accentBg),
 		PaletteItem:  lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
 		PaletteKey:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
@@ -123,10 +125,12 @@ func Dark() Theme {
 	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6"))
 	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
 
-	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7aa2f7")).Background(lipgloss.Color("#1a1b26")).Padding(0, 1)
-	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7"))
-	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6"))
-	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")).Bold(true)
+	paletteBg := lipgloss.Color("#1a1b26")
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7aa2f7")).Background(paletteBg).Padding(0, 1)
+	t.PaletteFill = lipgloss.NewStyle().Background(paletteBg)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7")).Background(paletteBg)
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6")).Background(paletteBg)
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")).Bold(true).Background(paletteBg)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7")).Underline(true)
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7aa2f7")).Background(lipgloss.Color("#283457")).Underline(true)
@@ -162,10 +166,12 @@ func Light() Theme {
 	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#3760bf"))
 	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 
-	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#2e7de9")).Background(lipgloss.Color("#e9e9ed")).Padding(0, 1)
-	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9"))
-	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#3760bf"))
-	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#8c6c3e")).Bold(true)
+	paletteBg := lipgloss.Color("#e9e9ed")
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#2e7de9")).Background(paletteBg).Padding(0, 1)
+	t.PaletteFill = lipgloss.NewStyle().Background(paletteBg)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9")).Background(paletteBg)
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#3760bf")).Background(paletteBg)
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#8c6c3e")).Bold(true).Background(paletteBg)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9")).Underline(true)
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2e7de9")).Background(lipgloss.Color("#b6bfe2")).Underline(true)
@@ -201,10 +207,12 @@ func CatppuccinMocha() Theme {
 	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
 	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#7f849c"))
 
-	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#89b4fa")).Background(lipgloss.Color("#1e1e2e")).Padding(0, 1)
-	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa"))
-	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
-	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true)
+	paletteBg := lipgloss.Color("#1e1e2e")
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#89b4fa")).Background(paletteBg).Padding(0, 1)
+	t.PaletteFill = lipgloss.NewStyle().Background(paletteBg)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")).Background(paletteBg)
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4")).Background(paletteBg)
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true).Background(paletteBg)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")).Underline(true)
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89b4fa")).Background(lipgloss.Color("#313244")).Underline(true)
@@ -240,10 +248,12 @@ func CatppuccinLatte() Theme {
 	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c4f69"))
 	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca0b0"))
 
-	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#1e66f5")).Background(lipgloss.Color("#eff1f5")).Padding(0, 1)
-	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5"))
-	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c4f69"))
-	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#df8e1d")).Bold(true)
+	paletteBg := lipgloss.Color("#eff1f5")
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#1e66f5")).Background(paletteBg).Padding(0, 1)
+	t.PaletteFill = lipgloss.NewStyle().Background(paletteBg)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")).Background(paletteBg)
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#4c4f69")).Background(paletteBg)
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#df8e1d")).Bold(true).Background(paletteBg)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")).Underline(true)
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1e66f5")).Background(lipgloss.Color("#ccd0da")).Underline(true)
@@ -279,10 +289,12 @@ func Nord() Theme {
 	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#d8dee9"))
 	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#616e88"))
 
-	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#81a1c1")).Background(lipgloss.Color("#2e3440")).Padding(0, 1)
-	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1"))
-	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#d8dee9"))
-	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebcb8b")).Bold(true)
+	paletteBg := lipgloss.Color("#2e3440")
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#81a1c1")).Background(paletteBg).Padding(0, 1)
+	t.PaletteFill = lipgloss.NewStyle().Background(paletteBg)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1")).Background(paletteBg)
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#d8dee9")).Background(paletteBg)
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebcb8b")).Bold(true).Background(paletteBg)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1")).Underline(true)
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#81a1c1")).Background(lipgloss.Color("#3b4252")).Underline(true)
@@ -318,10 +330,12 @@ func GruvboxDark() Theme {
 	t.TreeTable = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebdbb2"))
 	t.TreeColumn = lipgloss.NewStyle().Foreground(lipgloss.Color("#928374"))
 
-	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#83a598")).Background(lipgloss.Color("#282828")).Padding(0, 1)
-	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598"))
-	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebdbb2"))
-	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#fabd2f")).Bold(true)
+	paletteBg := lipgloss.Color("#282828")
+	t.PaletteBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#83a598")).Background(paletteBg).Padding(0, 1)
+	t.PaletteFill = lipgloss.NewStyle().Background(paletteBg)
+	t.PaletteTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598")).Background(paletteBg)
+	t.PaletteItem = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebdbb2")).Background(paletteBg)
+	t.PaletteKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#fabd2f")).Bold(true).Background(paletteBg)
 
 	t.TableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598")).Underline(true)
 	t.TableHeaderActive = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#83a598")).Background(lipgloss.Color("#3c3836")).Underline(true)

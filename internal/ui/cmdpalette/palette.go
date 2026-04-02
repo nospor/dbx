@@ -107,11 +107,13 @@ func (m Model) View() string {
 	}
 
 	// Fixed inner width so the box does not jump when j/k changes selection.
+	gap1 := m.theme.PaletteFill.Render(" ")
+	gap2 := m.theme.PaletteFill.Render("  ")
 	innerW := lipgloss.Width(m.theme.PaletteTitle.Render(m.title))
 	for _, cmd := range m.commands {
 		key := m.theme.PaletteKey.Render(cmd.Key)
 		desc := m.theme.PaletteItem.Render(cmd.Description)
-		if w := lipgloss.Width(" " + key + "  " + desc); w > innerW {
+		if w := lipgloss.Width(gap1 + key + gap2 + desc); w > innerW {
 			innerW = w
 		}
 		plain := " " + cmd.Key + "  " + cmd.Description
@@ -123,7 +125,7 @@ func (m Model) View() string {
 		innerW = 12
 	}
 
-	row := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Left)
+	row := m.theme.PaletteFill.Copy().Width(innerW).Align(lipgloss.Left)
 
 	var sb strings.Builder
 	sb.WriteString(row.Render(m.theme.PaletteTitle.Render(m.title)) + "\n")
@@ -136,7 +138,7 @@ func (m Model) View() string {
 			line = lipgloss.NewStyle().Reverse(true).Width(innerW).Align(lipgloss.Left).Render(
 				" " + cmd.Key + "  " + cmd.Description)
 		} else {
-			line = row.Render(" " + key + "  " + desc)
+			line = row.Render(gap1 + key + gap2 + desc)
 		}
 		sb.WriteString(line + "\n")
 	}

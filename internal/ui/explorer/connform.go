@@ -314,7 +314,8 @@ func (f ConnForm) View() string {
 		}
 
 		if focused {
-			labelStr = f.theme.PaletteKey.Render(labelStr)
+			// TreeConnection matches PaletteKey accent but stays fg-only (no palette panel fill).
+			labelStr = f.theme.TreeConnection.Render(labelStr)
 		} else {
 			labelStr = f.theme.Dimmed.Render(labelStr)
 		}

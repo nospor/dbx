@@ -1743,9 +1743,13 @@ func (m Model) View() string {
 			{"$", "To end of line"},
 			{"0", "To start of line"},
 		}
+		gap1 := m.theme.PaletteFill.Render(" ")
+		gap2 := m.theme.PaletteFill.Render("  ")
 		innerW := lipgloss.Width(m.theme.PaletteTitle.Render(title))
 		for _, r := range rows {
-			lineW := lipgloss.Width(" " + r.key + "  " + r.desc)
+			kPlain := m.theme.PaletteKey.Render(r.key)
+			dPlain := m.theme.PaletteItem.Render(r.desc)
+			lineW := lipgloss.Width(gap1 + kPlain + gap2 + dPlain)
 			if lineW > innerW {
 				innerW = lineW
 			}
@@ -1754,13 +1758,13 @@ func (m Model) View() string {
 			innerW = 12
 		}
 
-		rowStyler := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Left)
+		rowStyler := m.theme.PaletteFill.Copy().Width(innerW).Align(lipgloss.Left)
 		var opSb strings.Builder
 		opSb.WriteString(rowStyler.Render(m.theme.PaletteTitle.Render(title)) + "\n")
 		for _, r := range rows {
 			k := m.theme.PaletteKey.Render(r.key)
 			d := m.theme.PaletteItem.Render(r.desc)
-			opSb.WriteString(rowStyler.Render(" "+k+"  "+d) + "\n")
+			opSb.WriteString(rowStyler.Render(gap1+k+gap2+d) + "\n")
 		}
 		
 		box := m.theme.PaletteBox.Render(opSb.String())
