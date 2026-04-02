@@ -1388,7 +1388,8 @@ const helpScreenText = `
 
 func (m Model) handleDDLPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	lines := strings.Split(strings.ReplaceAll(m.ddlPopupText, "\r\n", "\n"), "\n")
-	visible := m.ddlPopupInnerLines()
+	// Must match renderDDLPopup inner height (ddlPopupInnerLines is for full-height help overlay).
+	visible := m.ddlPopupScrollViewportLines()
 	maxTop := max(0, len(lines)-visible)
 	switch msg.String() {
 	case "esc", "enter", "q":
@@ -1430,6 +1431,19 @@ func (m Model) ddlPopupInnerLines() int {
 	boxH := m.height - 2
 	if boxH < 6 {
 		boxH = m.height
+	}
+	innerH := boxH - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	return innerH
+}
+
+// ddlPopupScrollViewportLines returns the content row count for the DDL popup; kept in sync with renderDDLPopup.
+func (m Model) ddlPopupScrollViewportLines() int {
+	boxH := min(m.height-2, max(12, m.height*68/100))
+	if boxH < 6 {
+		boxH = min(m.height-2, 6)
 	}
 	innerH := boxH - 2
 	if innerH < 1 {
