@@ -419,6 +419,14 @@ func (m Model) TabText() string {
 	return strings.Join(m.lines(), "\n")
 }
 
+func (m *Model) queryPanePersistCmd() tea.Cmd {
+	persistKey := m.connKey
+	persistText := m.TabText()
+	return func() tea.Msg {
+		return QueryPanePersistMsg{ConnKey: persistKey, Text: persistText}
+	}
+}
+
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
@@ -454,6 +462,20 @@ func (m *Model) SetContent(content string) {
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0
 	m.insertUndoSeeded = false
+}
+
+// ClearUndoable clears the buffer and leaves the previous text on the undo stack (u / ctrl+r).
+func (m *Model) ClearUndoable() {
+	if strings.Join(m.lines(), "\n") != "" {
+		m.pushUndoPoint()
+	}
+	m.setLines(strings.Split("", "\n"))
+	m.vim.row = len(m.lines()) - 1
+	m.vim.col = 0
+	m.insertUndoSeeded = false
+	m.compVisible = false
+	m.clampCursor()
+	m.adjustScroll()
 }
 
 // AppendAtEnd appends text to the query buffer (blank line before chunk if buffer non-empty).
@@ -578,11 +600,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.setLines(lines)
 			m.clampCursor()
 			m.adjustScroll()
-			persistKey := m.connKey
-			persistText := strings.Join(lines, "\n")
-			return func() tea.Msg {
-				return QueryPanePersistMsg{ConnKey: persistKey, Text: persistText}
-			}
+			return m.queryPanePersistCmd()
 		case "backspace":
 			m.beforeInsertEdit()
 			lines = m.deleteBackspace(lines)
@@ -862,13 +880,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		if m.histPopupVisible {
 			return nil
 		}
-		m.Undo()
+		if m.Undo() {
+			return m.queryPanePersistCmd()
+		}
 		return nil
 	case "ctrl+r":
 		if m.histPopupVisible {
 			return nil
 		}
-		m.Redo()
+		if m.Redo() {
+			return m.queryPanePersistCmd()
+		}
 		return nil
 	case "enter", "ctrl+enter", "f5":
 		if m.histPopupVisible {

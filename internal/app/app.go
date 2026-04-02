@@ -632,7 +632,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case clearEditorMsg:
-		m.editor.SetContent("")
+		m.editor.ClearUndoable()
 		m.persistEditorDraft()
 		return m, nil
 
