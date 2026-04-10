@@ -6,7 +6,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 
 - **Databases**: PostgreSQL, MySQL, SQLite, MSSQL
 - **Three-panel layout**: Explorer | Query Editor | Results — each pane shows **key hints** on the bottom border (long lines truncate if the pane is narrow)
-- **AI assistant** (optional right column): chat with a configured CLI (e.g. `cursor-agent`), per connection/database; transcript with **Normal** mode cursor (reverse-video cell like the query editor) and **Insert** for prompts; `enter` in Normal copies the latest AI SQL from a fenced `sql` code block to the query editor; `@` / `#` insert table/column names from schema
+- **AI assistant** (optional right column, **experimental** for now): chat with a configured CLI (e.g. `cursor-agent`), per connection/database; transcript with **Normal** mode cursor (reverse-video cell like the query editor) and **Insert** for prompts; `enter` in Normal copies the latest AI SQL from a fenced `sql` code block to the query editor; `@` / `#` insert table/column names from schema
 - **Vim mode**: Normal and Insert mode with motions (h/j/k/l, w/b, gg/G, dd, etc.)
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
@@ -96,15 +96,15 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 ## Keybindings
 
 ### Global
-| Key      | Action                                                                                          |
-| -------- | ----------------------------------------------------------------------------------------------- |
-| `e`      | Focus explorer                                                                                  |
-| `q`      | Focus editor                                                                                    |
-| `r`      | Focus results                                                                                   |
+| Key      | Action                                                                                                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e`      | Focus explorer                                                                                                                                                                                       |
+| `q`      | Focus editor                                                                                                                                                                                         |
+| `r`      | Focus results                                                                                                                                                                                        |
 | `a`      | Show the AI pane if it was hidden, then focus it. If the AI pane already has focus, `a` does **not** hide it — open the palette (**space**) and press **`a`** to **toggle** the AI column on or off. |
-| `space`  | Open command palette (then press a letter: e.g. **`n`** add connection with explorer focused, **`a`** toggle AI pane from explorer / editor / results / AI) |
-| `?`      | Toggle help (fixed-size popup; `j`/`k`, `g`/`G`, PgUp/PgDn scroll; `?`/`esc`/`q` close) |
-| `ctrl+c` | Quit                                                                                            |
+| `space`  | Open command palette (then press a letter: e.g. **`n`** add connection with explorer focused, **`a`** toggle AI pane from explorer / editor / results / AI)                                          |
+| `?`      | Toggle help (fixed-size popup; `j`/`k`, `g`/`G`, PgUp/PgDn scroll; `?`/`esc`/`q` close)                                                                                                              |
+| `ctrl+c` | Quit                                                                                                                                                                                                 |
 
 ### Explorer
 | Key           | Action                                                                                                                                                      |
@@ -122,7 +122,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tab`               | Next query tab (explorer selection follows)                                                                                                                                                                       |
 | `shift+tab`         | Previous query tab                                                                                                                                                                                                |
-| `i` / `a` / `o`     | Enter insert mode                                                                                                                                                                                                 |
+| `i` / `o`           | Enter insert mode                                                                                                                                                                                                 |
 | `enter`             | Execute query under cursor. If the block is **only** multiple `DELETE` and/or `UPDATE` statements separated by `;`, they run **one after another**; the results grid shows `#` and `rows_affected` per statement. |
 | `u`                 | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits                                                                       |
 | `ctrl+r`            | Redo (normal mode only; see insert mode for run-query)                                                                                                                                                            |
@@ -173,17 +173,19 @@ The **active cell** uses a stronger highlight than the rest of the cursor row.
 
 ### AI Assistant
 
+This pane is **experimental**: behavior, CLI integration, and UX may change or break as it is tried out; it is not treated as a stable product surface yet.
+
 Shown as a **right column** when visible; width is `layout.ai_pane_width_pct` in `config.json`. Chats are **per** `connection:database` (same key as query tabs). The bottom **status row** in the pane summarizes mode, scroll %, and optional history size warning.
 
-| Mode / keys | Action |
-| ----------- | ------ |
+| Mode / keys          | Action                                                                                                                                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Normal** (default) | Transcript area: **block cursor** (reversed cell) on the current line/column — move with `h`/`j`/`k`/`l` or arrows; page keys (`f`/`b`, PgUp/PgDn, `d`/`u`, space) and the **mouse wheel** scroll the view and keep the cursor oriented. Long lines scroll horizontally with the cursor. |
-| `J` / `K` | Jump to the **next** / **previous** fenced `sql` block (same idea as **J**/**K** between query blocks in the editor). |
-| `i` | **Insert** — type in the prompt area; `enter` sends (when not loading). |
-| `esc` | Insert → Normal (blur prompt). |
-| `enter` (Normal) | Copy the fenced `sql` block **on the cursor line** (or the nearest block) to the **query editor**. |
-| `@` (Insert) | Open table picker (schema tables; filter by typing). |
-| `#` (Insert) | Open column picker for the current database. |
+| `J` / `K`            | Jump to the **next** / **previous** fenced `sql` block (same idea as **J**/**K** between query blocks in the editor).                                                                                                                                                                    |
+| `i`                  | **Insert** — type in the prompt area; `enter` sends (when not loading).                                                                                                                                                                                                                  |
+| `esc`                | Insert → Normal (blur prompt).                                                                                                                                                                                                                                                           |
+| `enter` (Normal)     | Copy the fenced `sql` block **on the cursor line** (or the nearest block) to the **query editor**.                                                                                                                                                                                       |
+| `@` (Insert)         | Open table picker (schema tables; filter by typing).                                                                                                                                                                                                                                     |
+| `#` (Insert)         | Open column picker for the current database.                                                                                                                                                                                                                                             |
 
 While the prompt field is active (Insert or an `@`/`#` menu), global `e`/`q`/`r`/`a` shortcuts are suppressed until you `esc` the overlay or leave Insert.
 
@@ -191,12 +193,12 @@ While the prompt field is active (Insert or an `@`/`#` menu), global `e`/`q`/`r`
 
 Press **space** to open the palette, then the **second** key (e.g. **space** then **a** toggles the AI pane from explorer, editor, results, or AI). **Add connection** is **`n`** (explorer palette only), not `a`.
 
-| Panel    | Commands                                                                                          |
-| -------- | ------------------------------------------------------------------------------------------------- |
-| Explorer | `n` add connection, `e` edit, `d` delete, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
-| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| Panel    | Commands                                                                                                              |
+| -------- | --------------------------------------------------------------------------------------------------------------------- |
+| Explorer | `n` add connection, `e` edit, `d` delete, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen        |
+| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen              |
 | Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
-| AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                            |
+| AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                                               |
 
 ## History
 

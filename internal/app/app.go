@@ -1564,7 +1564,7 @@ const helpScreenText = `
   EDITOR (Normal mode)
     tab         Next query tab
     shift+tab   Previous query tab
-    i/a/o       Enter insert mode
+    i/o         Enter insert mode
     enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
     u           Undo edit (whole insert session until esc; normal edits undo separately)
     ctrl+r      Redo edit
@@ -1604,7 +1604,7 @@ const helpScreenText = `
 
   AI ASSISTANT (Normal mode — transcript)
     i           Insert mode (prompt field)
-    hjkl / arrows  Move block cursor; mouse wheel scrolls
+    hjkl/arrows  Move block cursor; mouse wheel scrolls
     J/K         Jump to next / previous fenced sql code block (same idea as editor J/K query jumps)
     enter       Copy SQL from the block under the cursor to the query editor
 
