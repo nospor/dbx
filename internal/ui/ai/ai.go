@@ -1046,9 +1046,20 @@ func (m Model) View() string {
 	return lipgloss.NewStyle().Width(m.width).Height(m.height).MaxHeight(m.height).Render(inner)
 }
 
+// overlayInnerWidth is max display width for one picker row inside PaletteBox (border + pad).
+func (m Model) overlayInnerWidth() int {
+	const borderAndHorizontalPad = 4 // rounded border L+R + Padding(0,1) L+R
+	w := m.width - borderAndHorizontalPad
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
 func (m Model) renderOverlay() string {
+	innerW := m.overlayInnerWidth()
 	if len(m.overlayFiltered) == 0 {
-		return m.theme.PaletteBox.Render("No match")
+		return m.theme.PaletteBox.Width(m.width).MaxWidth(m.width).Render(ansi.Truncate("No match", innerW, "…"))
 	}
 	n := len(m.overlayFiltered)
 	top := m.overlayScrollTop
@@ -1056,15 +1067,17 @@ func (m Model) renderOverlay() string {
 	var lines []string
 	for i := top; i < end; i++ {
 		it := m.overlayFiltered[i]
+		row := ansi.Truncate(it, innerW, "…")
 		if i == m.overlayCursor {
-			lines = append(lines, lipgloss.NewStyle().Reverse(true).Render(it))
+			lines = append(lines, lipgloss.NewStyle().Reverse(true).Render(row))
 		} else {
-			lines = append(lines, it)
+			lines = append(lines, row)
 		}
 	}
 	content := strings.Join(lines, "\n")
 	if n > overlayPickerMaxRows {
-		content += "\n" + m.theme.Dimmed.Render(fmt.Sprintf("%d–%d of %d", top+1, end, n))
+		foot := ansi.Truncate(fmt.Sprintf("%d–%d of %d", top+1, end, n), innerW, "…")
+		content += "\n" + m.theme.Dimmed.Render(foot)
 	}
-	return m.theme.PaletteBox.Render(content)
+	return m.theme.PaletteBox.Width(m.width).MaxWidth(m.width).Render(content)
 }
