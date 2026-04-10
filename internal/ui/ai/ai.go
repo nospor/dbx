@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -40,6 +41,11 @@ type ExtractSQLMsg struct {
 	SQL string
 }
 
+// AISessionResetMsg is sent after /clear finishes (store cleared + new CLI session id).
+type AISessionResetMsg struct {
+	Err error
+}
+
 func AskCmd(store *internalAi.Store, connKey, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := store.Ask(connKey, prompt)
@@ -47,6 +53,19 @@ func AskCmd(store *internalAi.Store, connKey, prompt string) tea.Cmd {
 			Response: resp,
 			Err:      err,
 		}
+	}
+}
+
+// SessionResetCmd clears the transcript and creates a new CLI chat session (async).
+func SessionResetCmd(store *internalAi.Store, connKey string) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if store == nil {
+			err = errors.New("no AI store")
+		} else {
+			err = store.ClearTranscriptAndNewCLIChat(connKey)
+		}
+		return AISessionResetMsg{Err: err}
 	}
 }
 
@@ -107,7 +126,7 @@ type sqlBlockRegion struct {
 // New creates a new AI model.
 func New(t theme.Theme, store *internalAi.Store) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Ask the AI assistant... (@ for tables, # for columns, enter to send)"
+	ta.Placeholder = "Ask the AI assistant... (/clear new chat, @ tables, # cols, enter send)"
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
@@ -624,6 +643,10 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 		m.refreshViewport()
 		return m, nil
 
+	case AISessionResetMsg:
+		m.refreshViewport()
+		return m, nil
+
 	case tea.MouseMsg:
 		if !m.focused || m.mode != ModeOutput || len(m.outputLines) == 0 {
 			return m, nil
@@ -719,14 +742,21 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				return m, nil
 			case "enter":
 				val := strings.TrimSpace(m.textarea.Value())
-				if val != "" && !m.loading {
-					m.textarea.Reset()
-					m.loading = true
-					connKey := m.connKey
-					cmds = append(cmds, func() tea.Msg {
-						return AISendPromptMsg{ConnKey: connKey, Prompt: val}
-					})
+				if val == "" || m.loading {
+					return m, tea.Batch(cmds...)
 				}
+				if strings.EqualFold(val, "/clear") {
+					m.textarea.Reset()
+					connKey := m.connKey
+					cmds = append(cmds, SessionResetCmd(m.Store, connKey))
+					return m, tea.Batch(cmds...)
+				}
+				m.textarea.Reset()
+				m.loading = true
+				connKey := m.connKey
+				cmds = append(cmds, func() tea.Msg {
+					return AISendPromptMsg{ConnKey: connKey, Prompt: val}
+				})
 				return m, tea.Batch(cmds...)
 			case "@":
 				m.showOverlay = true

@@ -144,6 +144,21 @@ func (s *Store) ClearSession(connKey string) {
 	}
 }
 
+// ClearTranscriptAndNewCLIChat clears persisted messages and the CLI session id, then runs
+// CreateSessionCommand (via EnsureSessionID) so the next Ask uses a fresh chat id.
+func (s *Store) ClearTranscriptAndNewCLIChat(connKey string) error {
+	if connKey == "" {
+		return errors.New("no connection")
+	}
+	chat := s.GetSession(connKey)
+	chat.SessionID = ""
+	chat.Messages = make([]Message, 0)
+	if err := s.Save(); err != nil {
+		return err
+	}
+	return s.EnsureSessionID(connKey)
+}
+
 func (s *Store) GetConversationSize(connKey string) int {
 	chat, ok := s.Sessions[connKey]
 	if !ok {

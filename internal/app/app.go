@@ -729,10 +729,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var sysPrefix string
 		if m.aiStore != nil {
 			chat := m.aiStore.GetSession(msg.ConnKey)
+			// Only before AppendUserMessage: after append, len would always be ≥ 1.
 			if len(chat.Messages) == 0 {
-				sysPrefix = "You are a database assistant. This conversation is about SQL and database data — " +
-					"NOT about source code or files. Do not search the filesystem or codebase. " +
-					"Answer questions about queries, data, and database structure.\n\n"
+				sysPrefix = aiOutboundSystemPrefix
 			}
 		}
 		m.aiPane.AppendUserMessage(msg.Prompt) // show raw user msg (not the full context)
@@ -749,6 +748,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := schemaKey(m.activeConnID, m.activeDB)
 		m.aiPane, cmd = m.aiPane.Update(msg, m.schemaTables[key], m.schemaCols[key])
 		cmds = append(cmds, cmd)
+		return m, tea.Batch(cmds...)
+
+	case ai.AISessionResetMsg:
+		var cmd tea.Cmd
+		key := schemaKey(m.activeConnID, m.activeDB)
+		m.aiPane, cmd = m.aiPane.Update(msg, m.schemaTables[key], m.schemaCols[key])
+		cmds = append(cmds, cmd)
+		if msg.Err != nil {
+			cmds = append(cmds, m.setStatus("AI /clear failed: "+msg.Err.Error()))
+		} else {
+			cmds = append(cmds, m.setStatus("AI chat cleared; new session started."))
+		}
 		return m, tea.Batch(cmds...)
 
 	}
@@ -892,6 +903,15 @@ func tableColsKey(connID, dbName, table string) string {
 	return connID + ":" + dbName + ":" + table
 }
 
+// aiOutboundSystemPrefix is prepended only to the first outbound prompt after the transcript
+// is empty (new chat or /clear), before optional @-mention DDL blocks and the user’s text.
+// It is not shown in the transcript — only the raw user line is.
+const aiOutboundSystemPrefix = "You are a database assistant. This conversation is about SQL and database data — " +
+	"NOT about source code or files. Do not search the filesystem or codebase. " +
+	"Answer questions about queries, data, and database structure.\n\n" +
+	"When you include SQL, wrap each query in a fenced code block exactly like this:\n```sql\n" +
+	"...your SQL here...\n```\n\n"
+
 // collectAIMentionedTables returns unique table/view names from @tokens in the prompt.
 // @all expands to every table and view in the schema for connID:dbName.
 func (m *Model) collectAIMentionedTables(connID, dbName, userPrompt string) []string {
@@ -926,7 +946,8 @@ func (m *Model) collectAIMentionedTables(connID, dbName, userPrompt string) []st
 	return mentioned
 }
 
-// prepareAISendCmd fetches driver TableDDL for each @-mentioned object and builds the full prompt.
+// prepareAISendCmd fetches driver TableDDL for each @-mentioned object and builds the full prompt:
+// systemPrefix + optional "## Database context" (DDL) + user prompt.
 func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) tea.Cmd {
 	connID, dbName := splitConnKey(msg.ConnKey)
 	tables := m.collectAIMentionedTables(connID, dbName, msg.Prompt)
@@ -1585,6 +1606,10 @@ const helpScreenText = `
     hjkl / arrows  Move block cursor; mouse wheel scrolls
     J/K         Jump to next / previous fenced sql code block (same idea as editor J/K query jumps)
     enter       Copy SQL from the block under the cursor to the query editor
+
+  AI ASSISTANT (Insert mode — prompt)
+    esc         Normal mode (transcript)
+    enter       Send prompt, or /clear to wipe transcript and start a new CLI chat session
 
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
