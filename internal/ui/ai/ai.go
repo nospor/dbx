@@ -251,6 +251,71 @@ func (m *Model) scrollOutputWindow(delta int) {
 	m.scrollOutputToShowCursor()
 }
 
+// jumpToNextSQLBlock moves the cursor to the start of the next fenced ```sql``` block (like editor J).
+func (m *Model) jumpToNextSQLBlock() {
+	if len(m.sqlRegions) == 0 {
+		return
+	}
+	cur := m.outCursorLine
+	for i, r := range m.sqlRegions {
+		if cur >= r.startLine && cur <= r.endLine {
+			if i+1 < len(m.sqlRegions) {
+				m.outCursorLine = m.sqlRegions[i+1].startLine
+				m.outCursorCol = 0
+				m.clampOutCursorToBuffer()
+				m.scrollOutputToShowCursor()
+			}
+			return
+		}
+	}
+	for _, r := range m.sqlRegions {
+		if r.startLine > cur {
+			m.outCursorLine = r.startLine
+			m.outCursorCol = 0
+			m.clampOutCursorToBuffer()
+			m.scrollOutputToShowCursor()
+			return
+		}
+	}
+}
+
+// jumpToPrevSQLBlock moves the cursor to the start of the previous fenced ```sql``` block, or line 0 (like editor K).
+func (m *Model) jumpToPrevSQLBlock() {
+	if len(m.sqlRegions) == 0 {
+		return
+	}
+	cur := m.outCursorLine
+	for i, r := range m.sqlRegions {
+		if cur >= r.startLine && cur <= r.endLine {
+			if i > 0 {
+				m.outCursorLine = m.sqlRegions[i-1].startLine
+			} else {
+				m.outCursorLine = 0
+			}
+			m.outCursorCol = 0
+			m.clampOutCursorToBuffer()
+			m.scrollOutputToShowCursor()
+			return
+		}
+	}
+	for i := len(m.sqlRegions) - 1; i >= 0; i-- {
+		r := m.sqlRegions[i]
+		if r.endLine < cur {
+			m.outCursorLine = r.startLine
+			m.outCursorCol = 0
+			m.clampOutCursorToBuffer()
+			m.scrollOutputToShowCursor()
+			return
+		}
+	}
+	if cur < m.sqlRegions[0].startLine {
+		m.outCursorLine = 0
+		m.outCursorCol = 0
+		m.clampOutCursorToBuffer()
+		m.scrollOutputToShowCursor()
+	}
+}
+
 func applyOutputCursor(line string, col int) string {
 	rev := lipgloss.NewStyle().Reverse(true)
 	sw := ansi.StringWidth(line)
@@ -615,6 +680,12 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 					})
 				}
 				return m, tea.Batch(cmds...)
+			case "J":
+				m.jumpToNextSQLBlock()
+				return m, nil
+			case "K":
+				m.jumpToPrevSQLBlock()
+				return m, nil
 			}
 			vk := viewport.DefaultKeyMap()
 			switch {
@@ -831,7 +902,7 @@ func (m Model) View() string {
 		statusParts = append(statusParts, "INSERT — esc:scroll  enter:send  @:tables  #:cols")
 	} else {
 		if m.hasSQL {
-			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:cursor  [enter]:copy SQL→editor ◀")
+			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:cursor  J/K:next/prev SQL  enter:copy→editor ◀")
 		} else {
 			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:cursor")
 		}

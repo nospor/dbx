@@ -1580,6 +1580,12 @@ const helpScreenText = `
     u           Update cell — popup to enter new value, generates UPDATE with PK WHERE
     v           View full cell popup (y copy, f JSON format persists across cells, h/l adjacent col, j/k adjacent row, esc)
 
+  AI ASSISTANT (Normal mode — transcript)
+    i           Insert mode (prompt field)
+    hjkl / arrows  Move block cursor; mouse wheel scrolls
+    J/K         Jump to next / previous fenced sql code block (same idea as editor J/K query jumps)
+    enter       Copy SQL from the block under the cursor to the query editor
+
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
     Editor:     x=execute  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen

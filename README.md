@@ -178,9 +178,10 @@ Shown as a **right column** when visible; width is `layout.ai_pane_width_pct` in
 | Mode / keys | Action |
 | ----------- | ------ |
 | **Normal** (default) | Transcript area: **block cursor** (reversed cell) on the current line/column — move with `h`/`j`/`k`/`l` or arrows; page keys (`f`/`b`, PgUp/PgDn, `d`/`u`, space) and the **mouse wheel** scroll the view and keep the cursor oriented. Long lines scroll horizontally with the cursor. |
+| `J` / `K` | Jump to the **next** / **previous** fenced `sql` block (same idea as **J**/**K** between query blocks in the editor). |
 | `i` | **Insert** — type in the prompt area; `enter` sends (when not loading). |
 | `esc` | Insert → Normal (blur prompt). |
-| `enter` (Normal) | If the latest AI reply contains a fenced `sql` code block, append that SQL to the **query editor** (always the **last** such block in the **most recent** AI message — the highlighted block in the transcript). |
+| `enter` (Normal) | Copy the fenced `sql` block **on the cursor line** (or the nearest block) to the **query editor**. |
 | `@` (Insert) | Open table picker (schema tables; filter by typing). |
 | `#` (Insert) | Open column picker for the current database. |
 
