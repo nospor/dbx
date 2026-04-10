@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -53,8 +54,9 @@ type Model struct {
 	activeConnID string
 	activeDB     string
 	drivers      map[string]db.Driver       // connID -> driver
-	schemaTables map[string][]string        // connID:db -> tables/views
-	schemaCols   map[string][]string        // connID:db -> column tokens
+	schemaTables   map[string][]string            // connID:db -> tables/views
+	schemaViewSet  map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)
+	schemaCols     map[string][]string            // connID:db -> column tokens
 	tableCols    map[string][]db.ColumnInfo // connID:db:table -> columns (cache + explorer)
 
 	// Per editor-tab results for this session only (key = connID:dbName).
@@ -147,6 +149,7 @@ func New(cfg *config.Config) Model {
 		aiStore:          aiStore,
 		drivers:          make(map[string]db.Driver),
 		schemaTables:     make(map[string][]string),
+		schemaViewSet:    make(map[string]map[string]struct{}),
 		schemaCols:       make(map[string][]string),
 		tableCols:        make(map[string][]db.ColumnInfo),
 		tabResultCache:   make(map[string]*results.QueryResult),
@@ -506,6 +509,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tokens = append(tokens, msg.tables...)
 		tokens = append(tokens, msg.views...)
 		m.schemaTables[key] = tokens
+		viewSet := make(map[string]struct{}, len(msg.views))
+		for _, v := range msg.views {
+			viewSet[v] = struct{}{}
+		}
+		m.schemaViewSet[key] = viewSet
 		m.clearTableColumnCache(msg.connID, msg.dbName)
 		m.schemaCols[key] = nil
 		if len(msg.allColumns) > 0 {
@@ -718,10 +726,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.setStatus("Extracted query from AI to Editor.")
 
 	case ai.AISendPromptMsg:
-		// Build full prompt: system context + DDL for @table refs + user text
-		fullPrompt := m.buildAIPrompt(msg.ConnKey, msg.Prompt)
+		var sysPrefix string
+		if m.aiStore != nil {
+			chat := m.aiStore.GetSession(msg.ConnKey)
+			if len(chat.Messages) == 0 {
+				sysPrefix = "You are a database assistant. This conversation is about SQL and database data — " +
+					"NOT about source code or files. Do not search the filesystem or codebase. " +
+					"Answer questions about queries, data, and database structure.\n\n"
+			}
+		}
 		m.aiPane.AppendUserMessage(msg.Prompt) // show raw user msg (not the full context)
-		cmds = append(cmds, ai.AskCmd(m.aiStore, msg.ConnKey, fullPrompt))
+		cmds = append(cmds, m.prepareAISendCmd(msg, sysPrefix))
+		return m, tea.Batch(cmds...)
+
+	case aiPreparedPromptMsg:
+		cmds = append(cmds, ai.AskCmd(m.aiStore, msg.connKey, msg.fullPrompt))
 		return m, tea.Batch(cmds...)
 
 	case ai.AIResponseMsg:
@@ -873,75 +892,99 @@ func tableColsKey(connID, dbName, table string) string {
 	return connID + ":" + dbName + ":" + table
 }
 
-// buildAIPrompt constructs the full prompt sent to the AI CLI, injecting:
-//   - A system context prefix on the very first message of a session
-//   - DDL for any @tableName tokens found in the user's prompt
-func (m *Model) buildAIPrompt(connKey, userPrompt string) string {
-	var prefix strings.Builder
-
-	// System context on first message
-	isFirstMessage := false
-	if m.aiStore != nil {
-		chat := m.aiStore.GetSession(connKey)
-		// At this point AppendUserMessage has NOT been called yet (app does it after this),
-		// so len == 0 means this is the first message.
-		if len(chat.Messages) == 0 {
-			isFirstMessage = true
-		}
-	}
-	if isFirstMessage {
-		prefix.WriteString("You are a database assistant. This conversation is about SQL and database data — " +
-			"NOT about source code or files. Do not search the filesystem or codebase. " +
-			"Answer questions about queries, data, and database structure.\n\n")
-	}
-
-	// Parse @table tokens from the prompt
+// collectAIMentionedTables returns unique table/view names from @tokens in the prompt.
+// @all expands to every table and view in the schema for connID:dbName.
+func (m *Model) collectAIMentionedTables(connID, dbName, userPrompt string) []string {
+	sk := schemaKey(connID, dbName)
 	words := strings.Fields(userPrompt)
-	var mentionedTables []string
-	seenTable := make(map[string]bool)
+	var mentioned []string
+	seen := make(map[string]bool)
 	for _, w := range words {
 		if !strings.HasPrefix(w, "@") {
 			continue
 		}
 		table := strings.TrimPrefix(w, "@")
 		table = strings.TrimRight(table, ".,;:!?)")
-		if table == "" || seenTable[table] {
+		if table == "" {
 			continue
 		}
-		seenTable[table] = true
-
 		if strings.EqualFold(table, "all") {
-			// @all — include DDL for every table we know about
-			sk := schemaKey(m.activeConnID, m.activeDB)
 			for _, t := range m.schemaTables[sk] {
-				if !seenTable["__"+t] {
-					mentionedTables = append(mentionedTables, t)
-					seenTable["__"+t] = true
+				if !seen[t] {
+					mentioned = append(mentioned, t)
+					seen[t] = true
 				}
 			}
-		} else {
-			mentionedTables = append(mentionedTables, table)
+			continue
 		}
-	}
-
-	if len(mentionedTables) > 0 {
-		prefix.WriteString("## Database context\n\n")
-		for _, table := range mentionedTables {
-			ck := tableColsKey(m.activeConnID, m.activeDB, table)
-			cols, ok := m.tableCols[ck]
-			if !ok || len(cols) == 0 {
-				prefix.WriteString("Table `" + table + "` (columns not available)\n\n")
-				continue
-			}
-			prefix.WriteString("Table `" + table + "`:\n")
-			for _, c := range cols {
-				prefix.WriteString("  - " + c.Name + " " + c.DataType + "\n")
-			}
-			prefix.WriteString("\n")
+		if seen[table] {
+			continue
 		}
+		seen[table] = true
+		mentioned = append(mentioned, table)
 	}
+	return mentioned
+}
 
-	return prefix.String() + userPrompt
+// prepareAISendCmd fetches driver TableDDL for each @-mentioned object and builds the full prompt.
+func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) tea.Cmd {
+	connID, dbName := splitConnKey(msg.ConnKey)
+	tables := m.collectAIMentionedTables(connID, dbName, msg.Prompt)
+	sk := schemaKey(connID, dbName)
+	var viewsSnap map[string]struct{}
+	if vs := m.schemaViewSet[sk]; len(vs) > 0 {
+		viewsSnap = maps.Clone(vs)
+	}
+	tablesCopy := append([]string(nil), tables...)
+	conn := m.findConn(connID)
+	userPrompt := msg.Prompt
+	connKey := msg.ConnKey
+	prefix := systemPrefix
+
+	return func() tea.Msg {
+		var sb strings.Builder
+		sb.WriteString(prefix)
+		if len(tablesCopy) > 0 {
+			sb.WriteString("## Database context\n\n")
+			if conn == nil {
+				sb.WriteString("(No connection: could not load DDL for @mentions.)\n\n")
+			} else {
+				drv, err := db.New(*conn)
+				if err != nil {
+					sb.WriteString("(Could not open database driver: " + err.Error() + ")\n\n")
+				} else {
+					ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+					defer cancel()
+					if err := drv.Connect(ctx, *conn); err != nil {
+						sb.WriteString("(Could not connect: " + err.Error() + ")\n\n")
+					} else {
+						defer drv.Close()
+						for _, tbl := range tablesCopy {
+							isView := false
+							if viewsSnap != nil {
+								_, isView = viewsSnap[tbl]
+							}
+							ddl, err := drv.TableDDL(ctx, dbName, tbl, isView)
+							if err != nil {
+								alt := !isView
+								ddl2, err2 := drv.TableDDL(ctx, dbName, tbl, alt)
+								if err2 == nil {
+									ddl, err = ddl2, nil
+								}
+							}
+							if err != nil {
+								sb.WriteString("### `" + tbl + "`\n/* Error loading DDL: " + err.Error() + " */\n\n")
+								continue
+							}
+							sb.WriteString("### `" + tbl + "`\n```sql\n" + strings.TrimSpace(ddl) + "\n```\n\n")
+						}
+					}
+				}
+			}
+		}
+		sb.WriteString(userPrompt)
+		return aiPreparedPromptMsg{connKey: connKey, fullPrompt: sb.String()}
+	}
 }
 
 // clearTableColumnCache removes per-table column data for one database (before schema refresh).

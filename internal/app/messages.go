@@ -94,5 +94,11 @@ type exportCSVMsg struct{}
 // exportJSONMsg exports results to JSON.
 type exportJSONMsg struct{}
 
+// aiPreparedPromptMsg carries the full AI prompt after @-mention DDL has been fetched.
+type aiPreparedPromptMsg struct {
+	connKey    string
+	fullPrompt string
+}
+
 // closeTabPromptMsg asks to close the current editor tab (confirmation follows).
 type closeTabPromptMsg struct{}

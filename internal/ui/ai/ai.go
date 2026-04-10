@@ -29,7 +29,7 @@ type AIResponseMsg struct {
 	Err      error
 }
 
-// AISendPromptMsg is sent when the user submits a prompt so app.go can inject DDL context.
+// AISendPromptMsg is sent when the user submits a prompt so app.go can fetch TableDDL for @mentions and run the AI.
 type AISendPromptMsg struct {
 	ConnKey string
 	Prompt  string
