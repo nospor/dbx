@@ -3,6 +3,7 @@ package ai
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -112,6 +113,23 @@ const statusH = 1
 
 // overlayPickerMaxRows is how many mention rows are visible at once; longer lists scroll.
 const overlayPickerMaxRows = 8
+
+// qualifiedColumnMentions keeps only table-qualified tokens (e.g. tbl.col). schemaCols also
+// includes bare column names for the query editor autocomplete, but # mentions should be explicit.
+func qualifiedColumnMentions(schemaCols []string) []string {
+	if len(schemaCols) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(schemaCols))
+	for _, c := range schemaCols {
+		if c == "" || !strings.Contains(c, ".") {
+			continue
+		}
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // sqlBlockRaw holds byte offsets into the rendered transcript before splitting into lines.
 type sqlBlockRaw struct {
@@ -829,7 +847,7 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				m.overlayQuery = ""
 				m.overlayCursor = 0
 				m.overlayScrollTop = 0
-				m.overlayAllItems = schemaCols
+				m.overlayAllItems = qualifiedColumnMentions(schemaCols)
 				m.rebuildFiltered()
 				m.clampOutputScroll()
 				return m, nil
@@ -849,12 +867,12 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		m.showOverlay = false
-	case "down", "j", "ctrl+n":
+	case "down":
 		if m.overlayCursor < len(m.overlayFiltered)-1 {
 			m.overlayCursor++
 			m.overlayEnsureCursorVisible()
 		}
-	case "up", "k", "ctrl+p":
+	case "up":
 		if m.overlayCursor > 0 {
 			m.overlayCursor--
 			m.overlayEnsureCursorVisible()
@@ -993,7 +1011,11 @@ func (m Model) View() string {
 	statusParts = append(statusParts, fmt.Sprintf("%d%%", scrollPct))
 
 	if m.mode == ModeInput {
-		statusParts = append(statusParts, "INSERT — esc:scroll  enter:send  @:tables  #:cols")
+		if m.showOverlay {
+			statusParts = append(statusParts, "INSERT @# — ↑↓ pick row  type:filter  enter:apply  esc/backspace:close")
+		} else {
+			statusParts = append(statusParts, "INSERT — esc:scroll  enter:send  @:tables  #:cols")
+		}
 	} else {
 		if m.hasSQL {
 			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:cursor  J/K:next/prev SQL  enter:copy→editor ◀")
