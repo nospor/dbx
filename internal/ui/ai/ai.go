@@ -452,6 +452,11 @@ func (m Model) IsInputMode() bool {
 	return m.focused && (m.mode == ModeInput || m.showOverlay)
 }
 
+// IsLoading returns true while a prompt is in flight (DDL prep or AI CLI).
+func (m Model) IsLoading() bool {
+	return m.loading
+}
+
 func (m *Model) SetConnKey(connKey string) {
 	if m.connKey != connKey {
 		m.connKey = connKey
@@ -826,6 +831,8 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				}
 				m.textarea.Reset()
 				m.loading = true
+				m.mode = ModeOutput
+				m.textarea.Blur()
 				connKey := m.connKey
 				cmds = append(cmds, func() tea.Msg {
 					return AISendPromptMsg{ConnKey: connKey, Prompt: val}

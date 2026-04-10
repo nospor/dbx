@@ -213,8 +213,9 @@ func (s *Store) Ask(connKey, prompt string) (string, error) {
 	args = append(args, prompt)
 
 	cmd := exec.Command(baseCmd, args...)
-	
+
 	var outBuf, errBuf bytes.Buffer
+	cmd.Stdin = strings.NewReader("") // EOF immediately; avoid attaching the TUI's stdin to the child
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 

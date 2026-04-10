@@ -322,7 +322,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		editorInsert := m.editor.IsInsertMode()
 		historyPopup := m.editor.HistoryPopupVisible()
 		explorerFiltering := m.explorer.IsFiltering()
-		aiInput := m.aiPane.IsInputMode()
+		// While AI answers, stay navigable: insert mode suppresses e/q/r/space unless loading (prompt in flight).
+		aiInput := m.aiPane.IsInputMode() && !m.aiPane.IsLoading()
 		suppressGlobals := editorInsert || historyPopup || explorerFiltering || aiInput
 
 		switch msg.String() {
