@@ -58,6 +58,9 @@ type explorerSelectMsg struct {
 // toggleExplorerMsg shows/hides the explorer pane.
 type toggleExplorerMsg struct{}
 
+// toggleAIPaneMsg shows/hides the AI pane.
+type toggleAIPaneMsg struct{}
+
 // toggleFullscreenMsg toggles fullscreen for the current panel.
 type toggleFullscreenMsg struct{}
 

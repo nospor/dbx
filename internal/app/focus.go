@@ -7,6 +7,7 @@ const (
 	PanelExplorer Panel = iota
 	PanelEditor
 	PanelResults
+	PanelAI
 )
 
 func (p Panel) String() string {
@@ -17,6 +18,8 @@ func (p Panel) String() string {
 		return "editor"
 	case PanelResults:
 		return "results"
+	case PanelAI:
+		return "ai"
 	}
 	return "unknown"
 }

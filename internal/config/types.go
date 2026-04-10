@@ -18,14 +18,31 @@ type Connection struct {
 type Layout struct {
 	ExplorerWidthPct int `json:"explorer_width_pct"` // default 25
 	EditorHeightPct  int `json:"editor_height_pct"`  // default 50
+	AIPaneWidthPct   int `json:"ai_pane_width_pct"`  // default 25
 }
 
 // Config is the root runtime configuration.
 // UI preferences are persisted to ~/.config/dbx/config.json.
 // Connections are persisted separately to ~/.cache/dbx/connections.json.
 type Config struct {
-	Connections []Connection `json:"-"`
-	Layout      Layout       `json:"layout"`
-	Theme       string       `json:"theme"` // terminal, dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark
-	StatusMessageSeconds int `json:"status_message_seconds"` // default 5
+	Connections          []Connection `json:"-"`
+	Layout               Layout       `json:"layout"`
+	Theme                string       `json:"theme"` // terminal, dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark
+	StatusMessageSeconds int          `json:"status_message_seconds"` // default 5
+	AI                   *AIConfig    `json:"ai,omitempty"`
+}
+
+type AIAppConfig struct {
+	ModelsCommand        string `json:"models_command"`
+	ModelsResponseFormat string `json:"models_response_format"`
+	CreateSessionCommand string `json:"create_session_command"`
+	SessionModeFlag      string `json:"session_mode_flag"`   // e.g. "--mode ask"
+	ResumeSessionFlag    string `json:"resume_session_flag"` // e.g. "--resume"
+	ModelFlag            string `json:"model_flag"`          // e.g. "--model"
+}
+
+type AIConfig struct {
+	SelectedApp      string                 `json:"selected_app"`
+	MaxHistorySizeKB int                    `json:"max_history_size_kb"`
+	Apps             map[string]AIAppConfig `json:"apps"`
 }

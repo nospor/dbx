@@ -68,6 +68,7 @@ func Load() (*Config, error) {
 		Layout               Layout       `json:"layout"`
 		Theme                string       `json:"theme"`
 		StatusMessageSeconds int          `json:"status_message_seconds"`
+		AI                   *AIConfig    `json:"ai,omitempty"`
 	}
 	var legacy legacyConfig
 	if err := json.Unmarshal(data, &legacy); err != nil {
@@ -78,6 +79,7 @@ func Load() (*Config, error) {
 		Layout:               legacy.Layout,
 		Theme:                legacy.Theme,
 		StatusMessageSeconds: legacy.StatusMessageSeconds,
+		AI:                   legacy.AI,
 	}
 	if conns, err := loadConnections(); err == nil {
 		cfg.Connections = conns
@@ -99,14 +101,16 @@ func Save(cfg *Config) error {
 		return err
 	}
 	type diskConfig struct {
-		Layout               Layout `json:"layout"`
-		Theme                string `json:"theme"`
-		StatusMessageSeconds int    `json:"status_message_seconds"`
+		Layout               Layout    `json:"layout"`
+		Theme                string    `json:"theme"`
+		StatusMessageSeconds int       `json:"status_message_seconds"`
+		AI                   *AIConfig `json:"ai,omitempty"`
 	}
 	out := diskConfig{
 		Layout:               cfg.Layout,
 		Theme:                cfg.Theme,
 		StatusMessageSeconds: cfg.StatusMessageSeconds,
+		AI:                   cfg.AI,
 	}
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -124,9 +128,24 @@ func defaults() *Config {
 		Layout: Layout{
 			ExplorerWidthPct: 25,
 			EditorHeightPct:  50,
+			AIPaneWidthPct:   25,
 		},
-		Theme: "terminal",
+		Theme:                "terminal",
 		StatusMessageSeconds: 5,
+		AI: &AIConfig{
+			SelectedApp:      "cursor-agent",
+			MaxHistorySizeKB: 1024,
+			Apps: map[string]AIAppConfig{
+				"cursor-agent": {
+					ModelsCommand:        "cursor-agent models",
+					ModelsResponseFormat: "Available models\n\n{models}\n\nTip: use --model <id> (or /model <id> in interactive mode) to switch.",
+					CreateSessionCommand: "cursor-agent create-chat",
+					SessionModeFlag:      "--mode ask",
+					ResumeSessionFlag:    "--resume",
+					ModelFlag:            "--model",
+				},
+			},
+		},
 	}
 }
 
@@ -193,5 +212,13 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.StatusMessageSeconds <= 0 {
 		cfg.StatusMessageSeconds = 5
+	}
+	if cfg.Layout.AIPaneWidthPct == 0 {
+		cfg.Layout.AIPaneWidthPct = 25
+	}
+	if cfg.AI == nil {
+		cfg.AI = defaults().AI
+	} else if cfg.AI.Apps == nil {
+		cfg.AI.Apps = defaults().AI.Apps
 	}
 }

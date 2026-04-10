@@ -19,6 +19,8 @@ import (
 	"github.com/robertn/dbx/internal/opentabs"
 	"github.com/robertn/dbx/internal/querycontents"
 	"github.com/robertn/dbx/internal/sqlutil"
+	internalAi "github.com/robertn/dbx/internal/ai"
+	"github.com/robertn/dbx/internal/ui/ai"
 	"github.com/robertn/dbx/internal/ui/cmdpalette"
 	"github.com/robertn/dbx/internal/ui/editor"
 	"github.com/robertn/dbx/internal/ui/explorer"
@@ -43,6 +45,7 @@ type Model struct {
 	focus Panel
 
 	explorerHidden  bool
+	aiHidden        bool
 	fullscreenOn    bool
 	fullscreenPanel Panel
 
@@ -61,6 +64,8 @@ type Model struct {
 	explorer   explorer.Model
 	editor     editor.Model
 	results    results.Model
+	aiPane     ai.Model
+	aiStore    *internalAi.Store
 	palette    cmdpalette.Model
 	connForm   *explorer.ConnForm
 	showForm   bool
@@ -128,6 +133,7 @@ func New(cfg *config.Config) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	aiStore := internalAi.LoadStore(cfg)
 	m := Model{
 		cfg:              cfg,
 		theme:            t,
@@ -137,6 +143,8 @@ func New(cfg *config.Config) Model {
 		openTabsStore:    ot,
 		focus:            PanelExplorer,
 		fullscreenPanel:  PanelExplorer,
+		aiHidden:         true,
+		aiStore:          aiStore,
 		drivers:          make(map[string]db.Driver),
 		schemaTables:     make(map[string][]string),
 		schemaCols:       make(map[string][]string),
@@ -146,6 +154,7 @@ func New(cfg *config.Config) Model {
 		explorer:         explorer.New(cfg, t),
 		editor:           newEditorWithDrafts(t, qc.All(), cfg, ot),
 		results:          results.New(t),
+		aiPane:           ai.New(t, aiStore),
 		palette:          cmdpalette.New(t),
 		spinner:          sp,
 	}
@@ -161,6 +170,7 @@ func New(cfg *config.Config) Model {
 	m.explorer.SetFocused(true)
 	m.editor.SetFocused(false)
 	m.results.SetFocused(false)
+	m.aiPane.SetFocused(false)
 	return m
 }
 
@@ -305,11 +315,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		// Global keys — suppressed in insert mode, history popup, and explorer filtering.
+		// Global keys — suppressed in insert mode, history popup, explorer filtering, and AI input mode.
 		editorInsert := m.editor.IsInsertMode()
 		historyPopup := m.editor.HistoryPopupVisible()
 		explorerFiltering := m.explorer.IsFiltering()
-		suppressGlobals := editorInsert || historyPopup || explorerFiltering
+		aiInput := m.aiPane.IsInputMode()
+		suppressGlobals := editorInsert || historyPopup || explorerFiltering || aiInput
 
 		switch msg.String() {
 		case "ctrl+c":
@@ -327,6 +338,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			if !suppressGlobals && m.focus != PanelEditor {
 				m.setFocus(PanelEditor)
+				return m, nil
+			}
+
+		case "a":
+			if !suppressGlobals && m.focus != PanelAI {
+				if m.aiHidden {
+					m.aiHidden = false
+					m.aiPane.SetConnKey(m.connKey())
+					m.layoutPanels()
+				}
+				m.setFocus(PanelAI)
 				return m, nil
 			}
 
@@ -576,6 +598,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layoutPanels()
 		return m, nil
 
+	case toggleAIPaneMsg:
+		m.aiHidden = !m.aiHidden
+		if m.aiHidden && m.focus == PanelAI {
+			m.setFocus(PanelEditor)
+		}
+		if !m.aiHidden {
+			// Ensure AI pane is synced with current connection/db when revealed
+			m.aiPane.SetConnKey(m.connKey())
+		}
+		m.layoutPanels()
+		return m, nil
+
 	case toggleFullscreenMsg:
 		m.fullscreenOn = !m.fullscreenOn
 		if m.fullscreenOn {
@@ -677,6 +711,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
+
+	case ai.ExtractSQLMsg:
+		m.editor.AppendAtEnd(msg.SQL)
+		m.setFocus(PanelEditor)
+		return m, m.setStatus("Extracted query from AI to Editor.")
+
+	case ai.AISendPromptMsg:
+		// Build full prompt: system context + DDL for @table refs + user text
+		fullPrompt := m.buildAIPrompt(msg.ConnKey, msg.Prompt)
+		m.aiPane.AppendUserMessage(msg.Prompt) // show raw user msg (not the full context)
+		cmds = append(cmds, ai.AskCmd(m.aiStore, msg.ConnKey, fullPrompt))
+		return m, tea.Batch(cmds...)
+
+	case ai.AIResponseMsg:
+		// ALWAYS route to AI pane globally, since AI background call can return anytime
+		var cmd tea.Cmd
+		key := schemaKey(m.activeConnID, m.activeDB)
+		m.aiPane, cmd = m.aiPane.Update(msg, m.schemaTables[key], m.schemaCols[key])
+		cmds = append(cmds, cmd)
+		return m, tea.Batch(cmds...)
+
 	}
 
 	// Route key/other events to focused panel
@@ -697,6 +752,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.results, cmd = m.results.Update(msg)
 		cmds = append(cmds, cmd)
+	case PanelAI:
+		var cmd tea.Cmd
+		key := schemaKey(m.activeConnID, m.activeDB)
+		m.aiPane, cmd = m.aiPane.Update(msg, m.schemaTables[key], m.schemaCols[key])
+		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -707,6 +767,7 @@ func (m *Model) setFocus(p Panel) {
 	m.explorer.SetFocused(p == PanelExplorer)
 	m.editor.SetFocused(p == PanelEditor)
 	m.results.SetFocused(p == PanelResults)
+	m.aiPane.SetFocused(p == PanelAI)
 	if m.fullscreenOn {
 		m.fullscreenPanel = p
 	}
@@ -812,6 +873,77 @@ func tableColsKey(connID, dbName, table string) string {
 	return connID + ":" + dbName + ":" + table
 }
 
+// buildAIPrompt constructs the full prompt sent to the AI CLI, injecting:
+//   - A system context prefix on the very first message of a session
+//   - DDL for any @tableName tokens found in the user's prompt
+func (m *Model) buildAIPrompt(connKey, userPrompt string) string {
+	var prefix strings.Builder
+
+	// System context on first message
+	isFirstMessage := false
+	if m.aiStore != nil {
+		chat := m.aiStore.GetSession(connKey)
+		// At this point AppendUserMessage has NOT been called yet (app does it after this),
+		// so len == 0 means this is the first message.
+		if len(chat.Messages) == 0 {
+			isFirstMessage = true
+		}
+	}
+	if isFirstMessage {
+		prefix.WriteString("You are a database assistant. This conversation is about SQL and database data — " +
+			"NOT about source code or files. Do not search the filesystem or codebase. " +
+			"Answer questions about queries, data, and database structure.\n\n")
+	}
+
+	// Parse @table tokens from the prompt
+	words := strings.Fields(userPrompt)
+	var mentionedTables []string
+	seenTable := make(map[string]bool)
+	for _, w := range words {
+		if !strings.HasPrefix(w, "@") {
+			continue
+		}
+		table := strings.TrimPrefix(w, "@")
+		table = strings.TrimRight(table, ".,;:!?)")
+		if table == "" || seenTable[table] {
+			continue
+		}
+		seenTable[table] = true
+
+		if strings.EqualFold(table, "all") {
+			// @all — include DDL for every table we know about
+			sk := schemaKey(m.activeConnID, m.activeDB)
+			for _, t := range m.schemaTables[sk] {
+				if !seenTable["__"+t] {
+					mentionedTables = append(mentionedTables, t)
+					seenTable["__"+t] = true
+				}
+			}
+		} else {
+			mentionedTables = append(mentionedTables, table)
+		}
+	}
+
+	if len(mentionedTables) > 0 {
+		prefix.WriteString("## Database context\n\n")
+		for _, table := range mentionedTables {
+			ck := tableColsKey(m.activeConnID, m.activeDB, table)
+			cols, ok := m.tableCols[ck]
+			if !ok || len(cols) == 0 {
+				prefix.WriteString("Table `" + table + "` (columns not available)\n\n")
+				continue
+			}
+			prefix.WriteString("Table `" + table + "`:\n")
+			for _, c := range cols {
+				prefix.WriteString("  - " + c.Name + " " + c.DataType + "\n")
+			}
+			prefix.WriteString("\n")
+		}
+	}
+
+	return prefix.String() + userPrompt
+}
+
 // clearTableColumnCache removes per-table column data for one database (before schema refresh).
 func (m *Model) clearTableColumnCache(connID, dbName string) {
 	if m.tableCols == nil {
@@ -884,11 +1016,12 @@ func (m *Model) openPalette() {
 	case PanelExplorer:
 		title = "Explorer Commands"
 		commands = []cmdpalette.Command{
-			{Key: "a", Description: "Add connection", Action: func() tea.Msg { return addConnMsg{} }},
+			{Key: "n", Description: "Add connection", Action: func() tea.Msg { return addConnMsg{} }},
 			{Key: "e", Description: "Edit connection", Action: func() tea.Msg { return editConnMsg{} }},
 			{Key: "d", Description: "Delete connection", Action: func() tea.Msg { return deleteConnMsg{} }},
 			{Key: "R", Description: "Refresh schema", Action: func() tea.Msg { return refreshSchemaMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
+			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
 	case PanelEditor:
@@ -898,6 +1031,7 @@ func (m *Model) openPalette() {
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
 			{Key: "D", Description: "Close tab (confirm)", Action: func() tea.Msg { return closeTabPromptMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
+			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
 	case PanelResults:
@@ -908,6 +1042,14 @@ func (m *Model) openPalette() {
 			{Key: "e", Description: "Export CSV", Action: func() tea.Msg { return exportCSVMsg{} }},
 			{Key: "j", Description: "Export JSON", Action: func() tea.Msg { return exportJSONMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
+			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
+			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
+		}
+	case PanelAI:
+		title = "AI Commands"
+		commands = []cmdpalette.Command{
+			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
+			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
 		}
 	}
@@ -947,6 +1089,7 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 		m.applyResultsForTab("", "")
 		m.pruneTabResultsCache()
 		m.persistOpenTabs()
+		m.aiPane.SetConnKey("")
 		return cmds
 	}
 	connID, dbName := splitConnKey(connKey)
@@ -987,6 +1130,7 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 		m.editor.SetHistory(queries)
 	}
 	m.persistOpenTabs()
+	m.aiPane.SetConnKey(connKey)
 	return cmds
 }
 
@@ -1003,6 +1147,7 @@ func (m *Model) activateExplorerDatabase(connID, dbName string) {
 	m.pruneTabResultsCache()
 	m.persistOpenTabs()
 	m.applyEditorSchema(connID, dbName)
+	m.aiPane.SetConnKey(m.connKey())
 	if m.history != nil {
 		entries := m.history.ForKey(m.connKey())
 		queries := make([]string, len(entries))
@@ -1779,6 +1924,7 @@ func (m *Model) layoutPanels() {
 		m.explorer.SetSize(m.width-2, totalH-2)
 		m.editor.SetSize(m.width-2, totalH-2)
 		m.results.SetSize(m.width-2, totalH-2)
+		m.aiPane.SetSize(m.width-2, totalH-2)
 		return
 	}
 
@@ -1786,14 +1932,31 @@ func (m *Model) layoutPanels() {
 	if m.explorerHidden {
 		explorerW = 0
 	}
-	rightW := m.width - explorerW
+	aiW := 0
+	if !m.aiHidden {
+		aiW = m.width * m.cfg.Layout.AIPaneWidthPct / 100
+		if aiW < 4 {
+			aiW = 4
+		}
+	}
+	midW := m.width - explorerW - aiW
+	if midW < 2 {
+		midW = 2
+	}
 
 	editorH := totalH * m.cfg.Layout.EditorHeightPct / 100
 	resultsH := totalH - editorH
 
-	m.explorer.SetSize(explorerW-2, totalH-2)
-	m.editor.SetSize(rightW-2, editorH-2)
-	m.results.SetSize(rightW-2, resultsH-2)
+	explorerInner := explorerW - 2
+	if explorerInner < 0 {
+		explorerInner = 0
+	}
+	m.explorer.SetSize(explorerInner, totalH-2)
+	m.editor.SetSize(midW-2, editorH-2)
+	m.results.SetSize(midW-2, resultsH-2)
+	if !m.aiHidden {
+		m.aiPane.SetSize(aiW-2, totalH-2)
+	}
 }
 
 func (m Model) View() string {
@@ -1829,11 +1992,20 @@ func (m Model) View() string {
 
 	rightPane := lipgloss.JoinVertical(lipgloss.Left, editorView, resultsView)
 
+	aiView := ""
+	if !m.aiHidden {
+		aiView = m.renderBorderedPanel(PanelAI)
+	}
+
 	var mainView string
 	if m.explorerHidden {
 		mainView = rightPane
 	} else {
 		mainView = lipgloss.JoinHorizontal(lipgloss.Top, explorerView, rightPane)
+	}
+
+	if !m.aiHidden {
+		mainView = lipgloss.JoinHorizontal(lipgloss.Top, mainView, aiView)
 	}
 
 	view := lipgloss.JoinVertical(lipgloss.Left, mainView, m.renderStatusBar())
@@ -1887,6 +2059,8 @@ func (m Model) renderPanelContent(p Panel) string {
 		return m.editor.View()
 	case PanelResults:
 		return m.results.View()
+	case PanelAI:
+		return m.aiPane.View()
 	}
 	return ""
 }
@@ -1897,8 +2071,15 @@ func (m Model) rightColumnWidth() int {
 	if m.explorerHidden {
 		explorerW = 0
 	}
-	rightW := m.width - explorerW
-	w := rightW - 2
+	aiW := 0
+	if !m.aiHidden {
+		aiW = m.width * m.cfg.Layout.AIPaneWidthPct / 100
+		if aiW < 4 {
+			aiW = 4
+		}
+	}
+	midW := m.width - explorerW - aiW
+	w := midW - 2
 	if w < 0 {
 		w = 0
 	}
@@ -1916,6 +2097,8 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · d: delete · y: yank/copy · backspace: history · space: commands"
 	case PanelResults:
 		return "h/l, 0/$, PgUp/PgDn: movement, s: toggle row mark · S: band select rows · d: delete draft · i: insert draft · u: update cell · v: full cell · space: commands"
+	case PanelAI:
+		return "?: help · i: insert mode · esc: normal mode"
 	default:
 		return ""
 	}
@@ -1929,6 +2112,8 @@ func (m Model) panelTitleFor(p Panel) string {
 		return "[q] Query Editor "
 	case PanelResults:
 		return "[r] Results"
+	case PanelAI:
+		return "[a] AI Assistant"
 	default:
 		return ""
 	}
@@ -2087,6 +2272,19 @@ func (m Model) renderBorderedPanel(p Panel) string {
 		h := totalH*(100-m.cfg.Layout.EditorHeightPct)/100 - 2
 		if h < 0 {
 			h = 0
+		}
+		boxed := borderStyle.Width(w).Height(h).Render(content)
+		boxed = m.embedPanelTopTitle(boxed, title, focused)
+		return m.embedPanelBottomHint(boxed, hint, focused)
+	case PanelAI:
+		aiW := m.width * m.cfg.Layout.AIPaneWidthPct / 100
+		if aiW < 4 {
+			aiW = 4
+		}
+		w := aiW - 2
+		h := totalH - 2
+		if w < 0 {
+			w = 0
 		}
 		boxed := borderStyle.Width(w).Height(h).Render(content)
 		boxed = m.embedPanelTopTitle(boxed, title, focused)
