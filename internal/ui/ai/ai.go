@@ -75,6 +75,9 @@ type Model struct {
 	// SQL availability for current session
 	hasSQL bool
 
+	// Byte ranges of each ```sql``` block in the rendered transcript (same framing as strings.Join(outputLines, "\n")).
+	sqlRegions []sqlBlockRegion
+
 	// Dropdown state for @ or #
 	showOverlay     bool
 	overlayType     rune // '@' or '#'
@@ -86,6 +89,20 @@ type Model struct {
 
 const inputH = 3
 const statusH = 1
+
+// sqlBlockRaw holds byte offsets into the rendered transcript before splitting into lines.
+type sqlBlockRaw struct {
+	startByte int
+	endByte   int
+	sql       string
+}
+
+// sqlBlockRegion maps a ```sql``` fence to output line indices (inclusive).
+type sqlBlockRegion struct {
+	startLine int
+	endLine   int
+	sql       string
+}
 
 // New creates a new AI model.
 func New(t theme.Theme, store *internalAi.Store) Model {
@@ -382,9 +399,9 @@ func wrapLine(s string, width int) string {
 }
 
 // renderMessage renders a single chat message with word-wrap and code block highlighting.
-// If isActiveSQL is true, the last SQL code block is rendered with an accent border
-// (indicating it will be extracted when enter is pressed in output mode).
-func (m Model) renderMessage(role, content string, isActiveSQL bool) string {
+// If isActiveSQL is true, the last SQL code block in this message uses a brighter foreground.
+// All SQL blocks use the same border so line wrapping matches (needed for cursor-based extraction).
+func (m Model) renderMessage(sb *strings.Builder, role, content string, isActiveSQL bool, blocks *[]sqlBlockRaw) {
 	w := m.width
 	if w <= 4 {
 		w = 4
@@ -407,14 +424,13 @@ func (m Model) renderMessage(role, content string, isActiveSQL bool) string {
 		BorderForeground(lipgloss.Color("8")).
 		Width(w - 4)
 
-	// Active/highlighted SQL block style (accent)
+	// Active SQL block: brighter text, same border as normal so layout matches other fences.
 	activeCodeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("3")).
-		Border(lipgloss.RoundedBorder()).
+		Foreground(lipgloss.Color("11")).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(m.theme.BorderFocused.GetBorderTopForeground()).
 		Width(w - 4)
 
-	var sb strings.Builder
 	sb.WriteString(prefixStyle.Render(prefix))
 	sb.WriteByte('\n')
 
@@ -443,6 +459,7 @@ func (m Model) renderMessage(role, content string, isActiveSQL bool) string {
 		currentBlock++
 		code := strings.TrimSpace(after[:endIdx])
 		sb.WriteByte('\n')
+		regionStart := sb.Len()
 		// Highlight only the last SQL block in the last AI msg
 		if isActiveSQL && currentBlock == sqlBlockCount {
 			sb.WriteString(activeCodeStyle.Render(code))
@@ -450,16 +467,20 @@ func (m Model) renderMessage(role, content string, isActiveSQL bool) string {
 			sb.WriteString(normalCodeStyle.Render(code))
 		}
 		sb.WriteByte('\n')
+		*blocks = append(*blocks, sqlBlockRaw{
+			startByte: regionStart,
+			endByte:   sb.Len(),
+			sql:       code,
+		})
 		remaining = after[endIdx+3:]
 	}
-
-	return sb.String()
 }
 
 func (m *Model) refreshViewport() {
 	if m.Store == nil || m.connKey == "" {
 		m.outputLines = []string{""}
 		m.hasSQL = false
+		m.sqlRegions = nil
 		m.outputScrollY = 0
 		m.outputScrollX = 0
 		m.outCursorLine = 0
@@ -469,6 +490,7 @@ func (m *Model) refreshViewport() {
 	chat := m.Store.GetSession(m.connKey)
 	var sb strings.Builder
 	m.hasSQL = false
+	m.sqlRegions = nil
 
 	// Find index of last AI message that has a SQL block
 	lastSQLIdx := -1
@@ -479,13 +501,23 @@ func (m *Model) refreshViewport() {
 		}
 	}
 
+	var raw []sqlBlockRaw
 	for i, msg := range chat.Messages {
 		isActiveSQL := (i == lastSQLIdx)
-		sb.WriteString(m.renderMessage(msg.Role, msg.Content, isActiveSQL))
+		m.renderMessage(&sb, msg.Role, msg.Content, isActiveSQL, &raw)
 		sb.WriteString("\n\n")
 	}
 	content := sb.String()
 	m.outputLines = strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	for _, r := range raw {
+		sl := lineIndexOfByte(content, r.startByte)
+		last := r.endByte - 1
+		if last < r.startByte {
+			last = r.startByte
+		}
+		el := lineIndexOfByte(content, last)
+		m.sqlRegions = append(m.sqlRegions, sqlBlockRegion{startLine: sl, endLine: el, sql: r.sql})
+	}
 	m.outputScrollY = m.maxOutputScrollY()
 	m.outCursorLine = max(0, len(m.outputLines)-1)
 	m.outCursorCol = m.maxColOnLine(m.outCursorLine)
@@ -576,7 +608,7 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				m.textarea.Focus()
 				return m, nil
 			case "enter":
-				sql := m.extractLastSQL()
+				sql := m.extractSQLAtCursor()
 				if sql != "" {
 					cmds = append(cmds, func() tea.Msg {
 						return ExtractSQLMsg{SQL: sql}
@@ -698,22 +730,78 @@ func (m *Model) AppendUserMessage(text string) {
 	}
 }
 
-func (m Model) extractLastSQL() string {
+func lineIndexOfByte(content string, b int) int {
+	if b <= 0 {
+		return 0
+	}
+	if b > len(content) {
+		b = len(content)
+	}
+	return strings.Count(content[:b], "\n")
+}
+
+// extractSQLAtCursor returns the fenced ```sql``` block on the cursor line (or nearest by line).
+func (m Model) extractSQLAtCursor() string {
+	if len(m.sqlRegions) == 0 {
+		return m.extractLastSQLFallback()
+	}
+	cur := m.outCursorLine
+	for i := len(m.sqlRegions) - 1; i >= 0; i-- {
+		r := m.sqlRegions[i]
+		if cur >= r.startLine && cur <= r.endLine {
+			return r.sql
+		}
+	}
+	best := ""
+	bestDist := int(^uint(0) >> 1)
+	bestIdx := -1
+	for i, r := range m.sqlRegions {
+		dist := 0
+		if cur < r.startLine {
+			dist = r.startLine - cur
+		} else if cur > r.endLine {
+			dist = cur - r.endLine
+		}
+		if dist < bestDist || (dist == bestDist && i > bestIdx) {
+			bestDist = dist
+			bestIdx = i
+			best = r.sql
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return m.extractLastSQLFallback()
+}
+
+// extractLastSQLFallback walks stored messages (used when rendered regions are unavailable).
+func (m Model) extractLastSQLFallback() string {
 	if m.Store == nil {
 		return ""
 	}
 	chat := m.Store.GetSession(m.connKey)
 	for i := len(chat.Messages) - 1; i >= 0; i-- {
 		msg := chat.Messages[i]
-		if msg.Role == "ai" {
-			start := strings.Index(msg.Content, "```sql")
-			if start != -1 {
-				rem := msg.Content[start+6:]
-				end := strings.Index(rem, "```")
-				if end != -1 {
-					return strings.TrimSpace(rem[:end])
-				}
+		if msg.Role != "ai" {
+			continue
+		}
+		remaining := msg.Content
+		var last string
+		for {
+			start := strings.Index(remaining, "```sql")
+			if start == -1 {
+				break
 			}
+			rem := remaining[start+len("```sql"):]
+			end := strings.Index(rem, "```")
+			if end == -1 {
+				break
+			}
+			last = strings.TrimSpace(rem[:end])
+			remaining = rem[end+3:]
+		}
+		if last != "" {
+			return last
 		}
 	}
 	return ""
