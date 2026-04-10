@@ -1,6 +1,6 @@
 # dbx — AI Agent Context
 
-**dbx** is a TUI (terminal) database client written in Go. It connects to PostgreSQL, MySQL, SQLite, and MSSQL, with a three-panel layout: Explorer | Query Editor | Results.
+**dbx** is a TUI (terminal) database client written in Go. It connects to PostgreSQL, MySQL, SQLite, and MSSQL, with a main three-panel layout: Explorer | Query Editor | Results, plus an **optional AI assistant** column toggled from the UI.
 
 ## Tech Stack
 
@@ -20,9 +20,11 @@ dbx/
 │   ├── app/                # Root model, focus, keymap, message routing
 │   ├── config/             # Config load/save (~/.config/dbx/config.json)
 │   ├── db/                 # Driver interface + Postgres/MySQL/SQLite/MSSQL impls
-│   ├── history/            # Executed query history (~/.config/dbx/history.json)
-│   ├── querycontents/      # Editor buffer drafts per conn/db (~/.config/dbx/query-contents.json)
+│   ├── ai/                 # AI session store + CLI integration (Ask, persistence)
+│   ├── history/            # Executed query history (~/.cache/dbx/history.json)
+│   ├── querycontents/      # Editor buffer drafts per conn/db (~/.cache/dbx/query-contents.json)
 │   ├── ui/
+│   │   ├── ai/             # AI pane (chat transcript, input, @/# overlays, output cursor)
 │   │   ├── cmdpalette/     # Space-triggered command palette
 │   │   ├── editor/         # Query editor (vim mode, syntax highlight, autocomplete)
 │   │   ├── explorer/       # Tree view, connection form, conn CRUD
@@ -34,18 +36,21 @@ dbx/
 
 ## Architecture
 
-- **Root model** (`internal/app/app.go`): Composes explorer, editor, results, palette. Handles global keys (e/focus, space/palette, ?/help), routes messages to focused panel, manages DB connections and async query execution.
+- **Root model** (`internal/app/app.go`): Composes explorer, editor, results, AI pane, palette. Handles global keys (e/q/r/a/focus, space/palette, ?/help), routes messages to focused panel, manages DB connections and async query execution.
+- **Command palette** (`space` then key): Explorer uses **`n`** add connection, **`a`** toggle AI pane; Editor/Results/AI palettes also include **`a`** toggle AI. In-app help (`?`) lists the full set per panel.
+- **AI assistant** (`internal/ui/ai/`, `internal/ai/store.go`): Optional right column; per `connection:database` chat persisted to `~/.config/dbx/ai_sessions.json`. Prompts run an external CLI from `config.AI` (default profile targets `cursor-agent`). **Normal** mode shows a block cursor on the transcript (reverse video, like the query editor); **Insert** (`i`) uses the textarea; `enter` in Normal copies the last fenced `sql` code block from the latest AI reply into the query editor (`ExtractSQLMsg`). `@` / `#` in Insert open schema table/column overlays. AI responses are async (`AIResponseMsg` always routed to the AI pane).
 - **Async DB ops**: All DB work is non-blocking via `tea.Cmd` and custom message types in `internal/app/messages.go`.
 - **Vim mode**: Editor has Normal/Insert modes; motions and commands in `internal/ui/editor/vim.go` and `editor.go`.
 - **Multi-query**: Queries separated by blank lines; the one under the cursor is executed.
 
 ## Conventions
 
-- Config, query history, and per-database **editor drafts** (`query-contents.json`) live in `~/.config/dbx/`. Drafts persist on `esc` (Insert→Normal) and when changing the active database; they are independent of `history.json`.
+- Config and AI sessions live under `~/.config/dbx/` (`config.json`, `ai_sessions.json`). Query history and per-database **editor drafts** (`query-contents.json`) live in `~/.cache/dbx/`. Drafts persist on `esc` (Insert→Normal) and when changing the active database; they are independent of `history.json`.
 - Connection form uses a driver selector (not free text); SQLite hides host/port fields.
 - Quick SELECT (`s` on table) appends a dialect-aware query at the end of the editor, then runs it (does not replace the buffer).
 - Explorer `v` on a table/view loads driver-specific DDL (CREATE TABLE/VIEW + indexes where supported) in a centered popup.
 - Results pane supports horizontal scrolling with `h`/`l`, `0`/`$`; scrollbar thumb reflects position.
+- AI pane width is `layout.ai_pane_width_pct` in config (default 25). AI CLI apps and `max_history_size_kb` live under `ai` in `config.json`.
 
 ## Build & Run
 

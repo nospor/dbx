@@ -1483,6 +1483,7 @@ const helpScreenText = `
     e           Focus explorer
     q           Focus editor
     r           Focus results
+    a           Focus AI pane (shows it if hidden; does not hide — use palette)
     space       Open command palette (context-aware)
     space+f     Toggle fullscreen for current panel
     ?           Toggle this help
@@ -1536,10 +1537,11 @@ const helpScreenText = `
     u           Update cell — popup to enter new value, generates UPDATE with PK WHERE
     v           View full cell popup (y copy, f JSON format persists across cells, h/l adjacent col, j/k adjacent row, esc)
 
-  COMMAND PALETTE (space)
-    Explorer:   a=add  e=edit  d=delete  R=refresh  t=toggle explorer  f=fullscreen
-    Editor:     x=execute  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  f=fullscreen
-    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  f=fullscreen
+  COMMAND PALETTE (space, then key)
+    Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    Editor:     x=execute  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    AI:         t=toggle explorer  a=toggle AI pane  f=fullscreen
 `
 
 func (m Model) handleDDLPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {

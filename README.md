@@ -6,6 +6,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 
 - **Databases**: PostgreSQL, MySQL, SQLite, MSSQL
 - **Three-panel layout**: Explorer | Query Editor | Results — each pane shows **key hints** on the bottom border (long lines truncate if the pane is narrow)
+- **AI assistant** (optional right column): chat with a configured CLI (e.g. `cursor-agent`), per connection/database; transcript with **Normal** mode cursor (reverse-video cell like the query editor) and **Insert** for prompts; `enter` in Normal copies the latest AI SQL from a fenced `sql` code block to the query editor; `@` / `#` insert table/column names from schema
 - **Vim mode**: Normal and Insert mode with motions (h/j/k/l, w/b, gg/G, dd, etc.)
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
@@ -13,7 +14,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Query history** per connection/database — `ctrl+p` / `ctrl+n` replace the buffer with older/newer entries; `backspace` (normal mode) opens a **filterable** popup — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
 - **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs are restored on startup (`open-tabs.json`)
-- **Command palette** (space) with context-aware commands per panel
+- **Command palette** (**space**, then a letter) with context-aware commands per panel (`n` add connection in explorer; `a` toggles AI pane from explorer / editor / results / AI)
 - **Fullscreen** any panel with space+f
 - **Export** results to CSV or JSON
 - **Copy** cell or row to clipboard
@@ -47,12 +48,29 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
 {
   "layout": {
     "explorer_width_pct": 25,
-    "editor_height_pct": 50
+    "editor_height_pct": 50,
+    "ai_pane_width_pct": 25
   },
   "theme": "catppuccin-mocha",
-  "status_message_seconds": 5
+  "status_message_seconds": 5,
+  "ai": {
+    "selected_app": "cursor-agent",
+    "max_history_size_kb": 1024,
+    "apps": {
+      "cursor-agent": {
+        "models_command": "cursor-agent models",
+        "models_response_format": "Available models\n\n{models}\n\nTip: use --model <id> (or /model <id> in interactive mode) to switch.",
+        "create_session_command": "cursor-agent create-chat",
+        "session_mode_flag": "--mode ask",
+        "resume_session_flag": "--resume",
+        "model_flag": "--model"
+      }
+    }
+  }
 }
 ```
+
+Omit `ai` to keep defaults. The `apps` map defines named profiles; `selected_app` must match one key. Each profile supplies shell commands and flags dbx uses when spawning the CLI.
 
 Available `theme` values: `terminal`, `dark`, `light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, `gruvbox-dark`.
 
@@ -69,10 +87,11 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 | `~/.cache/dbx/history.json`        | Executed queries (filterable history popup, ctrl+p/n buffer browse)                    |
 | `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 | `~/.cache/dbx/open-tabs.json`      | Ordered list of open query tabs (`connection_id:database` keys) for session restore    |
+| `~/.config/dbx/ai_sessions.json`   | AI chat messages and session ids per `connection_id:database`                        |
 
 ## Layout
 
-Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] Query Editor`, `[r] Results`. The query editor border also shows the **active connection name** (or id) and **database**, e.g. `· Local PG / myapp`, or `—` when nothing is selected. Inside the query pane, the **top row** is a tab bar (when no tabs are open, it shows idle / no connection).
+Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] Query Editor`, `[r] Results`, and **`[a] AI Assistant`** when the AI column is visible. The AI column is hidden by default; press **`a`** (global) to show it and focus, or open the palette (**space**) and press **`a`** to toggle visibility without changing focus first. The query editor border also shows the **active connection name** (or id) and **database**, e.g. `· Local PG / myapp`, or `—` when nothing is selected. Inside the query pane, the **top row** is a tab bar (when no tabs are open, it shows idle / no connection).
 
 ## Keybindings
 
@@ -82,7 +101,8 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `e`      | Focus explorer                                                                                  |
 | `q`      | Focus editor                                                                                    |
 | `r`      | Focus results                                                                                   |
-| `space`  | Open command palette                                                                            |
+| `a`      | Show the AI pane if it was hidden, then focus it. If the AI pane already has focus, `a` does **not** hide it — open the palette (**space**) and press **`a`** to **toggle** the AI column on or off. |
+| `space`  | Open command palette (then press a letter: e.g. **`n`** add connection with explorer focused, **`a`** toggle AI pane from explorer / editor / results / AI) |
 | `?`      | Toggle help (fixed-size popup; `j`/`k`, `g`/`G`, PgUp/PgDn scroll; `?`/`esc`/`q` close) |
 | `ctrl+c` | Quit                                                                                            |
 
@@ -151,12 +171,31 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 
 The **active cell** uses a stronger highlight than the rest of the cursor row.
 
+### AI Assistant
+
+Shown as a **right column** when visible; width is `layout.ai_pane_width_pct` in `config.json`. Chats are **per** `connection:database` (same key as query tabs). The bottom **status row** in the pane summarizes mode, scroll %, and optional history size warning.
+
+| Mode / keys | Action |
+| ----------- | ------ |
+| **Normal** (default) | Transcript area: **block cursor** (reversed cell) on the current line/column — move with `h`/`j`/`k`/`l` or arrows; page keys (`f`/`b`, PgUp/PgDn, `d`/`u`, space) and the **mouse wheel** scroll the view and keep the cursor oriented. Long lines scroll horizontally with the cursor. |
+| `i` | **Insert** — type in the prompt area; `enter` sends (when not loading). |
+| `esc` | Insert → Normal (blur prompt). |
+| `enter` (Normal) | If the latest AI reply contains a fenced `sql` code block, append that SQL to the **query editor** (always the **last** such block in the **most recent** AI message — the highlighted block in the transcript). |
+| `@` (Insert) | Open table picker (schema tables; filter by typing). |
+| `#` (Insert) | Open column picker for the current database. |
+
+While the prompt field is active (Insert or an `@`/`#` menu), global `e`/`q`/`r`/`a` shortcuts are suppressed until you `esc` the overlay or leave Insert.
+
 ### Command Palette (space)
+
+Press **space** to open the palette, then the **second** key (e.g. **space** then **a** toggles the AI pane from explorer, editor, results, or AI). **Add connection** is **`n`** (explorer palette only), not `a`.
+
 | Panel    | Commands                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------- |
-| Explorer | `a` add, `e` edit, `d` delete, `R` refresh, `t` toggle, `f` fullscreen                            |
-| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `f` fullscreen              |
-| Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `f` fullscreen |
+| Explorer | `n` add connection, `e` edit, `d` delete, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| Editor   | `x` execute, `c` clear, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                            |
 
 ## History
 

@@ -303,7 +303,7 @@ func (m Model) View() string {
 	var sb strings.Builder
 
 	if len(m.flat) == 0 && m.filterText == "" {
-		hint := m.theme.Dimmed.Render("No connections.\nPress space → add connection")
+		hint := m.theme.Dimmed.Render("No connections.\nspace, then n — add connection")
 		return lipgloss.NewStyle().Width(m.width).Height(m.height).Render(hint)
 	}
 
