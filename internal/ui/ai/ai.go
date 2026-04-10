@@ -41,7 +41,7 @@ type ExtractSQLMsg struct {
 	SQL string
 }
 
-// AISessionResetMsg is sent after /clear finishes (store cleared + new CLI session id).
+// AISessionResetMsg is sent after /clear’s async step finishes (new CLI session id via EnsureSessionID).
 type AISessionResetMsg struct {
 	Err error
 }
@@ -56,14 +56,14 @@ func AskCmd(store *internalAi.Store, connKey, prompt string) tea.Cmd {
 	}
 }
 
-// SessionResetCmd clears the transcript and creates a new CLI chat session (async).
-func SessionResetCmd(store *internalAi.Store, connKey string) tea.Cmd {
+// EnsureNewCLISessionCmd runs CreateSessionCommand only (transcript must already be cleared).
+func EnsureNewCLISessionCmd(store *internalAi.Store, connKey string) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if store == nil {
 			err = errors.New("no AI store")
 		} else {
-			err = store.ClearTranscriptAndNewCLIChat(connKey)
+			err = store.EnsureSessionID(connKey)
 		}
 		return AISessionResetMsg{Err: err}
 	}
@@ -748,7 +748,18 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				if strings.EqualFold(val, "/clear") {
 					m.textarea.Reset()
 					connKey := m.connKey
-					cmds = append(cmds, SessionResetCmd(m.Store, connKey))
+					if m.Store == nil || connKey == "" {
+						cmds = append(cmds, func() tea.Msg {
+							return AISessionResetMsg{Err: errors.New("no connection")}
+						})
+						return m, tea.Batch(cmds...)
+					}
+					if err := m.Store.ClearTranscript(connKey); err != nil {
+						cmds = append(cmds, func() tea.Msg { return AISessionResetMsg{Err: err} })
+						return m, tea.Batch(cmds...)
+					}
+					m.refreshViewport()
+					cmds = append(cmds, EnsureNewCLISessionCmd(m.Store, connKey))
 					return m, tea.Batch(cmds...)
 				}
 				m.textarea.Reset()
