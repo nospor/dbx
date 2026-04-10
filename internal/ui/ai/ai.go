@@ -5,10 +5,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	internalAi "github.com/robertn/dbx/internal/ai"
 	"github.com/robertn/dbx/internal/ui/theme"
@@ -59,8 +61,14 @@ type Model struct {
 	connKey string
 	Store   *internalAi.Store
 
-	viewport viewport.Model
 	textarea textarea.Model
+
+	// Output transcript (split lines, same as former viewport content).
+	outputLines   []string
+	outputScrollY int
+	outputScrollX int
+	outCursorLine int
+	outCursorCol  int
 
 	loading bool
 
@@ -86,15 +94,11 @@ func New(t theme.Theme, store *internalAi.Store) Model {
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
-	vp := viewport.New(0, 0)
-	vp.YPosition = 0
-
 	return Model{
 		theme:    t,
 		mode:     ModeOutput,
 		Store:    store,
 		textarea: ta,
-		viewport: vp,
 	}
 }
 
@@ -111,14 +115,191 @@ func (m *Model) SetSize(w, h int) {
 }
 
 func (m *Model) recalcSizes() {
-	vpH := m.height - statusH - inputH - 1
-	if vpH < 0 {
-		vpH = 0
-	}
-	m.viewport.Width = m.width
-	m.viewport.Height = vpH
 	m.textarea.SetWidth(m.width)
 	m.textarea.SetHeight(inputH)
+}
+
+func (m Model) outputViewHeight() int {
+	h := m.height - statusH - inputH - 1
+	if h < 0 {
+		return 0
+	}
+	return h
+}
+
+func (m Model) maxOutputScrollY() int {
+	h := m.outputViewHeight()
+	n := len(m.outputLines)
+	if h <= 0 || n == 0 {
+		return 0
+	}
+	return max(0, n-h)
+}
+
+func clampInt(v, low, high int) int {
+	if high < low {
+		low, high = high, low
+	}
+	return min(high, max(low, v))
+}
+
+func (m Model) maxColOnLine(lineIdx int) int {
+	if lineIdx < 0 || lineIdx >= len(m.outputLines) {
+		return 0
+	}
+	w := ansi.StringWidth(m.outputLines[lineIdx])
+	if w == 0 {
+		return 0
+	}
+	return w - 1
+}
+
+func (m *Model) clampOutCursorToBuffer() {
+	if len(m.outputLines) == 0 {
+		m.outCursorLine = 0
+		m.outCursorCol = 0
+		return
+	}
+	m.outCursorLine = clampInt(m.outCursorLine, 0, len(m.outputLines)-1)
+	m.outCursorCol = clampInt(m.outCursorCol, 0, m.maxColOnLine(m.outCursorLine))
+}
+
+func (m *Model) scrollOutputToShowCursor() {
+	h := m.outputViewHeight()
+	if h <= 0 || len(m.outputLines) == 0 {
+		return
+	}
+	top := m.outputScrollY
+	if m.outCursorLine < top {
+		m.outputScrollY = m.outCursorLine
+	} else if m.outCursorLine >= top+h {
+		m.outputScrollY = m.outCursorLine - h + 1
+	}
+	m.outputScrollY = clampInt(m.outputScrollY, 0, m.maxOutputScrollY())
+
+	line := m.outputLines[m.outCursorLine]
+	lw := ansi.StringWidth(line)
+	w := m.width
+	if lw <= w {
+		m.outputScrollX = 0
+		return
+	}
+	c := m.outCursorCol
+	if c < m.outputScrollX {
+		m.outputScrollX = c
+	}
+	if c >= m.outputScrollX+w {
+		m.outputScrollX = c - w + 1
+	}
+	maxX := max(0, lw-w)
+	m.outputScrollX = clampInt(m.outputScrollX, 0, maxX)
+}
+
+func (m *Model) moveOutCursorLine(delta int) {
+	if len(m.outputLines) == 0 {
+		return
+	}
+	m.outCursorLine = clampInt(m.outCursorLine+delta, 0, len(m.outputLines)-1)
+	m.outCursorCol = min(m.outCursorCol, m.maxColOnLine(m.outCursorLine))
+	m.scrollOutputToShowCursor()
+}
+
+func (m *Model) moveOutCursorCol(delta int) {
+	if len(m.outputLines) == 0 {
+		return
+	}
+	m.clampOutCursorToBuffer()
+	mc := m.maxColOnLine(m.outCursorLine)
+	m.outCursorCol = clampInt(m.outCursorCol+delta, 0, mc)
+	m.scrollOutputToShowCursor()
+}
+
+func (m *Model) scrollOutputWindow(delta int) {
+	if len(m.outputLines) == 0 {
+		return
+	}
+	h := m.outputViewHeight()
+	m.outputScrollY = clampInt(m.outputScrollY+delta, 0, m.maxOutputScrollY())
+	m.outCursorLine = clampInt(m.outCursorLine+delta, 0, len(m.outputLines)-1)
+	m.outCursorCol = min(m.outCursorCol, m.maxColOnLine(m.outCursorLine))
+	// Keep cursor on screen after window scroll (e.g. clamped at buffer edges).
+	top, bot := m.outputScrollY, m.outputScrollY+h
+	if m.outCursorLine < top {
+		m.outCursorLine = top
+	}
+	if h > 0 && m.outCursorLine >= bot {
+		m.outCursorLine = bot - 1
+	}
+	m.outCursorCol = min(m.outCursorCol, m.maxColOnLine(m.outCursorLine))
+	m.scrollOutputToShowCursor()
+}
+
+func applyOutputCursor(line string, col int) string {
+	rev := lipgloss.NewStyle().Reverse(true)
+	sw := ansi.StringWidth(line)
+	if sw == 0 {
+		return rev.Render(" ")
+	}
+	if col >= sw {
+		col = sw - 1
+	}
+	before := ansi.Cut(line, 0, col)
+	cursorCell := ansi.Cut(line, col, col+1)
+	if cursorCell == "" {
+		cursorCell = " "
+	}
+	after := ansi.TruncateLeft(line, col+1, "")
+	return before + rev.Render(cursorCell) + after
+}
+
+func (m Model) renderOutputView() string {
+	h := m.outputViewHeight()
+	w := m.width
+	if h <= 0 || w <= 0 {
+		return ""
+	}
+	if len(m.outputLines) == 0 {
+		return lipgloss.NewStyle().Width(w).Height(h).MaxHeight(h).MaxWidth(w).Render("")
+	}
+	top := max(0, m.outputScrollY)
+	end := min(top+h, len(m.outputLines))
+	chunk := m.outputLines[top:end]
+	out := make([]string, len(chunk))
+	showCursor := m.focused && m.mode == ModeOutput
+	for i, line := range chunk {
+		global := top + i
+		styled := line
+		if showCursor && global == m.outCursorLine {
+			styled = applyOutputCursor(line, m.outCursorCol)
+		}
+		if m.outputScrollX == 0 && ansi.StringWidth(styled) <= w {
+			out[i] = styled
+		} else {
+			out[i] = ansi.Cut(styled, m.outputScrollX, m.outputScrollX+w)
+		}
+	}
+	contents := lipgloss.NewStyle().
+		Width(w).
+		Height(h).
+		MaxHeight(h).
+		MaxWidth(w).
+		Render(strings.Join(out, "\n"))
+	return contents
+}
+
+func (m Model) outputScrollPercent() float64 {
+	h := m.outputViewHeight()
+	n := len(m.outputLines)
+	if h <= 0 || n == 0 {
+		return 1.0
+	}
+	if n <= h {
+		return 1.0
+	}
+	y := float64(m.outputScrollY)
+	maxY := float64(n - h)
+	v := y / maxY
+	return max(0.0, min(1.0, v))
 }
 
 func (m *Model) SetFocused(f bool) {
@@ -277,8 +458,12 @@ func (m Model) renderMessage(role, content string, isActiveSQL bool) string {
 
 func (m *Model) refreshViewport() {
 	if m.Store == nil || m.connKey == "" {
-		m.viewport.SetContent("")
+		m.outputLines = []string{""}
 		m.hasSQL = false
+		m.outputScrollY = 0
+		m.outputScrollX = 0
+		m.outCursorLine = 0
+		m.outCursorCol = 0
 		return
 	}
 	chat := m.Store.GetSession(m.connKey)
@@ -299,8 +484,13 @@ func (m *Model) refreshViewport() {
 		sb.WriteString(m.renderMessage(msg.Role, msg.Content, isActiveSQL))
 		sb.WriteString("\n\n")
 	}
-	m.viewport.SetContent(sb.String())
-	m.viewport.GotoBottom()
+	content := sb.String()
+	m.outputLines = strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	m.outputScrollY = m.maxOutputScrollY()
+	m.outCursorLine = max(0, len(m.outputLines)-1)
+	m.outCursorCol = m.maxColOnLine(m.outCursorLine)
+	m.clampOutCursorToBuffer()
+	m.scrollOutputToShowCursor()
 }
 
 func (m Model) Init() tea.Cmd {
@@ -337,6 +527,38 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 		m.refreshViewport()
 		return m, nil
 
+	case tea.MouseMsg:
+		if !m.focused || m.mode != ModeOutput || len(m.outputLines) == 0 {
+			return m, nil
+		}
+		if msg.Action != tea.MouseActionPress {
+			return m, nil
+		}
+		const wheelDelta = 3
+		switch msg.Button { //nolint:exhaustive
+		case tea.MouseButtonWheelUp:
+			if msg.Shift {
+				m.moveOutCursorCol(-4)
+			} else {
+				m.scrollOutputWindow(-wheelDelta)
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			if msg.Shift {
+				m.moveOutCursorCol(4)
+			} else {
+				m.scrollOutputWindow(wheelDelta)
+			}
+			return m, nil
+		case tea.MouseButtonWheelLeft:
+			m.moveOutCursorCol(-4)
+			return m, nil
+		case tea.MouseButtonWheelRight:
+			m.moveOutCursorCol(4)
+			return m, nil
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if !m.focused {
 			return m, nil
@@ -362,10 +584,28 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				}
 				return m, tea.Batch(cmds...)
 			}
-			var cmd tea.Cmd
-			m.viewport, cmd = m.viewport.Update(msg)
-			cmds = append(cmds, cmd)
-			return m, tea.Batch(cmds...)
+			vk := viewport.DefaultKeyMap()
+			switch {
+			case key.Matches(msg, vk.Down):
+				m.moveOutCursorLine(1)
+			case key.Matches(msg, vk.Up):
+				m.moveOutCursorLine(-1)
+			case key.Matches(msg, vk.Left):
+				m.moveOutCursorCol(-1)
+			case key.Matches(msg, vk.Right):
+				m.moveOutCursorCol(1)
+			case key.Matches(msg, vk.PageDown):
+				m.scrollOutputWindow(m.outputViewHeight())
+			case key.Matches(msg, vk.PageUp):
+				m.scrollOutputWindow(-m.outputViewHeight())
+			case key.Matches(msg, vk.HalfPageDown):
+				m.scrollOutputWindow(max(1, m.outputViewHeight()/2))
+			case key.Matches(msg, vk.HalfPageUp):
+				m.scrollOutputWindow(-max(1, m.outputViewHeight()/2))
+			default:
+				return m, nil
+			}
+			return m, nil
 		}
 
 		if m.mode == ModeInput {
@@ -496,21 +736,21 @@ func (m Model) View() string {
 		statusParts = append(statusParts, sizeStr)
 	}
 	// Scroll position
-	scrollPct := int(m.viewport.ScrollPercent() * 100)
+	scrollPct := int(m.outputScrollPercent() * 100)
 	statusParts = append(statusParts, fmt.Sprintf("%d%%", scrollPct))
 
 	if m.mode == ModeInput {
 		statusParts = append(statusParts, "INSERT — esc:scroll  enter:send  @:tables  #:cols")
 	} else {
 		if m.hasSQL {
-			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:scroll  [enter]:copy SQL→editor ◀")
+			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:cursor  [enter]:copy SQL→editor ◀")
 		} else {
-			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:scroll")
+			statusParts = append(statusParts, "NORMAL — i:type  ↑↓/hjkl:cursor")
 		}
 	}
 	statusLine := m.theme.StatusBar.Width(m.width).Render(strings.Join(statusParts, " | "))
 
-	vpView := m.viewport.View()
+	vpView := m.renderOutputView()
 
 	var inputView string
 	if m.loading {
