@@ -101,13 +101,17 @@ type Model struct {
 	showOverlay     bool
 	overlayType     rune // '@' or '#'
 	overlayAllItems []string
-	overlayFiltered []string
-	overlayCursor   int
-	overlayQuery    string
+	overlayFiltered   []string
+	overlayCursor     int
+	overlayQuery      string
+	overlayScrollTop  int // first visible index in overlayFiltered
 }
 
 const inputH = 3
 const statusH = 1
+
+// overlayPickerMaxRows is how many mention rows are visible at once; longer lists scroll.
+const overlayPickerMaxRows = 8
 
 // sqlBlockRaw holds byte offsets into the rendered transcript before splitting into lines.
 type sqlBlockRaw struct {
@@ -155,8 +159,16 @@ func (m *Model) recalcSizes() {
 	m.textarea.SetHeight(inputH)
 }
 
+// mentionOverlayHeight is the vertical space used by the @ / # picker (0 when closed).
+func (m Model) mentionOverlayHeight() int {
+	if !m.showOverlay || m.loading {
+		return 0
+	}
+	return lipgloss.Height(m.renderOverlay())
+}
+
 func (m Model) outputViewHeight() int {
-	h := m.height - statusH - inputH - 1
+	h := m.height - statusH - inputH - 1 - m.mentionOverlayHeight()
 	if h < 0 {
 		return 0
 	}
@@ -170,6 +182,11 @@ func (m Model) maxOutputScrollY() int {
 		return 0
 	}
 	return max(0, n-h)
+}
+
+// clampOutputScroll keeps outputScrollY valid when the transcript viewport height changes (e.g. @ / # overlay).
+func (m *Model) clampOutputScroll() {
+	m.outputScrollY = clampInt(m.outputScrollY, 0, m.maxOutputScrollY())
 }
 
 func clampInt(v, low, high int) int {
@@ -627,6 +644,33 @@ func (m *Model) rebuildFiltered() {
 	if m.overlayCursor < 0 {
 		m.overlayCursor = 0
 	}
+	m.overlayEnsureCursorVisible()
+}
+
+// overlayEnsureCursorVisible keeps overlayScrollTop so overlayCursor is inside the visible window.
+func (m *Model) overlayEnsureCursorVisible() {
+	n := len(m.overlayFiltered)
+	if n == 0 {
+		m.overlayScrollTop = 0
+		return
+	}
+	vis := overlayPickerMaxRows
+	if vis > n {
+		vis = n
+	}
+	if m.overlayCursor < m.overlayScrollTop {
+		m.overlayScrollTop = m.overlayCursor
+	}
+	if m.overlayCursor >= m.overlayScrollTop+vis {
+		m.overlayScrollTop = m.overlayCursor - vis + 1
+	}
+	maxTop := n - vis
+	if maxTop < 0 {
+		maxTop = 0
+	}
+	if m.overlayScrollTop > maxTop {
+		m.overlayScrollTop = maxTop
+	}
 }
 
 func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, tea.Cmd) {
@@ -774,16 +818,20 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				m.overlayType = '@'
 				m.overlayQuery = ""
 				m.overlayCursor = 0
+				m.overlayScrollTop = 0
 				m.overlayAllItems = append([]string{"all"}, schemaTables...)
 				m.rebuildFiltered()
+				m.clampOutputScroll()
 				return m, nil
 			case "#":
 				m.showOverlay = true
 				m.overlayType = '#'
 				m.overlayQuery = ""
 				m.overlayCursor = 0
+				m.overlayScrollTop = 0
 				m.overlayAllItems = schemaCols
 				m.rebuildFiltered()
+				m.clampOutputScroll()
 				return m, nil
 			}
 
@@ -804,10 +852,12 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 	case "down", "j", "ctrl+n":
 		if m.overlayCursor < len(m.overlayFiltered)-1 {
 			m.overlayCursor++
+			m.overlayEnsureCursorVisible()
 		}
 	case "up", "k", "ctrl+p":
 		if m.overlayCursor > 0 {
 			m.overlayCursor--
+			m.overlayEnsureCursorVisible()
 		}
 	case "enter":
 		if m.overlayCursor >= 0 && m.overlayCursor < len(m.overlayFiltered) {
@@ -830,6 +880,9 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 			m.overlayCursor = 0
 			m.rebuildFiltered()
 		}
+	}
+	if m.showOverlay {
+		m.clampOutputScroll()
 	}
 	return nil
 }
@@ -959,12 +1012,15 @@ func (m Model) View() string {
 		inputView = m.textarea.View()
 	}
 
+	// @ / # picker: above status + prompt (like editor autocomplete above the cursor), and
+	// mentionOverlayHeight shrinks the transcript so the pane does not clip the list off-screen.
+	var inner string
 	if m.showOverlay && !m.loading {
 		overlayBox := m.renderOverlay()
-		inputView = overlayBox + "\n" + inputView
+		inner = lipgloss.JoinVertical(lipgloss.Left, vpView, overlayBox, statusLine, inputView)
+	} else {
+		inner = lipgloss.JoinVertical(lipgloss.Left, vpView, statusLine, inputView)
 	}
-
-	inner := lipgloss.JoinVertical(lipgloss.Left, vpView, statusLine, inputView)
 	return lipgloss.NewStyle().Width(m.width).Height(m.height).MaxHeight(m.height).Render(inner)
 }
 
@@ -972,17 +1028,21 @@ func (m Model) renderOverlay() string {
 	if len(m.overlayFiltered) == 0 {
 		return m.theme.PaletteBox.Render("No match")
 	}
-	maxItems := 6
-	var sb strings.Builder
-	for i, it := range m.overlayFiltered {
-		if i >= maxItems {
-			break
-		}
+	n := len(m.overlayFiltered)
+	top := m.overlayScrollTop
+	end := min(top+overlayPickerMaxRows, n)
+	var lines []string
+	for i := top; i < end; i++ {
+		it := m.overlayFiltered[i]
 		if i == m.overlayCursor {
-			sb.WriteString(lipgloss.NewStyle().Reverse(true).Render(it) + "\n")
+			lines = append(lines, lipgloss.NewStyle().Reverse(true).Render(it))
 		} else {
-			sb.WriteString(it + "\n")
+			lines = append(lines, it)
 		}
 	}
-	return m.theme.PaletteBox.Render(sb.String())
+	content := strings.Join(lines, "\n")
+	if n > overlayPickerMaxRows {
+		content += "\n" + m.theme.Dimmed.Render(fmt.Sprintf("%d–%d of %d", top+1, end, n))
+	}
+	return m.theme.PaletteBox.Render(content)
 }
