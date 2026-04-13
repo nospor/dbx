@@ -924,9 +924,8 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 	case "enter":
 		if m.overlayCursor >= 0 && m.overlayCursor < len(m.overlayFiltered) {
 			item := m.overlayFiltered[m.overlayCursor]
-			val := m.textarea.Value()
-			m.textarea.SetValue(val + string(m.overlayType) + item + " ")
-			m.textarea.SetCursor(len(m.textarea.Value()))
+			// Insert at the textarea cursor (where @ / # was pressed), not at EOF.
+			m.textarea.InsertString(string(m.overlayType) + item + " ")
 		}
 		m.showOverlay = false
 	case "backspace":
