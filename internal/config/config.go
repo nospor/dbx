@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -57,7 +58,11 @@ func Load() (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return defaults(), nil
+		cfg := defaults()
+		if err := Save(cfg); err != nil {
+			return nil, fmt.Errorf("write initial config: %w", err)
+		}
+		return cfg, nil
 	}
 	if err != nil {
 		return nil, err
@@ -74,6 +79,7 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return nil, err
 	}
+	needPersistAI := legacy.AI == nil || legacy.AI.Apps == nil
 	cfg := Config{
 		Connections:          legacy.Connections,
 		Layout:               legacy.Layout,
@@ -88,6 +94,11 @@ func Load() (*Config, error) {
 		_ = saveConnections(cfg.Connections)
 	}
 	applyDefaults(&cfg)
+	if needPersistAI {
+		if err := Save(&cfg); err != nil {
+			return nil, fmt.Errorf("persist default AI settings: %w", err)
+		}
+	}
 	return &cfg, nil
 }
 
