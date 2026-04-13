@@ -27,6 +27,7 @@ const (
 
 // AIResponseMsg is sent back when the CLI AI tool responds.
 type AIResponseMsg struct {
+	ConnKey  string // connection:database the prompt was sent from (not the pane's current view)
 	Response string
 	Err      error
 }
@@ -51,6 +52,7 @@ func AskCmd(store *internalAi.Store, connKey, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := store.Ask(connKey, prompt)
 		return AIResponseMsg{
+			ConnKey:  connKey,
 			Response: resp,
 			Err:      err,
 		}
@@ -90,7 +92,8 @@ type Model struct {
 	outCursorLine int
 	outCursorCol  int
 
-	loading bool
+	// aiInFlight counts outstanding Ask requests per connection:database key.
+	aiInFlight map[string]int
 
 	// SQL availability for current session
 	hasSQL bool
@@ -153,10 +156,11 @@ func New(t theme.Theme, store *internalAi.Store) Model {
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
 	return Model{
-		theme:    t,
-		mode:     ModeOutput,
-		Store:    store,
-		textarea: ta,
+		theme:      t,
+		mode:       ModeOutput,
+		Store:      store,
+		textarea:   ta,
+		aiInFlight: make(map[string]int),
 	}
 }
 
@@ -179,7 +183,7 @@ func (m *Model) recalcSizes() {
 
 // mentionOverlayHeight is the vertical space used by the @ / # picker (0 when closed).
 func (m Model) mentionOverlayHeight() int {
-	if !m.showOverlay || m.loading {
+	if !m.showOverlay || m.loadingForCurrentConn() {
 		return 0
 	}
 	return lipgloss.Height(m.renderOverlay())
@@ -452,9 +456,38 @@ func (m Model) IsInputMode() bool {
 	return m.focused && (m.mode == ModeInput || m.showOverlay)
 }
 
-// IsLoading returns true while a prompt is in flight (DDL prep or AI CLI).
+// IsLoading returns true while a prompt is in flight for the connection:database currently shown in the pane.
 func (m Model) IsLoading() bool {
-	return m.loading
+	return m.loadingForCurrentConn()
+}
+
+func (m Model) loadingForCurrentConn() bool {
+	if m.connKey == "" {
+		return false
+	}
+	return m.aiInFlight[m.connKey] > 0
+}
+
+func (m *Model) addAIInFlight(connKey string) {
+	if connKey == "" {
+		return
+	}
+	if m.aiInFlight == nil {
+		m.aiInFlight = make(map[string]int)
+	}
+	m.aiInFlight[connKey]++
+}
+
+func (m *Model) endAIInFlight(connKey string) {
+	if connKey == "" || m.aiInFlight == nil {
+		return
+	}
+	n := m.aiInFlight[connKey] - 1
+	if n <= 0 {
+		delete(m.aiInFlight, connKey)
+	} else {
+		m.aiInFlight[connKey] = n
+	}
 }
 
 func (m *Model) SetConnKey(connKey string) {
@@ -701,13 +734,17 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 
 	switch msg := msg.(type) {
 	case AIResponseMsg:
-		m.loading = false
-		if msg.Err != nil {
-			m.Store.AppendAIMessage(m.connKey, "Error: "+msg.Err.Error())
-		} else {
-			m.Store.AppendAIMessage(m.connKey, msg.Response)
+		m.endAIInFlight(msg.ConnKey)
+		if m.Store != nil {
+			if msg.Err != nil {
+				m.Store.AppendAIMessage(msg.ConnKey, "Error: "+msg.Err.Error())
+			} else {
+				m.Store.AppendAIMessage(msg.ConnKey, msg.Response)
+			}
 		}
-		m.refreshViewport()
+		if msg.ConnKey == m.connKey {
+			m.refreshViewport()
+		}
 		return m, nil
 
 	case AISessionResetMsg:
@@ -809,7 +846,7 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				return m, nil
 			case "enter":
 				val := strings.TrimSpace(m.textarea.Value())
-				if val == "" || m.loading {
+				if val == "" || m.loadingForCurrentConn() {
 					return m, tea.Batch(cmds...)
 				}
 				if strings.EqualFold(val, "/clear") {
@@ -830,12 +867,12 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 					return m, tea.Batch(cmds...)
 				}
 				m.textarea.Reset()
-				m.loading = true
+				sendKey := m.connKey
+				m.addAIInFlight(sendKey)
 				m.mode = ModeOutput
 				m.textarea.Blur()
-				connKey := m.connKey
 				cmds = append(cmds, func() tea.Msg {
-					return AISendPromptMsg{ConnKey: connKey, Prompt: val}
+					return AISendPromptMsg{ConnKey: sendKey, Prompt: val}
 				})
 				return m, tea.Batch(cmds...)
 			case "@":
@@ -912,11 +949,14 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// AppendUserMessage adds a user message to the store and refreshes the viewport.
-func (m *Model) AppendUserMessage(text string) {
-	if m.Store != nil && m.connKey != "" {
-		m.Store.AppendUserMessage(m.connKey, text)
-		m.refreshViewport()
+// AppendUserMessageAt adds a user message for connection:database connKey and
+// refreshes the viewport only when that session is the one currently shown.
+func (m *Model) AppendUserMessageAt(connKey, text string) {
+	if m.Store != nil && connKey != "" {
+		m.Store.AppendUserMessage(connKey, text)
+		if connKey == m.connKey {
+			m.refreshViewport()
+		}
 	}
 }
 
@@ -1035,7 +1075,7 @@ func (m Model) View() string {
 	vpView := m.renderOutputView()
 
 	var inputView string
-	if m.loading {
+	if m.loadingForCurrentConn() {
 		inputView = m.theme.Dimmed.Width(m.width).Height(inputH).Render("⏳ Waiting for AI response...")
 	} else {
 		inputView = m.textarea.View()
@@ -1044,7 +1084,7 @@ func (m Model) View() string {
 	// @ / # picker: above status + prompt (like editor autocomplete above the cursor), and
 	// mentionOverlayHeight shrinks the transcript so the pane does not clip the list off-screen.
 	var inner string
-	if m.showOverlay && !m.loading {
+	if m.showOverlay && !m.loadingForCurrentConn() {
 		overlayBox := m.renderOverlay()
 		inner = lipgloss.JoinVertical(lipgloss.Left, vpView, overlayBox, statusLine, inputView)
 	} else {

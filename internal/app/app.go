@@ -730,12 +730,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var sysPrefix string
 		if m.aiStore != nil {
 			chat := m.aiStore.GetSession(msg.ConnKey)
-			// Only before AppendUserMessage: after append, len would always be ≥ 1.
+			// Only before AppendUserMessageAt: after append, len would always be ≥ 1.
 			if len(chat.Messages) == 0 {
 				sysPrefix = aiOutboundSystemPrefix
 			}
 		}
-		m.aiPane.AppendUserMessage(msg.Prompt) // show raw user msg (not the full context)
+		m.aiPane.AppendUserMessageAt(msg.ConnKey, msg.Prompt) // show raw user msg (not the full context)
 		cmds = append(cmds, m.prepareAISendCmd(msg, sysPrefix))
 		return m, tea.Batch(cmds...)
 
