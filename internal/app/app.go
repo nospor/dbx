@@ -145,7 +145,8 @@ func New(cfg *config.Config) Model {
 		openTabsStore:    ot,
 		focus:            PanelExplorer,
 		fullscreenPanel:  PanelExplorer,
-		aiHidden:         true,
+		explorerHidden:   *cfg.Layout.ExplorerHidden,
+		aiHidden:         *cfg.Layout.AIPaneHidden,
 		aiStore:          aiStore,
 		drivers:          make(map[string]db.Driver),
 		schemaTables:     make(map[string][]string),
@@ -351,6 +352,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.aiHidden = false
 					m.aiPane.SetConnKey(m.connKey())
 					m.layoutPanels()
+					m.persistPaneVisibility()
 				}
 				m.setFocus(PanelAI)
 				return m, nil
@@ -605,6 +607,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setFocus(PanelEditor)
 		}
 		m.layoutPanels()
+		m.persistPaneVisibility()
 		return m, nil
 
 	case toggleAIPaneMsg:
@@ -617,6 +620,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.aiPane.SetConnKey(m.connKey())
 		}
 		m.layoutPanels()
+		m.persistPaneVisibility()
 		return m, nil
 
 	case toggleFullscreenMsg:
@@ -1988,6 +1992,20 @@ func (m *Model) closeAllDrivers() {
 	for _, d := range m.drivers {
 		_ = d.Close()
 	}
+}
+
+func (m *Model) persistPaneVisibility() {
+	if m.cfg.Layout.ExplorerHidden == nil {
+		v := false
+		m.cfg.Layout.ExplorerHidden = &v
+	}
+	if m.cfg.Layout.AIPaneHidden == nil {
+		v := true
+		m.cfg.Layout.AIPaneHidden = &v
+	}
+	*m.cfg.Layout.ExplorerHidden = m.explorerHidden
+	*m.cfg.Layout.AIPaneHidden = m.aiHidden
+	_ = config.Save(m.cfg)
 }
 
 func (m *Model) layoutPanels() {

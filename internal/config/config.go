@@ -59,6 +59,7 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		cfg := defaults()
+		applyDefaults(cfg)
 		if err := Save(cfg); err != nil {
 			return nil, fmt.Errorf("write initial config: %w", err)
 		}
@@ -226,6 +227,14 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Layout.AIPaneWidthPct == 0 {
 		cfg.Layout.AIPaneWidthPct = 25
+	}
+	if cfg.Layout.ExplorerHidden == nil {
+		v := false
+		cfg.Layout.ExplorerHidden = &v
+	}
+	if cfg.Layout.AIPaneHidden == nil {
+		v := true
+		cfg.Layout.AIPaneHidden = &v
 	}
 	if cfg.AI == nil {
 		cfg.AI = defaults().AI

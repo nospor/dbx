@@ -19,6 +19,10 @@ type Layout struct {
 	ExplorerWidthPct int `json:"explorer_width_pct"` // default 25
 	EditorHeightPct  int `json:"editor_height_pct"`  // default 50
 	AIPaneWidthPct   int `json:"ai_pane_width_pct"`  // default 25
+	// ExplorerHidden / AIPaneHidden use pointers so JSON omission can mean "use default"
+	// (explorer shown, AI pane hidden).
+	ExplorerHidden *bool `json:"explorer_hidden,omitempty"`
+	AIPaneHidden   *bool `json:"ai_pane_hidden,omitempty"`
 }
 
 // Config is the root runtime configuration.
