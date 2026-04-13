@@ -87,7 +87,7 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 | `~/.cache/dbx/history.json`        | Executed queries (filterable history popup, ctrl+p/n buffer browse)                    |
 | `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 | `~/.cache/dbx/open-tabs.json`      | Ordered list of open query tabs (`connection_id:database` keys) for session restore    |
-| `~/.config/dbx/ai_sessions.json`   | AI chat messages and session ids per `connection_id:database`                        |
+| `~/.cache/dbx/ai_sessions.json`    | AI chat messages and session ids per `connection_id:database`                        |
 
 ## Layout
 

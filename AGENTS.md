@@ -38,14 +38,14 @@ dbx/
 
 - **Root model** (`internal/app/app.go`): Composes explorer, editor, results, AI pane, palette. Handles global keys (e/q/r/a/focus, space/palette, ?/help), routes messages to focused panel, manages DB connections and async query execution.
 - **Command palette** (`space` then key): Explorer uses **`n`** add connection, **`a`** toggle AI pane; Editor/Results/AI palettes also include **`a`** toggle AI. In-app help (`?`) lists the full set per panel.
-- **AI assistant** (`internal/ui/ai/`, `internal/ai/store.go`): Optional right column; per `connection:database` chat persisted to `~/.config/dbx/ai_sessions.json`. Prompts run an external CLI from `config.AI` (default profile targets `cursor-agent`). **Normal** mode shows a block cursor on the transcript (reverse video, like the query editor); **Insert** (`i`) uses the textarea; `J`/`K` jump to the next/previous fenced `sql` block (same idea as editor query jumps); `enter` in Normal copies the fenced `sql` block at the cursor into the query editor (`ExtractSQLMsg`). `@` / `#` in Insert open schema table/column overlays. AI responses are async (`AIResponseMsg` always routed to the AI pane).
+- **AI assistant** (`internal/ui/ai/`, `internal/ai/store.go`): Optional right column; per `connection:database` chat persisted to `~/.cache/dbx/ai_sessions.json`. Prompts run an external CLI from `config.AI` (default profile targets `cursor-agent`). **Normal** mode shows a block cursor on the transcript (reverse video, like the query editor); **Insert** (`i`) uses the textarea; `J`/`K` jump to the next/previous fenced `sql` block (same idea as editor query jumps); `enter` in Normal copies the fenced `sql` block at the cursor into the query editor (`ExtractSQLMsg`). `@` / `#` in Insert open schema table/column overlays. AI responses are async (`AIResponseMsg` always routed to the AI pane).
 - **Async DB ops**: All DB work is non-blocking via `tea.Cmd` and custom message types in `internal/app/messages.go`.
 - **Vim mode**: Editor has Normal/Insert modes; motions and commands in `internal/ui/editor/vim.go` and `editor.go`.
 - **Multi-query**: Queries separated by blank lines; the one under the cursor is executed.
 
 ## Conventions
 
-- Config and AI sessions live under `~/.config/dbx/` (`config.json`, `ai_sessions.json`). Query history and per-database **editor drafts** (`query-contents.json`) live in `~/.cache/dbx/`. Drafts persist on `esc` (Insert→Normal) and when changing the active database; they are independent of `history.json`.
+- UI preferences (`config.json`) live under `~/.config/dbx/`. Query history, editor drafts (`query-contents.json`), and AI sessions (`ai_sessions.json`) live in `~/.cache/dbx/`. Drafts persist on `esc` (Insert→Normal) and when changing the active database; they are independent of `history.json`.
 - Connection form uses a driver selector (not free text); SQLite hides host/port fields.
 - Quick SELECT (`s` on table) appends a dialect-aware query at the end of the editor, then runs it (does not replace the buffer).
 - Explorer `v` on a table/view loads driver-specific DDL (CREATE TABLE/VIEW + indexes where supported) in a centered popup.

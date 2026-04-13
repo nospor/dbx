@@ -34,6 +34,18 @@ func GetSessionPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(cache, "dbx", sessionFileName), nil
+}
+
+func legacySessionPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(home, ".config", "dbx", sessionFileName), nil
 }
 
@@ -49,10 +61,25 @@ func LoadStore(cfg *config.Config) *Store {
 	}
 
 	data, err := os.ReadFile(path)
+	fromLegacy := false
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			legacy, lerr := legacySessionPath()
+			if lerr == nil {
+				data, err = os.ReadFile(legacy)
+				if err == nil {
+					fromLegacy = true
+				}
+			}
+		}
+	}
 	if err == nil {
 		_ = json.Unmarshal(data, store)
 		if store.Sessions == nil {
 			store.Sessions = make(map[string]*ChatSession)
+		}
+		if fromLegacy {
+			_ = store.Save()
 		}
 	}
 	return store
