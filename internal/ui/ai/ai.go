@@ -34,8 +34,17 @@ type AIResponseMsg struct {
 
 // AISendPromptMsg is sent when the user submits a prompt so app.go can fetch TableDDL for @mentions and run the AI.
 type AISendPromptMsg struct {
-	ConnKey string
-	Prompt  string
+	ConnKey        string
+	Prompt         string // user text for @mentions and the outbound prompt (without /results prefix when used)
+	Transcript     string // line shown in chat; empty means use Prompt
+	IncludeResults bool   // true for /results: append results-pane query + grid (see max_results_context_kb in config)
+	OriginalInput  string // full submitted line; restored if app rejects /results (no results / no query)
+}
+
+// AIPromptAbortedMsg restores the AI input after app rejects a send (e.g. /results with nothing to attach).
+type AIPromptAbortedMsg struct {
+	ConnKey     string
+	RestoreText string
 }
 
 // ExtractSQLMsg is sent when user hits enter in output mode and a SQL block is found.
@@ -114,6 +123,31 @@ type Model struct {
 const inputH = 3
 const statusH = 1
 
+const aiResultsCmd = "/results"
+
+// parseAIResultsCommand returns the logical user prompt and whether this is a /results send (case-insensitive on the command).
+func parseAIResultsCommand(val string) (userPrompt string, includeResults bool) {
+	val = strings.TrimSpace(val)
+	if len(val) < len(aiResultsCmd) {
+		return val, false
+	}
+	lower := strings.ToLower(val)
+	if !strings.HasPrefix(lower, aiResultsCmd) {
+		return val, false
+	}
+	if len(lower) > len(aiResultsCmd) {
+		next := lower[len(aiResultsCmd)]
+		if next != ' ' && next != '\t' {
+			return val, false
+		}
+	}
+	rest := strings.TrimSpace(val[len(aiResultsCmd):])
+	if rest == "" {
+		return "Summarize this result set.", true
+	}
+	return rest, true
+}
+
 // overlayPickerMaxRows is how many mention rows are visible at once; longer lists scroll.
 const overlayPickerMaxRows = 8
 
@@ -151,7 +185,7 @@ type sqlBlockRegion struct {
 // New creates a new AI model.
 func New(t theme.Theme, store *internalAi.Store) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Ask the AI assistant... (/clear new chat, @ tables, # cols, enter send, alt+enter newline)"
+	ta.Placeholder = "Ask the AI assistant... (/clear, /results prompt, @ tables, # cols, enter send, alt+enter newline)"
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
@@ -733,6 +767,15 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case AIPromptAbortedMsg:
+		m.endAIInFlight(msg.ConnKey)
+		if msg.ConnKey == m.connKey && msg.RestoreText != "" {
+			m.textarea.SetValue(msg.RestoreText)
+			m.textarea.CursorEnd()
+			m.mode = ModeInput
+			return m, m.textarea.Focus()
+		}
+		return m, nil
 	case AIResponseMsg:
 		m.endAIInFlight(msg.ConnKey)
 		if m.Store != nil {
@@ -874,8 +917,19 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				m.addAIInFlight(sendKey)
 				m.mode = ModeOutput
 				m.textarea.Blur()
+				userPrompt, includeResults := parseAIResultsCommand(val)
 				cmds = append(cmds, func() tea.Msg {
-					return AISendPromptMsg{ConnKey: sendKey, Prompt: val}
+					transcript := val
+					if !includeResults {
+						transcript = ""
+					}
+					return AISendPromptMsg{
+						ConnKey:        sendKey,
+						Prompt:         userPrompt,
+						Transcript:     transcript,
+						IncludeResults: includeResults,
+						OriginalInput:  val,
+					}
 				})
 				return m, tea.Batch(cmds...)
 			case "@":
@@ -1063,7 +1117,7 @@ func (m Model) View() string {
 		if m.showOverlay {
 			statusParts = append(statusParts, "INSERT @# — ↑↓ pick row  type:filter  enter:apply  esc/backspace:close")
 		} else {
-			statusParts = append(statusParts, "INSERT — esc:scroll  enter:send  @:tables  #:cols")
+			statusParts = append(statusParts, "INSERT — esc:scroll  enter:send  /results  @:tables  #:cols")
 		}
 	} else {
 		if m.hasSQL {

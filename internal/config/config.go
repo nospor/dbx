@@ -145,8 +145,9 @@ func defaults() *Config {
 		Theme:                "terminal",
 		StatusMessageSeconds: 5,
 		AI: &AIConfig{
-			SelectedApp:      "cursor-agent",
-			MaxHistorySizeKB: 1024,
+			SelectedApp:           "cursor-agent",
+			MaxHistorySizeKB:      1024,
+			MaxResultsContextKB:   256,
 			Apps: map[string]AIAppConfig{
 				"cursor-agent": {
 					ModelsCommand:        "cursor-agent models",
@@ -240,5 +241,8 @@ func applyDefaults(cfg *Config) {
 		cfg.AI = defaults().AI
 	} else if cfg.AI.Apps == nil {
 		cfg.AI.Apps = defaults().AI.Apps
+	}
+	if cfg.AI.MaxResultsContextKB <= 0 {
+		cfg.AI.MaxResultsContextKB = 256
 	}
 }

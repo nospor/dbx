@@ -731,6 +731,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.setStatus("Extracted query from AI to Editor.")
 
 	case ai.AISendPromptMsg:
+		if msg.IncludeResults {
+			if m.results.Loading() {
+				key := schemaKey(m.activeConnID, m.activeDB)
+				var cmd tea.Cmd
+				m.aiPane, cmd = m.aiPane.Update(ai.AIPromptAbortedMsg{
+					ConnKey:     msg.ConnKey,
+					RestoreText: msg.OriginalInput,
+				}, m.schemaTables[key], m.schemaCols[key])
+				cmds = append(cmds, cmd)
+				cmds = append(cmds, m.setStatus("Results are still loading; wait for the query to finish."))
+				return m, tea.Batch(cmds...)
+			}
+			r := m.results.Result()
+			if r == nil || strings.TrimSpace(r.SourceSQL) == "" || r.Error != "" {
+				key := schemaKey(m.activeConnID, m.activeDB)
+				var cmd tea.Cmd
+				m.aiPane, cmd = m.aiPane.Update(ai.AIPromptAbortedMsg{
+					ConnKey:     msg.ConnKey,
+					RestoreText: msg.OriginalInput,
+				}, m.schemaTables[key], m.schemaCols[key])
+				cmds = append(cmds, cmd)
+				status := "No query results to attach; run a successful query in the results pane first."
+				if r != nil && r.Error != "" {
+					status = "Cannot attach results: the last query failed. Fix the query and run it again."
+				}
+				cmds = append(cmds, m.setStatus(status))
+				return m, tea.Batch(cmds...)
+			}
+		}
+		transcript := msg.Transcript
+		if transcript == "" {
+			transcript = msg.Prompt
+		}
 		var sysPrefix string
 		if m.aiStore != nil {
 			chat := m.aiStore.GetSession(msg.ConnKey)
@@ -739,7 +772,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				sysPrefix = aiOutboundSystemPrefix
 			}
 		}
-		m.aiPane.AppendUserMessageAt(msg.ConnKey, msg.Prompt) // show raw user msg (not the full context)
+		m.aiPane.AppendUserMessageAt(msg.ConnKey, transcript) // chat shows what the user sent (/results line or plain prompt)
 		cmds = append(cmds, m.prepareAISendCmd(msg, sysPrefix))
 		return m, tea.Batch(cmds...)
 
@@ -951,8 +984,67 @@ func (m *Model) collectAIMentionedTables(connID, dbName, userPrompt string) []st
 	return mentioned
 }
 
+const aiResultsSQLMaxBytes = 32000
+
+func sanitizeAIResultCell(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	return s
+}
+
+func sanitizeAIResultRow(row []string, wantCols int) []string {
+	out := make([]string, wantCols)
+	for i := 0; i < wantCols; i++ {
+		if i < len(row) {
+			out[i] = sanitizeAIResultCell(row[i])
+		}
+	}
+	return out
+}
+
+// formatAIResultsContextBlock builds query + TSV rows for the AI, capped at maxBytes (UTF-8 length).
+func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
+	if r == nil {
+		return ""
+	}
+	sqlPart := strings.TrimSpace(r.SourceSQL)
+	if len(sqlPart) > aiResultsSQLMaxBytes {
+		sqlPart = sqlPart[:aiResultsSQLMaxBytes] + "\n-- … query truncated for context size\n"
+	}
+	var sb strings.Builder
+	hdr := "## Results pane context\n\n### Query\n\n```sql\n" + sqlPart + "\n```\n\n### Rows (tab-separated)\n\n"
+	if len(hdr) >= maxBytes {
+		return "## Results pane context\n\n(Context limit too small for query + rows.)\n\n"
+	}
+	sb.WriteString(hdr)
+	nc := len(r.Columns)
+	if nc == 0 && len(r.Rows) > 0 {
+		nc = len(r.Rows[0])
+	}
+	if nc > 0 && len(r.Columns) > 0 {
+		line := strings.Join(sanitizeAIResultRow(r.Columns, nc), "\t") + "\n"
+		if sb.Len()+len(line) > maxBytes {
+			sb.WriteString("(header row omitted — context limit exceeded)\n\n")
+			return sb.String()
+		}
+		sb.WriteString(line)
+	}
+	included := 0
+	for _, row := range r.Rows {
+		line := strings.Join(sanitizeAIResultRow(row, nc), "\t") + "\n"
+		if sb.Len()+len(line) > maxBytes {
+			fmt.Fprintf(&sb, "\n… truncated: showing %d of %d rows (max ~%d KB for this block).\n", included, len(r.Rows), max(1, maxBytes/1024))
+			break
+		}
+		sb.WriteString(line)
+		included++
+	}
+	return sb.String()
+}
+
 // prepareAISendCmd fetches driver TableDDL for each @-mentioned object and builds the full prompt:
-// systemPrefix + optional "## Database context" (DDL) + user prompt.
+// systemPrefix + optional "## Database context" (DDL) + optional results pane block + user prompt.
 func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) tea.Cmd {
 	connID, dbName := splitConnKey(msg.ConnKey)
 	tables := m.collectAIMentionedTables(connID, dbName, msg.Prompt)
@@ -966,6 +1058,15 @@ func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) te
 	userPrompt := msg.Prompt
 	connKey := msg.ConnKey
 	prefix := systemPrefix
+
+	maxResultsBytes := 256 * 1024
+	if m.cfg != nil && m.cfg.AI != nil && m.cfg.AI.MaxResultsContextKB > 0 {
+		maxResultsBytes = m.cfg.AI.MaxResultsContextKB * 1024
+	}
+	var resultsSnap *results.QueryResult
+	if msg.IncludeResults {
+		resultsSnap = results.CloneQueryResult(m.results.Result())
+	}
 
 	return func() tea.Msg {
 		var sb strings.Builder
@@ -1007,6 +1108,9 @@ func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) te
 					}
 				}
 			}
+		}
+		if resultsSnap != nil {
+			sb.WriteString(formatAIResultsContextBlock(resultsSnap, maxResultsBytes))
 		}
 		sb.WriteString(userPrompt)
 		return aiPreparedPromptMsg{connKey: connKey, fullPrompt: sb.String()}
@@ -1615,6 +1719,9 @@ const helpScreenText = `
   AI ASSISTANT (Insert mode — prompt)
     esc         Normal mode (transcript)
     enter       Send prompt, or /clear to wipe transcript and start a new CLI chat session
+    /clear      Clear current ai session
+    /results    Send with results pane query + grid in context (/results alone uses a default question)
+    @ / #       Table / column pickers (DDL for @mentions is added when the prompt is sent)
     alt+enter   New line in the prompt
 
   COMMAND PALETTE (space, then key)

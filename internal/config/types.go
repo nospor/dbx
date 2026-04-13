@@ -46,7 +46,8 @@ type AIAppConfig struct {
 }
 
 type AIConfig struct {
-	SelectedApp      string                 `json:"selected_app"`
-	MaxHistorySizeKB int                    `json:"max_history_size_kb"`
-	Apps             map[string]AIAppConfig `json:"apps"`
+	SelectedApp           string                 `json:"selected_app"`
+	MaxHistorySizeKB      int                    `json:"max_history_size_kb"`
+	MaxResultsContextKB   int                    `json:"max_results_context_kb,omitempty"` // cap for /results query+grid sent to AI; default 256
+	Apps                  map[string]AIAppConfig `json:"apps"`
 }

@@ -6,7 +6,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 
 - **Databases**: PostgreSQL, MySQL, SQLite, MSSQL
 - **Three-panel layout**: Explorer | Query Editor | Results — each pane shows **key hints** on the bottom border (long lines truncate if the pane is narrow)
-- **AI assistant** (optional right column, **experimental** for now): chat with a configured CLI (e.g. `cursor-agent`), per connection/database; transcript with **Normal** mode cursor (reverse-video cell like the query editor) and **Insert** for prompts; in Insert, `enter` sends the prompt and `alt+enter` inserts a newline; `enter` in Normal copies the latest AI SQL from a fenced `sql` code block to the query editor; `@` / `#` insert table/column names from schema
+- **AI assistant** (optional right column, **experimental** for now): chat with a configured CLI (e.g. `cursor-agent`), per connection/database; transcript with **Normal** mode cursor (reverse-video cell like the query editor) and **Insert** for prompts; in Insert, `enter` sends the prompt and `alt+enter` inserts a newline; `enter` in Normal copies the latest AI SQL from a fenced `sql` code block to the query editor; `@` / `#` insert table/column names from schema; **`/results`** sends the prompt together with the results pane’s last successful query and its grid (see **AI Assistant** below)
 - **Vim mode**: Normal and Insert mode with motions (h/j/k/l, w/b, gg/G, dd, etc.)
 - **Multi-query support**: Separate queries by blank lines; execute the one under the cursor
 - **SQL syntax highlighting** via chroma
@@ -56,6 +56,7 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
   "ai": {
     "selected_app": "cursor-agent",
     "max_history_size_kb": 1024,
+    "max_results_context_kb": 256,
     "apps": {
       "cursor-agent": {
         "models_command": "cursor-agent models",
@@ -71,6 +72,11 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
 ```
 
 Omit `ai` to keep defaults. The `apps` map defines named profiles; `selected_app` must match one key. Each profile supplies shell commands and flags dbx uses when spawning the CLI.
+
+Within `ai`:
+
+- **`max_history_size_kb`** — soft cap for transcript size warnings / history handling for the AI integration.
+- **`max_results_context_kb`** — maximum size (in KB) of the **query + result rows** block appended to the outbound prompt when you use **`/results`** in the AI pane (default **256** if omitted or zero). Long SQL is truncated inside the block; rows are cut off with a truncation note if the limit is reached.
 
 Available `theme` values: `terminal`, `dark`, `light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, `gruvbox-dark`.
 
@@ -186,6 +192,8 @@ Shown as a **right column** when visible; width is `layout.ai_pane_width_pct` in
 | `enter` (Normal)     | Copy the fenced `sql` block **on the cursor line** (or the nearest block) to the **query editor**.                                                                                                                                                                                       |
 | `@` (Insert)         | Open table picker (schema tables; filter by typing).                                                                                                                                                                                                                                     |
 | `#` (Insert)         | Open column picker for the current database.                                                                                                                                                                                                                                             |
+| `/clear` (Insert)    | **Whole prompt line only** (case-insensitive): clear the transcript and start a new CLI chat session.                                                                                                                                                                                     |
+| `/results` (Insert)  | **Line must start with** `/results` (case-insensitive), then optional text. Sends your question with the **results pane** context: the last **successful** query’s SQL plus the current grid as tab-separated rows (after any `@` DDL blocks). If you send **`/results` alone**, the default question is *Summarize this result set.* Requires a finished, successful query with stored SQL — if not (loading, error, or empty), dbx shows a status message and **does not** call the AI; your prompt text is restored. Size of the query+rows block is capped by **`max_results_context_kb`** in `config.json`. |
 
 While the prompt field is active (Insert or an `@`/`#` menu), global `e`/`q`/`r`/`a` shortcuts are suppressed until you `esc` the overlay or leave Insert.
 
