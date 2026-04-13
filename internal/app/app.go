@@ -1615,6 +1615,7 @@ const helpScreenText = `
   AI ASSISTANT (Insert mode — prompt)
     esc         Normal mode (transcript)
     enter       Send prompt, or /clear to wipe transcript and start a new CLI chat session
+    alt+enter   New line in the prompt
 
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen

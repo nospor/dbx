@@ -151,7 +151,7 @@ type sqlBlockRegion struct {
 // New creates a new AI model.
 func New(t theme.Theme, store *internalAi.Store) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Ask the AI assistant... (/clear new chat, @ tables, # cols, enter send)"
+	ta.Placeholder = "Ask the AI assistant... (/clear new chat, @ tables, # cols, enter send, alt+enter newline)"
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
@@ -844,6 +844,9 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 				m.mode = ModeOutput
 				m.textarea.Blur()
 				return m, nil
+			case "alt+enter":
+				m.textarea.InsertString("\n")
+				return m, textarea.Blink
 			case "enter":
 				val := strings.TrimSpace(m.textarea.Value())
 				if val == "" || m.loadingForCurrentConn() {
