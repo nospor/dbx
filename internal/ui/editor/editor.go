@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 
+	"github.com/robertn/dbx/internal/sqlutil"
 	"github.com/robertn/dbx/internal/ui/theme"
 	"github.com/robertn/dbx/internal/util"
 )
@@ -453,6 +454,34 @@ func (m Model) HistoryPopupVisible() bool {
 // CurrentQuery returns the query block under the cursor.
 func (m Model) CurrentQuery() string {
 	return m.currentQuery(m.lines())
+}
+
+// WrapCurrentQueryExplain replaces the current query block with a driver-specific EXPLAIN
+// (or equivalent) form. Returns false when there is no query under the cursor, the block is
+// empty, or the text already looks like an explain request.
+func (m *Model) WrapCurrentQueryExplain(driver string) bool {
+	lines := m.lines()
+	start, end := m.currentQueryBounds(lines)
+	if start > end {
+		return false
+	}
+	old := strings.TrimSpace(strings.Join(lines[start:end+1], "\n"))
+	newQ, ok := sqlutil.WrapQueryForExplain(driver, old)
+	if !ok {
+		return false
+	}
+	m.pushUndoPoint()
+	m.vim.mode = ModeNormal
+	m.insertUndoSeeded = false
+	chunk := strings.Split(newQ, "\n")
+	lines = append(lines[:start], append(chunk, lines[end+1:]...)...)
+	m.setLines(lines)
+	m.vim.row = start
+	m.vim.col = 0
+	m.compVisible = false
+	m.clampCursor()
+	m.adjustScroll()
+	return true
 }
 
 // SetContent replaces the current tab content (e.g. when pressing 's' in explorer).

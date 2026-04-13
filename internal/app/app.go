@@ -678,6 +678,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case explainQueryFromPaletteMsg:
+		drv := ""
+		if c := m.findConn(m.activeConnID); c != nil {
+			drv = c.Driver
+		}
+		if m.editor.WrapCurrentQueryExplain(drv) {
+			m.persistEditorDraft()
+		}
+		return m, nil
+
 	case clearEditorMsg:
 		m.editor.ClearUndoable()
 		m.persistEditorDraft()
@@ -1201,6 +1211,7 @@ func (m *Model) openPalette() {
 		title = "Editor Commands"
 		commands = []cmdpalette.Command{
 			{Key: "x", Description: "Execute query (enter)", Action: func() tea.Msg { return execQueryFromPaletteMsg{} }},
+			{Key: "e", Description: "Explain current query", Action: func() tea.Msg { return explainQueryFromPaletteMsg{} }},
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
 			{Key: "D", Description: "Close tab (confirm)", Action: func() tea.Msg { return closeTabPromptMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
@@ -1658,6 +1669,7 @@ const helpScreenText = `
     r           Focus results
     a           Focus AI pane (shows it if hidden; does not hide — use palette)
     space       Open command palette (context-aware)
+    space+e     Editor palette: wrap query for EXPLAIN (driver-specific)
     space+f     Toggle fullscreen for current panel
     ?           Toggle this help
 
@@ -1726,7 +1738,7 @@ const helpScreenText = `
 
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
-    Editor:     x=execute  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    Editor:     x=execute  e=explain  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
     Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  a=toggle AI pane  f=fullscreen
     AI:         t=toggle explorer  a=toggle AI pane  f=fullscreen
 `
@@ -1966,7 +1978,8 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 		var result *db.QueryResult
 		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") ||
 			strings.HasPrefix(trimmed, "SHOW") || strings.HasPrefix(trimmed, "EXPLAIN") ||
-			strings.HasPrefix(trimmed, "DESCRIBE") || strings.HasPrefix(trimmed, "DESC") {
+			strings.HasPrefix(trimmed, "DESCRIBE") || strings.HasPrefix(trimmed, "DESC") ||
+			strings.HasPrefix(trimmed, "SET SHOWPLAN_ALL ON") {
 			result, err = driver.Query(ctx, dbName, query)
 		} else {
 			result, err = driver.Exec(ctx, dbName, query)

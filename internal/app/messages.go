@@ -79,6 +79,9 @@ type refreshSchemaMsg struct{}
 // execQueryFromPaletteMsg executes the current query from the palette.
 type execQueryFromPaletteMsg struct{}
 
+// explainQueryFromPaletteMsg wraps the current query for EXPLAIN via the editor palette.
+type explainQueryFromPaletteMsg struct{}
+
 // clearEditorMsg clears the current editor buffer.
 type clearEditorMsg struct{}
 
