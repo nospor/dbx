@@ -57,6 +57,8 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
     "selected_app": "cursor-agent",
     "max_history_size_kb": 1024,
     "max_results_context_kb": 256,
+    "disable_agent_workdir": false,
+    "agent_workdir": "",
     "apps": {
       "cursor-agent": {
         "models_command": "cursor-agent models",
@@ -77,6 +79,8 @@ Within `ai`:
 
 - **`max_history_size_kb`** — soft cap for transcript size warnings / history handling for the AI integration.
 - **`max_results_context_kb`** — maximum size (in KB) of the **query + result rows** block appended to the outbound prompt when you use **`/results`** in the AI pane (default **256** if omitted or zero). Long SQL is truncated inside the block; rows are cut off with a truncation note if the limit is reached.
+- **`disable_agent_workdir`** — when **`false`** (default), dbx runs the AI CLI with **`cmd.Dir`** set to **`agent_workdir`** (or, if **`agent_workdir`** is empty, **`$XDG_CACHE_HOME/dbx/aiagentfolder`**, falling back to **`~/.cache/dbx/aiagentfolder`**). The directory is created if it does not exist. This avoids launching tools like `cursor-agent` from a large repo directory (fewer index/workspace reads). When **`true`**, the AI process inherits dbx’s working directory (same behavior as older dbx releases).
+- **`agent_workdir`** — absolute or relative path for that isolated working directory. Leading **`~/`** is expanded to your home directory; **`$VAR`** environment expansion is applied. If empty and **`disable_agent_workdir`** is **`false`**, the default cache path above is used.
 
 Available `theme` values: `terminal`, `dark`, `light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, `gruvbox-dark`.
 
@@ -94,6 +98,7 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 | `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
 | `~/.cache/dbx/open-tabs.json`      | Ordered list of open query tabs (`connection_id:database` keys) for session restore    |
 | `~/.cache/dbx/ai_sessions.json`    | AI chat messages and session ids per `connection_id:database`                          |
+| `~/.cache/dbx/aiagentfolder` (default) | AI CLI subprocess cwd when `ai.disable_agent_workdir` is false and `agent_workdir` is empty; configurable |
 
 ## Layout
 
@@ -183,7 +188,7 @@ This pane is **experimental**: behavior, CLI integration, and UX may change or b
 
 Shown as a **right column** when visible; width is `layout.ai_pane_width_pct` in `config.json`. Chats are **per** `connection:database` (same key as query tabs). The bottom **status row** in the pane summarizes mode, scroll %, and optional history size warning.
 
-Dbx starts the configured AI CLI with **no change to the process working directory**, so the tool inherits the folder you launched dbx from. Many CLI AI apps keep their own on-disk session state relative to that directory. To have the tool **resume** the same internal session that lines up with dbx’s persisted chat id in `~/.cache/dbx/ai_sessions.json`, run dbx from the **same working directory** whenever you use a given connection/database. If you switch launch folders, the CLI may not honor the stored session id and can behave like a new session internally.
+By default, dbx sets the configured AI CLI’s **process working directory** to an isolated folder under the cache (see **`disable_agent_workdir`** / **`agent_workdir`** above), not the directory you launched dbx from. Many CLI AI apps keep on-disk session or index state relative to that directory. If you set **`disable_agent_workdir`** to **`true`**, the AI CLI inherits dbx’s cwd again; in that mode, to have the tool **resume** the same internal session that lines up with dbx’s persisted chat id in `~/.cache/dbx/ai_sessions.json`, run dbx from the **same working directory** whenever you use a given connection/database. If you switch launch folders with isolation disabled, the CLI may not honor the stored session id and can behave like a new session internally.
 
 | Mode / keys          | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

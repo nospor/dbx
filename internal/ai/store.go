@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,6 +143,9 @@ func (s *Store) EnsureSessionID(connKey string) error {
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)
+	if err := s.applyAIProcessDir(cmd); err != nil {
+		return err
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return err
@@ -240,6 +244,9 @@ func (s *Store) Ask(connKey, prompt string) (string, error) {
 	args = append(args, prompt)
 
 	cmd := exec.Command(baseCmd, args...)
+	if err := s.applyAIProcessDir(cmd); err != nil {
+		return "", err
+	}
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdin = strings.NewReader("") // EOF immediately; avoid attaching the TUI's stdin to the child
@@ -256,4 +263,22 @@ func (s *Store) Ask(connKey, prompt string) (string, error) {
 
 	response := strings.TrimSpace(outBuf.String())
 	return response, nil
+}
+
+func (s *Store) applyAIProcessDir(cmd *exec.Cmd) error {
+	if s == nil || s.Cfg == nil {
+		return nil
+	}
+	dir, ok, err := s.Cfg.ResolveAIAgentWorkDir()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("ai agent workdir: %w", err)
+	}
+	cmd.Dir = dir
+	return nil
 }

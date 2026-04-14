@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const configDir = ".config/dbx"
@@ -49,6 +50,63 @@ func EnsureDir() error {
 	return os.MkdirAll(filepath.Dir(connPath), 0o755)
 }
 
+// DefaultAIAgentWorkDir returns the default isolated cwd for AI CLI subprocesses
+// (same base location as other dbx cache files: XDG_CACHE_HOME/dbx/aiagentfolder).
+func DefaultAIAgentWorkDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return filepath.Join(home, cacheDir, "aiagentfolder"), nil
+	}
+	return filepath.Join(cache, "dbx", "aiagentfolder"), nil
+}
+
+func expandAgentWorkdir(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", errors.New("empty agent workdir")
+	}
+	if strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		p = filepath.Join(home, p[2:])
+	}
+	p = os.ExpandEnv(p)
+	return filepath.Clean(p), nil
+}
+
+// ResolveAIAgentWorkDir returns the directory to pass as cmd.Dir for AI subprocesses.
+// If ok is false, the caller should leave cmd.Dir unset (inherit dbx's cwd).
+func (c *Config) ResolveAIAgentWorkDir() (dir string, ok bool, err error) {
+	if c == nil || c.AI == nil || c.AI.DisableAgentWorkdir {
+		return "", false, nil
+	}
+	if strings.TrimSpace(c.AI.AgentWorkdir) == "" {
+		d, err := DefaultAIAgentWorkDir()
+		return d, true, err
+	}
+	d, err := expandAgentWorkdir(c.AI.AgentWorkdir)
+	return d, true, err
+}
+
+func aiSectionMissingAgentWorkdirKeys(aiJSON []byte) bool {
+	if len(aiJSON) == 0 {
+		return false
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(aiJSON, &m); err != nil {
+		return false
+	}
+	_, hasDis := m["disable_agent_workdir"]
+	_, hasPath := m["agent_workdir"]
+	return !hasDis || !hasPath
+}
+
 // Load reads the config from disk. Returns defaults if the file does not exist.
 func Load() (*Config, error) {
 	path, err := configPath()
@@ -80,6 +138,12 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return nil, err
 	}
+	var topProbe struct {
+		AI json.RawMessage `json:"ai,omitempty"`
+	}
+	_ = json.Unmarshal(data, &topProbe)
+	needPersistAIAgentWD := aiSectionMissingAgentWorkdirKeys(topProbe.AI)
+
 	needPersistAI := legacy.AI == nil || legacy.AI.Apps == nil
 	cfg := Config{
 		Connections:          legacy.Connections,
@@ -95,7 +159,14 @@ func Load() (*Config, error) {
 		_ = saveConnections(cfg.Connections)
 	}
 	applyDefaults(&cfg)
-	if needPersistAI {
+	if needPersistAIAgentWD && cfg.AI != nil {
+		if !cfg.AI.DisableAgentWorkdir && strings.TrimSpace(cfg.AI.AgentWorkdir) == "" {
+			if p, err := DefaultAIAgentWorkDir(); err == nil {
+				cfg.AI.AgentWorkdir = p
+			}
+		}
+	}
+	if needPersistAI || needPersistAIAgentWD {
 		if err := Save(&cfg); err != nil {
 			return nil, fmt.Errorf("persist default AI settings: %w", err)
 		}
@@ -135,6 +206,25 @@ func Save(cfg *Config) error {
 }
 
 func defaults() *Config {
+	aiCfg := &AIConfig{
+		SelectedApp:         "cursor-agent",
+		MaxHistorySizeKB:    1024,
+		MaxResultsContextKB: 256,
+		DisableAgentWorkdir: false,
+		Apps: map[string]AIAppConfig{
+			"cursor-agent": {
+				ModelsCommand:        "cursor-agent models",
+				ModelsResponseFormat: "Available models\n\n{models}\n\nTip: use --model <id> (or /model <id> in interactive mode) to switch.",
+				CreateSessionCommand: "cursor-agent create-chat",
+				SessionModeFlag:      "--mode ask",
+				ResumeSessionFlag:    "--resume",
+				ModelFlag:            "--model",
+			},
+		},
+	}
+	if p, err := DefaultAIAgentWorkDir(); err == nil {
+		aiCfg.AgentWorkdir = p
+	}
 	return &Config{
 		Connections: []Connection{},
 		Layout: Layout{
@@ -144,21 +234,7 @@ func defaults() *Config {
 		},
 		Theme:                "terminal",
 		StatusMessageSeconds: 5,
-		AI: &AIConfig{
-			SelectedApp:           "cursor-agent",
-			MaxHistorySizeKB:      1024,
-			MaxResultsContextKB:   256,
-			Apps: map[string]AIAppConfig{
-				"cursor-agent": {
-					ModelsCommand:        "cursor-agent models",
-					ModelsResponseFormat: "Available models\n\n{models}\n\nTip: use --model <id> (or /model <id> in interactive mode) to switch.",
-					CreateSessionCommand: "cursor-agent create-chat",
-					SessionModeFlag:      "--mode ask",
-					ResumeSessionFlag:    "--resume",
-					ModelFlag:            "--model",
-				},
-			},
-		},
+		AI:                   aiCfg,
 	}
 }
 
