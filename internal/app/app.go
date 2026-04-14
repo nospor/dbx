@@ -143,8 +143,8 @@ func New(cfg *config.Config, workDir string) Model {
 		history:          hist,
 		queryContents:    qc,
 		openTabsStore:    ot,
-		focus:            PanelExplorer,
-		fullscreenPanel:  PanelExplorer,
+		focus:            PanelEditor,
+		fullscreenPanel:  PanelEditor,
 		explorerHidden:   *cfg.Layout.ExplorerHidden,
 		aiHidden:         *cfg.Layout.AIPaneHidden,
 		aiStore:          aiStore,
@@ -171,10 +171,7 @@ func New(cfg *config.Config, workDir string) Model {
 			m.pendingExplorerSelectDB = dbName
 		}
 	}
-	m.explorer.SetFocused(true)
-	m.editor.SetFocused(false)
-	m.results.SetFocused(false)
-	m.aiPane.SetFocused(false)
+	(&m).setFocus(PanelEditor)
 	return m
 }
 
