@@ -132,6 +132,7 @@ func Load() (*Config, error) {
 		Layout               Layout       `json:"layout"`
 		Theme                string       `json:"theme"`
 		StatusMessageSeconds int          `json:"status_message_seconds"`
+		FolderBased          *bool        `json:"folder_based,omitempty"`
 		AI                   *AIConfig    `json:"ai,omitempty"`
 	}
 	var legacy legacyConfig
@@ -145,12 +146,16 @@ func Load() (*Config, error) {
 	needPersistAIAgentWD := aiSectionMissingAgentWorkdirKeys(topProbe.AI)
 
 	needPersistAI := legacy.AI == nil || legacy.AI.Apps == nil
+	needPersistFolderBased := legacy.FolderBased == nil
 	cfg := Config{
 		Connections:          legacy.Connections,
 		Layout:               legacy.Layout,
 		Theme:                legacy.Theme,
 		StatusMessageSeconds: legacy.StatusMessageSeconds,
 		AI:                   legacy.AI,
+	}
+	if legacy.FolderBased != nil {
+		cfg.FolderBased = *legacy.FolderBased
 	}
 	if conns, err := loadConnections(); err == nil {
 		cfg.Connections = conns
@@ -166,9 +171,9 @@ func Load() (*Config, error) {
 			}
 		}
 	}
-	if needPersistAI || needPersistAIAgentWD {
+	if needPersistAI || needPersistAIAgentWD || needPersistFolderBased {
 		if err := Save(&cfg); err != nil {
-			return nil, fmt.Errorf("persist default AI settings: %w", err)
+			return nil, fmt.Errorf("persist config defaults: %w", err)
 		}
 	}
 	return &cfg, nil
@@ -187,12 +192,14 @@ func Save(cfg *Config) error {
 		Layout               Layout    `json:"layout"`
 		Theme                string    `json:"theme"`
 		StatusMessageSeconds int       `json:"status_message_seconds"`
+		FolderBased          bool      `json:"folder_based"`
 		AI                   *AIConfig `json:"ai,omitempty"`
 	}
 	out := diskConfig{
 		Layout:               cfg.Layout,
 		Theme:                cfg.Theme,
 		StatusMessageSeconds: cfg.StatusMessageSeconds,
+		FolderBased:          cfg.FolderBased,
 		AI:                   cfg.AI,
 	}
 	data, err := json.MarshalIndent(out, "", "  ")

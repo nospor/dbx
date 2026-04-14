@@ -14,6 +14,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Query history** per connection/database — `ctrl+p` / `ctrl+n` replace the buffer with older/newer entries; `backspace` (normal mode) opens a **filterable** popup — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
 - **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs are restored on startup (`open-tabs.json`)
+- **Folder-scoped tabs and drafts** (optional) — set **`folder_based`** to **`true`** in `config.json` so open tabs and query drafts are grouped by the **directory you start dbx from** (`cd` into project A vs project B). Data still lives under `~/.cache/dbx` (or `$XDG_CACHE_HOME/dbx`); nothing is written inside your project folders
 - **Command palette** (**space**, then a letter) with context-aware commands per panel (`n` add connection in explorer; `a` toggles AI pane from explorer / editor / results / AI)
 - **Fullscreen** any panel with space+f
 - **Export** results to CSV or JSON
@@ -53,6 +54,7 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
   },
   "theme": "catppuccin-mocha",
   "status_message_seconds": 5,
+  "folder_based": false,
   "ai": {
     "selected_app": "cursor-agent",
     "max_history_size_kb": 1024,
@@ -75,6 +77,8 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
 
 Omit `ai` to keep defaults. The `apps` map defines named profiles; `selected_app` must match one key. Each profile supplies shell commands and flags dbx uses when spawning the CLI.
 
+- **`folder_based`** — default **`false`**. When **`false`**, open query tabs and editor drafts use a single global set (see **Data files**). When **`true`**, tabs and drafts are stored **per startup working directory** (absolute path), so running `dbx` from `/path/to/project-a` restores a different tab set than from `/path/to/project-b`. On-disk files use a `global` entry plus a `by_folder` map of paths; legacy flat files are upgraded when saved. If the key is missing from an older `config.json`, dbx rewrites the file with **`"folder_based": false`**.
+
 Within `ai`:
 
 - **`max_history_size_kb`** — soft cap for transcript size warnings / history handling for the AI integration.
@@ -92,11 +96,11 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 
 | File                               | Purpose                                                                                |
 | ---------------------------------- | -------------------------------------------------------------------------------------- |
-| `~/.config/dbx/config.json`        | UI preferences (theme, layout, status message duration)                                |
+| `~/.config/dbx/config.json`        | UI preferences (theme, layout, status message duration, optional **`folder_based`**) |
 | `~/.cache/dbx/connections.json`    | Saved connections                                                                      |
 | `~/.cache/dbx/history.json`        | Executed queries (filterable history popup, ctrl+p/n buffer browse)                    |
-| `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history) |
-| `~/.cache/dbx/open-tabs.json`      | Ordered list of open query tabs (`connection_id:database` keys) for session restore    |
+| `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history). With **`folder_based`**, includes **`global`** and **`by_folder`** (path → per-tab text) |
+| `~/.cache/dbx/open-tabs.json`      | Ordered open query tabs and active tab. With **`folder_based`**, includes **`global`** and **`by_folder`** (path → tab list); otherwise only **`global`** is used |
 | `~/.cache/dbx/ai_sessions.json`    | AI chat messages and session ids per `connection_id:database`                          |
 | `~/.cache/dbx/aiagentfolder` (default) | AI CLI subprocess cwd when `ai.disable_agent_workdir` is false and `agent_workdir` is empty; configurable |
 

@@ -5,32 +5,71 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const contentsFile = "query-contents.json"
+const diskVersion = 2
 
 // Store holds per-connection/database editor buffer text on disk.
 // Keys match history conn keys (e.g. "connID:database"); empty logical key is stored as "_".
 type Store struct {
-	path string
-	tabs map[string]string // conn_key -> full editor text
+	path        string
+	folderBased bool
+	workDirKey  string
+
+	global   map[string]string
+	byFolder map[string]map[string]string
 }
 
-// New loads ~/.cache/dbx/query-contents.json. Corrupt files are backed up and replaced.
-func New() (*Store, error) {
+func normalizeWorkDir(wd string) string {
+	wd = strings.TrimSpace(wd)
+	if wd == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(wd)
+	if err != nil {
+		return filepath.Clean(wd)
+	}
+	return filepath.Clean(abs)
+}
+
+type diskFile struct {
+	Version  int                          `json:"version,omitempty"`
+	Global   map[string]string            `json:"global"`
+	ByFolder map[string]map[string]string `json:"by_folder,omitempty"`
+}
+
+func cacheDBXPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		cache = filepath.Join(home, ".cache")
 	}
-	path := filepath.Join(cache, "dbx", contentsFile)
-	s := &Store{path: path, tabs: make(map[string]string)}
+	return filepath.Join(cache, "dbx", contentsFile), nil
+}
+
+// New loads ~/.cache/dbx/query-contents.json. Corrupt files are backed up and replaced.
+// folderBased selects per-startup-directory draft maps keyed by workDir.
+func New(folderBased bool, workDir string) (*Store, error) {
+	path, err := cacheDBXPath()
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{
+		path:        path,
+		folderBased: folderBased,
+		workDirKey:  normalizeWorkDir(workDir),
+		global:      make(map[string]string),
+		byFolder:    make(map[string]map[string]string),
+	}
 	if err := s.load(); err != nil {
 		_ = os.Rename(path, path+".bak")
-		s.tabs = make(map[string]string)
+		s.global = make(map[string]string)
+		s.byFolder = make(map[string]map[string]string)
 		return s, nil
 	}
 	_ = s.ensureFile()
@@ -38,18 +77,20 @@ func New() (*Store, error) {
 }
 
 // NewOrEmpty returns a Store that is always non-nil.
-func NewOrEmpty() *Store {
-	s, err := New()
+func NewOrEmpty(folderBased bool, workDir string) *Store {
+	s, err := New(folderBased, workDir)
 	if err != nil || s == nil {
-		path := ".cache/dbx/" + contentsFile
-		if home, err2 := os.UserHomeDir(); err2 == nil {
-			cache, err3 := os.UserCacheDir()
-			if err3 != nil {
-				cache = filepath.Join(home, ".cache")
-			}
-			path = filepath.Join(cache, "dbx", contentsFile)
+		path := filepath.Join(".cache", "dbx", contentsFile)
+		if p, err2 := cacheDBXPath(); err2 == nil {
+			path = p
 		}
-		out := &Store{path: path, tabs: make(map[string]string)}
+		out := &Store{
+			path:        path,
+			folderBased: folderBased,
+			workDirKey:  normalizeWorkDir(workDir),
+			global:      make(map[string]string),
+			byFolder:    make(map[string]map[string]string),
+		}
 		_ = out.ensureFile()
 		return out
 	}
@@ -67,11 +108,7 @@ func (s *Store) ensureFile() error {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	data, err := json.MarshalIndent(map[string]string{}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, data, 0o600)
+	return s.writeDisk()
 }
 
 func (s *Store) load() error {
@@ -85,20 +122,73 @@ func (s *Store) load() error {
 	if len(data) == 0 {
 		return nil
 	}
-	if err := json.Unmarshal(data, &s.tabs); err != nil {
+	global, byFolder, err := parseQueryContentsData(data)
+	if err != nil {
 		return err
 	}
-	if s.tabs == nil {
-		s.tabs = make(map[string]string)
+	s.global = global
+	if byFolder == nil {
+		byFolder = make(map[string]map[string]string)
 	}
+	s.byFolder = byFolder
 	return nil
 }
 
-func (s *Store) save() error {
+func parseQueryContentsData(data []byte) (global map[string]string, byFolder map[string]map[string]string, err error) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return nil, nil, err
+	}
+	if _, ok := probe["global"]; ok || probe["by_folder"] != nil || probe["version"] != nil {
+		var f diskFile
+		if err := json.Unmarshal(data, &f); err != nil {
+			return nil, nil, err
+		}
+		if f.Global == nil {
+			f.Global = make(map[string]string)
+		}
+		if f.ByFolder == nil {
+			f.ByFolder = make(map[string]map[string]string)
+		}
+		return f.Global, f.ByFolder, nil
+	}
+	// Legacy: entire file is conn_key -> text
+	legacy := make(map[string]string)
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return nil, nil, err
+	}
+	return legacy, make(map[string]map[string]string), nil
+}
+
+func (s *Store) scopedTabs() map[string]string {
+	if s == nil {
+		return nil
+	}
+	if s.folderBased && s.workDirKey != "" {
+		m := s.byFolder[s.workDirKey]
+		if m == nil {
+			return make(map[string]string)
+		}
+		return m
+	}
+	return s.global
+}
+
+func (s *Store) writeDisk() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(s.tabs, "", "  ")
+	if s.global == nil {
+		s.global = make(map[string]string)
+	}
+	if s.byFolder == nil {
+		s.byFolder = make(map[string]map[string]string)
+	}
+	data, err := json.MarshalIndent(diskFile{
+		Version:  diskVersion,
+		Global:   s.global,
+		ByFolder: s.byFolder,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -113,13 +203,14 @@ func (s *Store) save() error {
 	return nil
 }
 
-// All returns a shallow copy of stored tab text.
+// All returns a shallow copy of stored tab text for the active scope.
 func (s *Store) All() map[string]string {
-	if s == nil || s.tabs == nil {
+	tabs := s.scopedTabs()
+	if len(tabs) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(s.tabs))
-	for k, v := range s.tabs {
+	out := make(map[string]string, len(tabs))
+	for k, v := range tabs {
 		out[k] = v
 	}
 	return out
@@ -133,9 +224,21 @@ func (s *Store) Put(connKey, text string) error {
 	if connKey == "" {
 		connKey = "_"
 	}
-	if s.tabs == nil {
-		s.tabs = make(map[string]string)
+	var target map[string]string
+	if s.folderBased && s.workDirKey != "" {
+		if s.byFolder[s.workDirKey] == nil {
+			if s.byFolder == nil {
+				s.byFolder = make(map[string]map[string]string)
+			}
+			s.byFolder[s.workDirKey] = make(map[string]string)
+		}
+		target = s.byFolder[s.workDirKey]
+	} else {
+		if s.global == nil {
+			s.global = make(map[string]string)
+		}
+		target = s.global
 	}
-	s.tabs[connKey] = text
-	return s.save()
+	target[connKey] = text
+	return s.writeDisk()
 }

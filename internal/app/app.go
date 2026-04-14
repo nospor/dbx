@@ -14,13 +14,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	internalAi "github.com/robertn/dbx/internal/ai"
 	"github.com/robertn/dbx/internal/config"
 	"github.com/robertn/dbx/internal/db"
 	"github.com/robertn/dbx/internal/history"
 	"github.com/robertn/dbx/internal/opentabs"
 	"github.com/robertn/dbx/internal/querycontents"
 	"github.com/robertn/dbx/internal/sqlutil"
-	internalAi "github.com/robertn/dbx/internal/ai"
 	"github.com/robertn/dbx/internal/ui/ai"
 	"github.com/robertn/dbx/internal/ui/cmdpalette"
 	"github.com/robertn/dbx/internal/ui/editor"
@@ -51,13 +51,13 @@ type Model struct {
 	fullscreenPanel Panel
 
 	// Active connection state
-	activeConnID string
-	activeDB     string
-	drivers      map[string]db.Driver       // connID -> driver
-	schemaTables   map[string][]string            // connID:db -> tables/views
-	schemaViewSet  map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)
-	schemaCols     map[string][]string            // connID:db -> column tokens
-	tableCols    map[string][]db.ColumnInfo // connID:db:table -> columns (cache + explorer)
+	activeConnID  string
+	activeDB      string
+	drivers       map[string]db.Driver           // connID -> driver
+	schemaTables  map[string][]string            // connID:db -> tables/views
+	schemaViewSet map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)
+	schemaCols    map[string][]string            // connID:db -> column tokens
+	tableCols     map[string][]db.ColumnInfo     // connID:db:table -> columns (cache + explorer)
 
 	// Per editor-tab results for this session only (key = connID:dbName).
 	tabResultCache   map[string]*results.QueryResult
@@ -124,13 +124,13 @@ func newEditorWithDrafts(t theme.Theme, drafts map[string]string, cfg *config.Co
 	return ed
 }
 
-// New creates the root application model.
-func New(cfg *config.Config) Model {
+// New creates the root application model. workDir should be the process working directory at startup (e.g. os.Getwd()) for folder-scoped query tabs when cfg.FolderBased is true.
+func New(cfg *config.Config, workDir string) Model {
 	t := theme.Get(cfg.Theme)
 
 	hist := history.NewOrEmpty()
-	qc := querycontents.NewOrEmpty()
-	ot := opentabs.NewOrEmpty()
+	qc := querycontents.NewOrEmpty(cfg.FolderBased, workDir)
+	ot := opentabs.NewOrEmpty(cfg.FolderBased, workDir)
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot

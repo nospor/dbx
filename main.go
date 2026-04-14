@@ -21,7 +21,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	model := app.New(cfg)
+	workDir, _ := os.Getwd()
+	model := app.New(cfg, workDir)
 
 	p := tea.NewProgram(
 		model,
