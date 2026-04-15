@@ -589,6 +589,66 @@ func wrapLine(s string, width int) string {
 	return out.String()
 }
 
+// renderInlineMarkdown applies basic inline markdown (**bold**, `code`) for one line (after wrap).
+func (m Model) renderInlineMarkdown(line string) string {
+	if line == "" {
+		return line
+	}
+	boldSt := m.theme.Bold
+	codeSt := m.theme.TreeDatabase
+	var out strings.Builder
+	s := line
+	for s != "" {
+		bi := strings.Index(s, "**")
+		ci := strings.Index(s, "`")
+		pickBold := bi >= 0 && (ci < 0 || bi < ci)
+		pickCode := ci >= 0 && !pickBold
+		if !pickBold && !pickCode {
+			out.WriteString(s)
+			break
+		}
+		if pickBold {
+			rest := s[bi+2:]
+			end := strings.Index(rest, "**")
+			if end < 0 {
+				out.WriteString(s[:bi+2])
+				s = rest
+				continue
+			}
+			out.WriteString(s[:bi])
+			out.WriteString(boldSt.Render(rest[:end]))
+			s = rest[end+2:]
+			continue
+		}
+		// inline `code`
+		rest := s[ci+1:]
+		end := strings.Index(rest, "`")
+		if end < 0 {
+			out.WriteString(s[:ci+1])
+			s = rest
+			continue
+		}
+		out.WriteString(s[:ci])
+		out.WriteString(codeSt.Render(rest[:end]))
+		s = rest[end+1:]
+	}
+	return out.String()
+}
+
+// wrapPlainMarkdown word-wraps plain markdown source, then applies inline styles per output line.
+func (m Model) wrapPlainMarkdown(paragraph string, width int) string {
+	p := strings.TrimSpace(paragraph)
+	if p == "" {
+		return ""
+	}
+	wrapped := wrapText(p, width)
+	lines := strings.Split(wrapped, "\n")
+	for i := range lines {
+		lines[i] = m.renderInlineMarkdown(lines[i])
+	}
+	return strings.Join(lines, "\n")
+}
+
 // renderMessage renders a single chat message with word-wrap and code block highlighting.
 // If isActiveSQL is true, the last SQL code block in this message uses a brighter foreground.
 // All SQL blocks use the same border so line wrapping matches (needed for cursor-based extraction).
@@ -633,18 +693,18 @@ func (m Model) renderMessage(sb *strings.Builder, role, content string, isActive
 		startMark := "```sql"
 		startIdx := strings.Index(remaining, startMark)
 		if startIdx == -1 {
-			sb.WriteString(wrapText(strings.TrimSpace(remaining), w))
+			sb.WriteString(m.wrapPlainMarkdown(remaining, w))
 			break
 		}
 		before := strings.TrimSpace(remaining[:startIdx])
 		if before != "" {
-			sb.WriteString(wrapText(before, w))
+			sb.WriteString(m.wrapPlainMarkdown(before, w))
 			sb.WriteByte('\n')
 		}
 		after := remaining[startIdx+len(startMark):]
 		endIdx := strings.Index(after, "```")
 		if endIdx == -1 {
-			sb.WriteString(wrapText(strings.TrimSpace(after), w))
+			sb.WriteString(m.wrapPlainMarkdown(after, w))
 			break
 		}
 		currentBlock++
