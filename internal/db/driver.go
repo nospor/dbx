@@ -79,6 +79,8 @@ func New(conn config.Connection) (Driver, error) {
 		return &sqliteDriver{}, nil
 	case "mssql", "sqlserver":
 		return &mssqlDriver{}, nil
+	case "mongodb":
+		return &mongoDriver{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported driver: %q", conn.Driver)
 	}

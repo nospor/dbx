@@ -50,7 +50,7 @@ var fieldLabels = []string{
 	"Name", "Driver", "Host", "Port", "User", "Password", "Database", "SSL Mode", "File Path (sqlite)",
 }
 
-var drivers = []string{"postgres", "mysql", "sqlite", "mssql"}
+var drivers = []string{"postgres", "mysql", "sqlite", "mssql", "mongodb"}
 
 func driverIndex(name string) int {
 	for i, d := range drivers {
@@ -104,7 +104,7 @@ func NewEditConnForm(t theme.Theme, conn config.Connection) ConnForm {
 func (f *ConnForm) syncDriver() {
 	f.fields[fieldDriver] = drivers[f.driverIdx]
 	// Only overwrite port if it's empty or was a known default
-	knownDefaults := map[string]bool{"5432": true, "3306": true, "1433": true, "0": true, "": true}
+	knownDefaults := map[string]bool{"5432": true, "3306": true, "1433": true, "27017": true, "0": true, "": true}
 	if knownDefaults[f.fields[fieldPort]] {
 		p := defaultPort(f.fields[fieldDriver])
 		if p > 0 {
@@ -251,6 +251,8 @@ func defaultPort(driver string) int {
 		return 3306
 	case "mssql", "sqlserver":
 		return 1433
+	case "mongodb":
+		return 27017
 	}
 	return 0
 }
