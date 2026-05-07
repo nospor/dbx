@@ -2054,6 +2054,8 @@ func quickSelectQuery(driver, database, table string) string {
 		return "SELECT * FROM `" + table + "` LIMIT 100"
 	case "sqlite", "sqlite3":
 		return "SELECT * FROM \"" + table + "\" LIMIT 100"
+	case "mongodb":
+		return fmt.Sprintf(`{"find": "%s", "limit": 100}`, table)
 	default: // postgres and anything else
 		return "SELECT * FROM " + table + " LIMIT 100"
 	}
