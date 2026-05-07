@@ -1,6 +1,7 @@
 package sqlutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -21,6 +22,22 @@ func DeleteForRows(driver, tableExpr string, columns []string, rows [][]string, 
 	}
 	if len(columns) == 0 {
 		return "", fmt.Errorf("no columns")
+	}
+	if strings.ToLower(driver) == "mongodb" {
+		_, tbl := ParseTableRef(tableExpr, driver)
+		var deletes []string
+		wc := whereColumns
+		if len(wc) == 0 {
+			wc = columns
+		}
+		for _, row := range rows {
+			q, err := mongoRowQuery(columns, row, wc)
+			if err != nil {
+				return "", err
+			}
+			deletes = append(deletes, fmt.Sprintf("    {\"q\": %s, \"limit\": 1}", q))
+		}
+		return fmt.Sprintf("{\n  \"delete\": %q,\n  \"deletes\": [\n%s\n  ]\n}", tbl, strings.Join(deletes, ",\n")), nil
 	}
 	wc := whereColumns
 	if len(wc) == 0 {
@@ -122,6 +139,19 @@ func UpdateForRow(driver, tableExpr string, columns []string, row []string, colN
 	if len(columns) == 0 {
 		return "", fmt.Errorf("no columns")
 	}
+	if strings.ToLower(driver) == "mongodb" {
+		_, tbl := ParseTableRef(tableExpr, driver)
+		wc := whereColumns
+		if len(wc) == 0 {
+			wc = columns
+		}
+		q, err := mongoRowQuery(columns, row, wc)
+		if err != nil {
+			return "", err
+		}
+		u := fmt.Sprintf("{\"$set\": {%q: %s}}", colName, mongoFormatValue(newValue))
+		return fmt.Sprintf("{\n  \"update\": %q,\n  \"updates\": [\n    {\"q\": %s, \"u\": %s}\n  ]\n}", tbl, q, u), nil
+	}
 	qcol, err := quoteIdent(driver, colName)
 	if err != nil {
 		return "", err
@@ -161,4 +191,42 @@ func formatLiteral(driver, s string) (string, error) {
 		esc := strings.ReplaceAll(s, "'", "''")
 		return "'" + esc + "'", nil
 	}
+}
+
+func mongoFormatValue(val string) string {
+	if val == "null" || strings.EqualFold(val, "NULL") {
+		return "null"
+	}
+	valTrimmed := strings.TrimSpace(val)
+	if (strings.HasPrefix(valTrimmed, "{") && strings.HasSuffix(valTrimmed, "}")) ||
+		(strings.HasPrefix(valTrimmed, "[") && strings.HasSuffix(valTrimmed, "]")) {
+		if json.Valid([]byte(valTrimmed)) {
+			return valTrimmed
+		}
+	}
+	if reInt.MatchString(valTrimmed) || reFloat.MatchString(valTrimmed) {
+		return valTrimmed
+	}
+	b, _ := json.Marshal(val)
+	return string(b)
+}
+
+func mongoRowQuery(columns []string, row []string, whereNames []string) (string, error) {
+	idx := make(map[string]int, len(columns))
+	for i, c := range columns {
+		idx[strings.ToLower(c)] = i
+	}
+	parts := make([]string, 0, len(whereNames))
+	for _, col := range whereNames {
+		i, ok := idx[strings.ToLower(col)]
+		if !ok {
+			return "", fmt.Errorf("column %q not in result set", col)
+		}
+		val := ""
+		if i < len(row) {
+			val = row[i]
+		}
+		parts = append(parts, fmt.Sprintf("%q: %s", columns[i], mongoFormatValue(val)))
+	}
+	return "{" + strings.Join(parts, ", ") + "}", nil
 }

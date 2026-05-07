@@ -15,6 +15,18 @@ func InsertForRows(driver, tableExpr string, columns []string, rows [][]string) 
 	if len(columns) == 0 {
 		return "", fmt.Errorf("no columns")
 	}
+	if strings.ToLower(driver) == "mongodb" {
+		_, tbl := ParseTableRef(tableExpr, driver)
+		var docs []string
+		for _, row := range rows {
+			q, err := mongoRowQuery(columns, row, columns)
+			if err != nil {
+				return "", err
+			}
+			docs = append(docs, "    "+q)
+		}
+		return fmt.Sprintf("{\n  \"insert\": %q,\n  \"documents\": [\n%s\n  ]\n}", tbl, strings.Join(docs, ",\n")), nil
+	}
 	var colList strings.Builder
 	colList.WriteString("(")
 	for i, col := range columns {

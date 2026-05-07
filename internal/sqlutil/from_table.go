@@ -1,6 +1,7 @@
 package sqlutil
 
 import (
+	"encoding/json"
 	"strings"
 	"unicode"
 )
@@ -266,4 +267,19 @@ func StripSQLComments(sql string) string {
 		i++
 	}
 	return out.String()
+}
+// CollectionFromMongoCommand extracts the collection name from a raw JSON command.
+// It looks for "find", "aggregate", "insert", "update", or "delete" keys.
+func CollectionFromMongoCommand(cmd string) (string, bool) {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(cmd), &m); err != nil {
+		return "", false
+	}
+	keys := []string{"find", "aggregate", "insert", "update", "delete"}
+	for _, k := range keys {
+		if v, ok := m[k].(string); ok {
+			return v, true
+		}
+	}
+	return "", false
 }

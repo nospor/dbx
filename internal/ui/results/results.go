@@ -650,10 +650,20 @@ func (m *Model) deleteDraftCmd() tea.Cmd {
 			return DeleteDraftMsg{Err: "No source query recorded — run a SELECT first, then use d."}
 		}
 	}
-	table, ok := sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	var table string
+	var ok bool
+	if strings.ToLower(m.result.Driver) == "mongodb" {
+		table, ok = sqlutil.CollectionFromMongoCommand(m.result.SourceSQL)
+	} else {
+		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	}
 	if !ok || table == "" {
+		errMsg := "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."
+		if strings.ToLower(m.result.Driver) == "mongodb" {
+			errMsg = "Can't infer collection name from JSON command."
+		}
 		return func() tea.Msg {
-			return DeleteDraftMsg{Err: "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."}
+			return DeleteDraftMsg{Err: errMsg}
 		}
 	}
 	var data [][]string
@@ -691,10 +701,20 @@ func (m *Model) insertDraftCmd() tea.Cmd {
 			return InsertDraftMsg{Err: "No source query recorded — run a SELECT first, then use i."}
 		}
 	}
-	table, ok := sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	var table string
+	var ok bool
+	if strings.ToLower(m.result.Driver) == "mongodb" {
+		table, ok = sqlutil.CollectionFromMongoCommand(m.result.SourceSQL)
+	} else {
+		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	}
 	if !ok || table == "" {
+		errMsg := "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."
+		if strings.ToLower(m.result.Driver) == "mongodb" {
+			errMsg = "Can't infer collection name from JSON command."
+		}
 		return func() tea.Msg {
-			return InsertDraftMsg{Err: "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."}
+			return InsertDraftMsg{Err: errMsg}
 		}
 	}
 	var data [][]string
@@ -789,10 +809,20 @@ func (m *Model) updateDraftCmd() tea.Cmd {
 			return UpdateDraftMsg{Err: "No source query — run a SELECT first, then use u."}
 		}
 	}
-	table, ok := sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	var table string
+	var ok bool
+	if strings.ToLower(m.result.Driver) == "mongodb" {
+		table, ok = sqlutil.CollectionFromMongoCommand(m.result.SourceSQL)
+	} else {
+		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
+	}
 	if !ok || table == "" {
+		errMsg := "Can't infer table name — use a simple SELECT from one table."
+		if strings.ToLower(m.result.Driver) == "mongodb" {
+			errMsg = "Can't infer collection name from JSON command."
+		}
 		return func() tea.Msg {
-			return UpdateDraftMsg{Err: "Can't infer table name — use a simple SELECT from one table."}
+			return UpdateDraftMsg{Err: errMsg}
 		}
 	}
 	row := m.result.Rows[m.cursorRow]
