@@ -158,22 +158,37 @@ func (d *mongoDriver) Query(ctx context.Context, database, sqlStr string) (*Quer
 
 	// Try to extract documents from cursor.firstBatch if present
 	var docs []bson.M
-	if cursor, ok := result["cursor"].(bson.M); ok {
-		if firstBatch, ok := cursor["firstBatch"].(bson.A); ok {
-			for _, doc := range firstBatch {
-				if d, ok := doc.(bson.M); ok {
-					docs = append(docs, d)
-				}
-			}
+
+	getMap := func(v interface{}) bson.M {
+		if m, ok := v.(bson.M); ok {
+			return m
 		}
-	} else if cursor, ok := result["cursor"].(map[string]interface{}); ok {
-		// Fallback map format depending on decoding
-		if firstBatch, ok := cursor["firstBatch"].([]interface{}); ok {
+		if d, ok := v.(bson.D); ok {
+			m := make(bson.M, len(d))
+			for _, e := range d {
+				m[e.Key] = e.Value
+			}
+			return m
+		}
+		return nil
+	}
+
+	getArray := func(v interface{}) []interface{} {
+		if a, ok := v.(bson.A); ok {
+			return a
+		}
+		if a, ok := v.([]interface{}); ok {
+			return a
+		}
+		return nil
+	}
+
+	cursorMap := getMap(result["cursor"])
+	if cursorMap != nil {
+		if firstBatch := getArray(cursorMap["firstBatch"]); firstBatch != nil {
 			for _, doc := range firstBatch {
-				if d, ok := doc.(map[string]interface{}); ok {
-					docs = append(docs, d)
-				} else if d, ok := doc.(bson.M); ok {
-					docs = append(docs, d)
+				if m := getMap(doc); m != nil {
+					docs = append(docs, m)
 				}
 			}
 		}
