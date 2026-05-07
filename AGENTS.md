@@ -1,6 +1,6 @@
 # dbx — AI Agent Context
 
-**dbx** is a TUI (terminal) database client written in Go. It connects to PostgreSQL, MySQL, SQLite, and MSSQL, with a main three-panel layout: Explorer | Query Editor | Results, plus an **optional AI assistant** column toggled from the UI.
+**dbx** is a TUI (terminal) database client written in Go. It connects to PostgreSQL, MySQL, SQLite, MSSQL, and MongoDB, with a main three-panel layout: Explorer | Query Editor | Results, plus an **optional AI assistant** column toggled from the UI.
 
 ## Tech Stack
 
@@ -9,7 +9,7 @@
 - **Lipgloss** — styling and layout
 - **Bubbles** — reusable components (viewport, table, textinput)
 - **Chroma** — SQL syntax highlighting
-- **Database drivers** — pgx (Postgres), go-sql-driver/mysql, modernc.org/sqlite, microsoft/go-mssqldb
+- **Database drivers** — pgx (Postgres), go-sql-driver/mysql, modernc.org/sqlite, microsoft/go-mssqldb, go.mongodb.org/mongo-driver/v2 (MongoDB)
 
 ## Project Structure
 
@@ -19,7 +19,7 @@ dbx/
 ├── internal/
 │   ├── app/                # Root model, focus, keymap, message routing
 │   ├── config/             # Config load/save (~/.config/dbx/config.json)
-│   ├── db/                 # Driver interface + Postgres/MySQL/SQLite/MSSQL impls
+│   ├── db/                 # Driver interface + Postgres/MySQL/SQLite/MSSQL/MongoDB impls
 │   ├── ai/                 # AI session store + CLI integration (Ask, persistence)
 │   ├── history/            # Executed query history (~/.cache/dbx/history.json)
 │   ├── querycontents/      # Editor buffer drafts per conn/db (~/.cache/dbx/query-contents.json)
@@ -49,7 +49,7 @@ dbx/
 - Connection form uses a driver selector (not free text); SQLite hides host/port fields.
 - Quick SELECT (`s` on table) appends a dialect-aware query at the end of the editor, then runs it (does not replace the buffer).
 - Explorer `v` on a table/view loads driver-specific DDL (CREATE TABLE/VIEW + indexes where supported) in a centered popup.
-- Results pane supports horizontal scrolling with `h`/`l`, `0`/`$`; scrollbar thumb reflects position.
+- Results pane supports horizontal scrolling with `h`/`l`, `0`/`$`; scrollbar thumb reflects position. Pressing `d`/`i`/`u` generates driver-specific drafts (SQL for relational, JSON commands for MongoDB) into the editor.
 - AI pane width is `layout.ai_pane_width_pct` in config (default 25). AI CLI apps and `max_history_size_kb` live under `ai` in `config.json`.
 
 ## Build & Run
