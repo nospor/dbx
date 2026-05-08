@@ -12,6 +12,7 @@ type Connection struct {
 	Database string `json:"database"` // comma-separated; empty = all databases
 	SSLMode  string `json:"ssl_mode,omitempty"`
 	FilePath string `json:"file_path,omitempty"` // for sqlite
+	Protocol string `json:"protocol,omitempty"`  // for orientdb: "http" or "binary"
 }
 
 // Layout holds pane size configuration (all values are percentages).

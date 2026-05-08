@@ -13,17 +13,46 @@ import (
 	"time"
 
 	"github.com/robertn/dbx/internal/config"
+	"gopkg.in/istreamdata/orientgo.v2"
+	_ "gopkg.in/istreamdata/orientgo.v2/obinary" // register network protocol
 )
 
 type orientDriver struct {
-	conn config.Connection
+	conn         config.Connection
+	binaryClient *orient.Client
+	binaryDB     *orient.Database
+}
+
+func (d *orientDriver) isBinary() bool {
+	return strings.ToLower(d.conn.Protocol) == "binary"
 }
 
 func (d *orientDriver) Connect(ctx context.Context, conn config.Connection) error {
 	d.conn = conn
 	if d.conn.Port == 0 {
-		d.conn.Port = 2480
+		if d.isBinary() {
+			d.conn.Port = 2424
+		} else {
+			d.conn.Port = 2480
+		}
 	}
+
+	if d.isBinary() {
+		addr := fmt.Sprintf("%s:%d", d.conn.Host, d.conn.Port)
+		var err error
+		d.binaryClient, err = orient.Dial(addr)
+		if err != nil {
+			return fmt.Errorf("orientdb binary dial error: %v", err)
+		}
+		if d.conn.Database != "" {
+			d.binaryDB, err = d.binaryClient.Open(d.conn.Database, orient.GraphDB, d.conn.User, d.conn.Password)
+			if err != nil {
+				return fmt.Errorf("orientdb binary open error: %v", err)
+			}
+		}
+		return nil
+	}
+
 	if d.conn.Database == "" {
 		// Just check if server is alive if no database specified
 		url := fmt.Sprintf("http://%s:%d/listDatabases", d.conn.Host, d.conn.Port)
@@ -51,10 +80,27 @@ func (d *orientDriver) Connect(ctx context.Context, conn config.Connection) erro
 }
 
 func (d *orientDriver) Close() error {
+	if d.binaryDB != nil {
+		d.binaryDB.Close()
+	}
+	if d.binaryClient != nil {
+		d.binaryClient.Close()
+	}
 	return nil
 }
 
 func (d *orientDriver) Ping(ctx context.Context) error {
+	if d.isBinary() {
+		if d.binaryClient == nil {
+			return fmt.Errorf("orientdb binary client is nil")
+		}
+		admin, err := d.binaryClient.Auth(d.conn.User, d.conn.Password)
+		if err != nil {
+			return err
+		}
+		admin.Close()
+		return nil
+	}
 	url := fmt.Sprintf("http://%s:%d/listDatabases", d.conn.Host, d.conn.Port)
 	resp, err := d.doRequest(ctx, "GET", url, nil)
 	if err != nil {
@@ -68,6 +114,23 @@ func (d *orientDriver) Ping(ctx context.Context) error {
 }
 
 func (d *orientDriver) Databases(ctx context.Context) ([]string, error) {
+	if d.isBinary() {
+		admin, err := d.binaryClient.Auth(d.conn.User, d.conn.Password)
+		if err != nil {
+			return nil, err
+		}
+		defer admin.Close()
+		dbs, err := admin.ListDatabases()
+		if err != nil {
+			return nil, err
+		}
+		var names []string
+		for name := range dbs {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return names, nil
+	}
 	url := fmt.Sprintf("http://%s:%d/listDatabases", d.conn.Host, d.conn.Port)
 	resp, err := d.doRequest(ctx, "GET", url, nil)
 	if err != nil {
@@ -82,6 +145,231 @@ func (d *orientDriver) Databases(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return result.Databases, nil
+}
+
+func (d *orientDriver) ensureDB(database string) error {
+	if d.binaryDB != nil && d.binaryDB.GetCurDB() != nil && d.binaryDB.GetCurDB().Name == database {
+		return nil
+	}
+	var err error
+	d.binaryDB, err = d.binaryClient.Open(database, orient.GraphDB, d.conn.User, d.conn.Password)
+	return err
+}
+
+func (d *orientDriver) Tables(ctx context.Context, database string) ([]string, error) {
+	if d.isBinary() {
+		if err := d.ensureDB(database); err != nil {
+			return nil, err
+		}
+		cur := d.binaryDB.GetCurDB()
+		if cur == nil {
+			return nil, fmt.Errorf("failed to get current database metadata")
+		}
+		var tables []string
+		for name := range cur.Classes {
+			tables = append(tables, name)
+		}
+		sort.Strings(tables)
+		return tables, nil
+	}
+	classes, err := d.fetchMetadata(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	var tables []string
+	for _, c := range classes {
+		tables = append(tables, c.Name)
+	}
+	sort.Strings(tables)
+	return tables, nil
+}
+
+func (d *orientDriver) Views(ctx context.Context, database string) ([]string, error) {
+	return nil, nil
+}
+
+func (d *orientDriver) Columns(ctx context.Context, database, table string) ([]ColumnInfo, error) {
+	if d.isBinary() {
+		if err := d.ensureDB(database); err != nil {
+			return nil, err
+		}
+		cur := d.binaryDB.GetCurDB()
+		if cur == nil {
+			return nil, fmt.Errorf("failed to get current database metadata")
+		}
+		class, ok := cur.Classes[table]
+		if !ok {
+			return nil, fmt.Errorf("class %q not found", table)
+		}
+		var cols []ColumnInfo
+		for name, p := range class.Properties {
+			cols = append(cols, ColumnInfo{Name: name, DataType: fmt.Sprintf("%v", p.Type)})
+		}
+		sort.Slice(cols, func(i, j int) bool { return cols[i].Name < cols[j].Name })
+		return cols, nil
+	}
+	classes, err := d.fetchMetadata(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range classes {
+		if c.Name == table {
+			var cols []ColumnInfo
+			for _, p := range c.Properties {
+				cols = append(cols, ColumnInfo{Name: p.Name, DataType: p.Type})
+			}
+			return cols, nil
+		}
+	}
+	return nil, fmt.Errorf("class %q not found", table)
+}
+
+func (d *orientDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
+	if d.isBinary() {
+		if err := d.ensureDB(database); err != nil {
+			return nil, err
+		}
+		cur := d.binaryDB.GetCurDB()
+		if cur == nil {
+			return nil, fmt.Errorf("failed to get current database metadata")
+		}
+		var res []TableColumn
+		for className, c := range cur.Classes {
+			for propName, p := range c.Properties {
+				res = append(res, TableColumn{Table: className, Name: propName, DataType: fmt.Sprintf("%v", p.Type)})
+			}
+		}
+		return res, nil
+	}
+	classes, err := d.fetchMetadata(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	var res []TableColumn
+	for _, c := range classes {
+		for _, p := range c.Properties {
+			res = append(res, TableColumn{Table: c.Name, Name: p.Name, DataType: p.Type})
+		}
+	}
+	return res, nil
+}
+
+func (d *orientDriver) PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error) {
+	return []string{"@rid"}, nil
+}
+
+func (d *orientDriver) TableDDL(ctx context.Context, database, table string, isView bool) (string, error) {
+	if d.isBinary() {
+		if err := d.ensureDB(database); err != nil {
+			return "", err
+		}
+		cur := d.binaryDB.GetCurDB()
+		if cur == nil {
+			return "", fmt.Errorf("failed to get current database metadata")
+		}
+		class, ok := cur.Classes[table]
+		if !ok {
+			return "", fmt.Errorf("class %q not found", table)
+		}
+		b, _ := json.MarshalIndent(class, "", "  ")
+		return string(b), nil
+	}
+	classes, err := d.fetchMetadata(ctx, database)
+	if err != nil {
+		return "", err
+	}
+	for _, c := range classes {
+		if c.Name == table {
+			b, _ := json.MarshalIndent(c, "", "  ")
+			return string(b), nil
+		}
+	}
+	return "", fmt.Errorf("class %q not found", table)
+}
+
+func (d *orientDriver) Query(ctx context.Context, database, sql string) (*QueryResult, error) {
+	if d.isBinary() {
+		if err := d.ensureDB(database); err != nil {
+			return nil, err
+		}
+		results := d.binaryDB.Command(orient.NewSQLCommand(sql))
+		defer results.Close()
+		if err := results.Err(); err != nil {
+			return nil, err
+		}
+		return d.flattenBinaryResults(results), nil
+	}
+	url := fmt.Sprintf("http://%s:%d/command/%s/sql", d.conn.Host, d.conn.Port, url.PathEscape(database))
+	body := map[string]interface{}{
+		"command":  sql,
+		"language": "sql",
+	}
+	resp, err := d.doRequest(ctx, "POST", url, body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("orientdb error (%d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var res struct {
+		Result []map[string]interface{} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
+
+	return d.flattenResults(res.Result), nil
+}
+
+func (d *orientDriver) Exec(ctx context.Context, database, sql string) (*QueryResult, error) {
+	return d.Query(ctx, database, sql)
+}
+
+func (d *orientDriver) flattenBinaryResults(res orient.Results) *QueryResult {
+	var results interface{}
+	if err := res.All(&results); err != nil {
+		return &QueryResult{Error: err.Error()}
+	}
+
+	var maps []map[string]interface{}
+	switch v := results.(type) {
+	case []orient.OIdentifiable:
+		for _, id := range v {
+			if doc, ok := id.(*orient.Document); ok {
+				maps = append(maps, d.documentToMap(doc))
+			}
+		}
+	case *orient.Document:
+		maps = append(maps, d.documentToMap(v))
+	case []interface{}:
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				maps = append(maps, m)
+			} else if doc, ok := item.(*orient.Document); ok {
+				maps = append(maps, d.documentToMap(doc))
+			}
+		}
+	default:
+		// Fallback for single values etc.
+		maps = append(maps, map[string]interface{}{"Result": fmt.Sprintf("%v", v)})
+	}
+
+	return d.flattenResults(maps)
+}
+
+func (d *orientDriver) documentToMap(doc *orient.Document) map[string]interface{} {
+	m := make(map[string]interface{})
+	for name, entry := range doc.Fields() {
+		m[name] = entry.Value
+	}
+	m["@rid"] = doc.GetIdentity().String()
+	m["@class"] = doc.ClassName()
+	m["@version"] = doc.Version()
+	return m
 }
 
 type orientClass struct {
@@ -114,108 +402,6 @@ func (d *orientDriver) fetchMetadata(ctx context.Context, database string) ([]or
 		return nil, fmt.Errorf("failed to decode orientdb metadata: %v", err)
 	}
 	return result.Classes, nil
-}
-
-func (d *orientDriver) Tables(ctx context.Context, database string) ([]string, error) {
-	classes, err := d.fetchMetadata(ctx, database)
-	if err != nil {
-		return nil, err
-	}
-	var tables []string
-	for _, c := range classes {
-		// Filter out internal classes if desired, but OrientDB often uses them.
-		// For now, let's show all.
-		tables = append(tables, c.Name)
-	}
-	sort.Strings(tables)
-	return tables, nil
-}
-
-func (d *orientDriver) Views(ctx context.Context, database string) ([]string, error) {
-	return nil, nil // OrientDB doesn't have "views" in the SQL sense in the classes list
-}
-
-func (d *orientDriver) Columns(ctx context.Context, database, table string) ([]ColumnInfo, error) {
-	classes, err := d.fetchMetadata(ctx, database)
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range classes {
-		if c.Name == table {
-			var cols []ColumnInfo
-			for _, p := range c.Properties {
-				cols = append(cols, ColumnInfo{Name: p.Name, DataType: p.Type})
-			}
-			return cols, nil
-		}
-	}
-	return nil, fmt.Errorf("class %q not found", table)
-}
-
-func (d *orientDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
-	classes, err := d.fetchMetadata(ctx, database)
-	if err != nil {
-		return nil, err
-	}
-	var res []TableColumn
-	for _, c := range classes {
-		for _, p := range c.Properties {
-			res = append(res, TableColumn{Table: c.Name, Name: p.Name, DataType: p.Type})
-		}
-	}
-	return res, nil
-}
-
-func (d *orientDriver) PrimaryKeyColumns(ctx context.Context, database, schema, table string) ([]string, error) {
-	// OrientDB uses @rid as primary key
-	return []string{"@rid"}, nil
-}
-
-func (d *orientDriver) TableDDL(ctx context.Context, database, table string, isView bool) (string, error) {
-	classes, err := d.fetchMetadata(ctx, database)
-	if err != nil {
-		return "", err
-	}
-	for _, c := range classes {
-		if c.Name == table {
-			b, _ := json.MarshalIndent(c, "", "  ")
-			return string(b), nil
-		}
-	}
-	return "", fmt.Errorf("class %q not found", table)
-}
-
-func (d *orientDriver) Query(ctx context.Context, database, sql string) (*QueryResult, error) {
-	// OrientDB query endpoint: POST /query/{db}/sql/{query}/{limit}
-	// But /command is often more flexible. Let's try /command first as it supports everything.
-	url := fmt.Sprintf("http://%s:%d/command/%s/sql", d.conn.Host, d.conn.Port, url.PathEscape(database))
-	body := map[string]interface{}{
-		"command":  sql,
-		"language": "sql",
-	}
-	resp, err := d.doRequest(ctx, "POST", url, body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("orientdb error (%d): %s", resp.StatusCode, string(respBody))
-	}
-
-	var res struct {
-		Result []map[string]interface{} `json:"result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
-	}
-
-	return d.flattenResults(res.Result), nil
-}
-
-func (d *orientDriver) Exec(ctx context.Context, database, sql string) (*QueryResult, error) {
-	return d.Query(ctx, database, sql)
 }
 
 func (d *orientDriver) doRequest(ctx context.Context, method, url string, body interface{}) (*http.Response, error) {
@@ -254,7 +440,6 @@ func (d *orientDriver) flattenResults(docs []map[string]interface{}) *QueryResul
 		}
 	}
 
-	// OrientDB metadata fields usually start with @
 	var metaCols []string
 	var dataCols []string
 
@@ -268,7 +453,6 @@ func (d *orientDriver) flattenResults(docs []map[string]interface{}) *QueryResul
 	sort.Strings(metaCols)
 	sort.Strings(dataCols)
 
-	// Put @rid and @class first if they exist
 	var finalCols []string
 	special := []string{"@rid", "@class", "@version"}
 	for _, s := range special {
@@ -282,7 +466,6 @@ func (d *orientDriver) flattenResults(docs []map[string]interface{}) *QueryResul
 			}
 		}
 		if !found {
-			// check dataCols just in case
 			for i, d := range dataCols {
 				if d == s {
 					finalCols = append(finalCols, d)

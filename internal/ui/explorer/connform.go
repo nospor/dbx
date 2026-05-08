@@ -43,11 +43,23 @@ const (
 	fieldDatabase
 	fieldSSLMode
 	fieldFilePath
+	fieldProtocol
 	fieldCount
 )
 
 var fieldLabels = []string{
-	"Name", "Driver", "Host", "Port", "User", "Password", "Database", "SSL Mode", "File Path (sqlite)",
+	"Name", "Driver", "Host", "Port", "User", "Password", "Database", "SSL Mode", "File Path (sqlite)", "Protocol (orientdb)",
+}
+
+var protocols = []string{"http", "binary"}
+
+func protocolIndex(name string) int {
+	for i, p := range protocols {
+		if strings.ToLower(p) == strings.ToLower(name) {
+			return i
+		}
+	}
+	return 0
 }
 
 var drivers = []string{"postgres", "mysql", "sqlite", "mssql", "mongodb", "orientdb"}
@@ -65,8 +77,9 @@ func driverIndex(name string) int {
 type ConnForm struct {
 	theme     theme.Theme
 	fields    [fieldCount]string
-	driverIdx int // index into drivers slice
-	cursor    int
+	driverIdx   int // index into drivers slice
+	protocolIdx int // index into protocols slice
+	cursor      int
 	isEdit    bool
 	origID    string
 	width     int
@@ -77,8 +90,9 @@ type ConnForm struct {
 
 // NewConnForm creates a blank add-connection form.
 func NewConnForm(t theme.Theme) ConnForm {
-	f := ConnForm{theme: t, driverIdx: 0}
+	f := ConnForm{theme: t, driverIdx: 0, protocolIdx: 0}
 	f.syncDriver()
+	f.syncProtocol()
 	f.fields[fieldHost] = "localhost"
 	f.fields[fieldSSLMode] = "prefer"
 	return f
@@ -89,7 +103,9 @@ func NewEditConnForm(t theme.Theme, conn config.Connection) ConnForm {
 	f := ConnForm{theme: t, isEdit: true, origID: conn.ID}
 	f.fields[fieldName] = conn.Name
 	f.driverIdx = driverIndex(conn.Driver)
+	f.protocolIdx = protocolIndex(conn.Protocol)
 	f.syncDriver()
+	f.syncProtocol()
 	f.fields[fieldHost] = conn.Host
 	f.fields[fieldPort] = strconv.Itoa(conn.Port)
 	f.fields[fieldUser] = conn.User
@@ -97,6 +113,7 @@ func NewEditConnForm(t theme.Theme, conn config.Connection) ConnForm {
 	f.fields[fieldDatabase] = conn.Database
 	f.fields[fieldSSLMode] = conn.SSLMode
 	f.fields[fieldFilePath] = conn.FilePath
+	f.fields[fieldProtocol] = conn.Protocol
 	return f
 }
 
@@ -111,6 +128,21 @@ func (f *ConnForm) syncDriver() {
 			f.fields[fieldPort] = strconv.Itoa(p)
 		} else {
 			f.fields[fieldPort] = ""
+		}
+	}
+}
+
+func (f *ConnForm) syncProtocol() {
+	f.fields[fieldProtocol] = protocols[f.protocolIdx]
+	// If it's orientdb and port is a default, switch port
+	if f.fields[fieldDriver] == "orientdb" {
+		knownDefaults := map[string]bool{"2480": true, "2424": true, "0": true, "": true}
+		if knownDefaults[f.fields[fieldPort]] {
+			if f.fields[fieldProtocol] == "binary" {
+				f.fields[fieldPort] = "2424"
+			} else {
+				f.fields[fieldPort] = "2480"
+			}
 		}
 	}
 }
@@ -165,6 +197,9 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			if f.cursor == fieldDriver {
 				f.driverIdx = (f.driverIdx + 1) % len(drivers)
 				f.syncDriver()
+			} else if f.cursor == fieldProtocol {
+				f.protocolIdx = (f.protocolIdx + 1) % len(protocols)
+				f.syncProtocol()
 			} else if f.cursor == f.lastVisible() {
 				return f, f.submitCmd()
 			} else {
@@ -174,11 +209,17 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			if f.cursor == fieldDriver {
 				f.driverIdx = (f.driverIdx - 1 + len(drivers)) % len(drivers)
 				f.syncDriver()
+			} else if f.cursor == fieldProtocol {
+				f.protocolIdx = (f.protocolIdx - 1 + len(protocols)) % len(protocols)
+				f.syncProtocol()
 			}
 		case "right":
 			if f.cursor == fieldDriver {
 				f.driverIdx = (f.driverIdx + 1) % len(drivers)
 				f.syncDriver()
+			} else if f.cursor == fieldProtocol {
+				f.protocolIdx = (f.protocolIdx + 1) % len(protocols)
+				f.syncProtocol()
 			}
 		case "ctrl+s":
 			return f, f.submitCmd()
@@ -240,6 +281,7 @@ func (f ConnForm) toConnection() config.Connection {
 		Database: f.fields[fieldDatabase],
 		SSLMode:  f.fields[fieldSSLMode],
 		FilePath: f.fields[fieldFilePath],
+		Protocol: f.fields[fieldProtocol],
 	}
 }
 
@@ -272,6 +314,8 @@ func (f ConnForm) fieldVisible(i int) bool {
 		return !f.isSQLite()
 	case fieldFilePath:
 		return f.isSQLite()
+	case fieldProtocol:
+		return f.fields[fieldDriver] == "orientdb"
 	}
 	return true
 }
@@ -299,6 +343,18 @@ func (f ConnForm) View() string {
 			prev := drivers[(f.driverIdx-1+len(drivers))%len(drivers)]
 			next := drivers[(f.driverIdx+1)%len(drivers)]
 			cur := drivers[f.driverIdx]
+			if focused {
+				valueStr = f.theme.Dimmed.Render("‹ "+prev+" ") +
+					f.theme.TreeSelected.Render(" "+cur+" ") +
+					f.theme.Dimmed.Render(" "+next+" ›")
+			} else {
+				valueStr = f.theme.Bold.Render(cur)
+			}
+		} else if i == fieldProtocol {
+			// Render as a ← protocol → selector
+			prev := protocols[(f.protocolIdx-1+len(protocols))%len(protocols)]
+			next := protocols[(f.protocolIdx+1)%len(protocols)]
+			cur := protocols[f.protocolIdx]
 			if focused {
 				valueStr = f.theme.Dimmed.Render("‹ "+prev+" ") +
 					f.theme.TreeSelected.Render(" "+cur+" ") +
