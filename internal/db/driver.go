@@ -81,6 +81,8 @@ func New(conn config.Connection) (Driver, error) {
 		return &mssqlDriver{}, nil
 	case "mongodb":
 		return &mongoDriver{}, nil
+	case "orientdb":
+		return &orientDriver{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported driver: %q", conn.Driver)
 	}

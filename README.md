@@ -4,7 +4,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 
 ## Features
 
-- **Databases**: PostgreSQL, MySQL, SQLite, MSSQL, MongoDB
+- **Databases**: PostgreSQL, MySQL, SQLite, MSSQL, MongoDB, OrientDB (via HTTP)
 - **Three-panel layout**: Explorer | Query Editor | Results — each pane shows **key hints** on the bottom border (long lines truncate if the pane is narrow)
 - **AI assistant** (optional right column, **experimental** for now): chat with a configured CLI (e.g. `cursor-agent`), per connection/database; transcript with **Normal** mode cursor (reverse-video cell like the query editor) and **Insert** for prompts; in Insert, `enter` sends the prompt and `alt+enter` inserts a newline; `enter` in Normal copies the latest AI SQL from a fenced `sql` code block to the query editor; `@` / `#` insert table/column names from schema; **`/results`** sends the prompt together with the results pane’s last successful query and its grid (see **AI Assistant** below)
 - **Vim mode**: Normal and Insert mode with motions (h/j/k/l, w/b, gg/G, dd, etc.)
@@ -20,6 +20,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Export** results to CSV or JSON
 - **Copy** cell or row to clipboard
 - **MongoDB Queries**: For MongoDB, write BSON/JSON commands directly in the editor (e.g. `{"find": "users", "filter": {"name": "alice"}}`). `dbx` runs them via `runCommand` and formats the results.
+- **OrientDB Queries**: For OrientDB, use standard SQL-like syntax. **Note**: You must use the HTTP port (default **2480**), as the binary port (2424) is not supported.
 - **Themes**: terminal (default), dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark — configurable in config file
 
 ## Install

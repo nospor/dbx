@@ -1,6 +1,6 @@
 # dbx — AI Agent Context
 
-**dbx** is a TUI (terminal) database client written in Go. It connects to PostgreSQL, MySQL, SQLite, MSSQL, and MongoDB, with a main three-panel layout: Explorer | Query Editor | Results, plus an **optional AI assistant** column toggled from the UI.
+**dbx** is a TUI (terminal) database client written in Go. It connects to PostgreSQL, MySQL, SQLite, MSSQL, MongoDB, and OrientDB, with a main three-panel layout: Explorer | Query Editor | Results, plus an **optional AI assistant** column toggled from the UI.
 
 ## Tech Stack
 
