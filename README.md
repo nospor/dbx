@@ -17,7 +17,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Folder-scoped tabs and drafts** (optional) — set **`folder_based`** to **`true`** in `config.json` so open tabs and query drafts are grouped by the **directory you start dbx from** (`cd` into project A vs project B). Data still lives under `~/.cache/dbx` (or `$XDG_CACHE_HOME/dbx`); nothing is written inside your project folders
 - **Command palette** (**space**, then a letter) with context-aware commands per panel (`n` add connection in explorer; `a` toggles AI pane from explorer / editor / results / AI)
 - **Fullscreen** any panel with space+f
-- **Export** results to CSV or JSON
+- **Export** results to CSV or JSON; **bulk export** all table and view DDLs to a `.sql` file in the current folder
 - **Copy** cell or row to clipboard
 - **MongoDB Queries**: For MongoDB, write BSON/JSON commands directly in the editor (e.g. `{"find": "users", "filter": {"name": "alice"}}`). `dbx` runs them via `runCommand` and formats the results.
 - **OrientDB Queries**: For OrientDB, use standard SQL-like syntax. **Note**: You must use the HTTP port (default **2480**), as the binary port (2424) is not supported.
@@ -131,6 +131,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `h`           | Collapse current branch (from child -> parent)                                                                                                              |
 | `s`           | Append quick `SELECT * … LIMIT/TOP 100` at end of editor (blank line before it), run it; focus stays here (`r` for results)                                 |
 | `v`           | Open popup with recreate DDL for the focused table or view (`y` copy, scroll keys, `esc` close; MySQL: `SHOW CREATE`, Postgres/SQLite/MSSQL: assembled DDL) |
+| `V`           | **Bulk export** all table and view DDLs for the selected database into a single `.sql` file in the current folder; runs in the background with progress indicator      |
 | `f`           | Set filter for tables. Set it empty to see all tables                                                                                                       |
 | `g` / `G`     | First / last item                                                                                                                                           |
 
@@ -216,7 +217,7 @@ Press **space** to open the palette, then the **second** key (e.g. **space** the
 
 | Panel    | Commands                                                                                                              |
 | -------- | --------------------------------------------------------------------------------------------------------------------- |
-| Explorer | `n` add connection, `e` edit, `d` delete, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen        |
+| Explorer | `n` add connection, `e` edit, `d` delete, `v` show DDL, `V` export all DDLs, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen        |
 | Editor   | `x` execute, `e` explain, `c` clear, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                                               |

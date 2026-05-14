@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -40,8 +41,9 @@ type Model struct {
 	queryContents *querycontents.Store
 	openTabsStore *opentabs.Store
 
-	width  int
-	height int
+	width   int
+	height  int
+	workDir string
 
 	focus Panel
 
@@ -161,6 +163,7 @@ func New(cfg *config.Config, workDir string) Model {
 		aiPane:           ai.New(t, aiStore),
 		palette:          cmdpalette.New(t),
 		spinner:          sp,
+		workDir:          workDir,
 	}
 	if kt := m.editor.OpenTabKeys(); len(kt) > 0 {
 		connID, dbName := splitConnKey(m.editor.EditorConnKey())
@@ -220,7 +223,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ddlPopupTitle = msg.title
 		m.ddlPopupText = msg.ddl
 		m.ddlPopupScroll = 0
-		return m, m.setStatus("")
+		return m, nil
+
+	case exportAllDDLResultMsg:
+		if msg.err != nil {
+			return m, m.setStatus("Export error: " + msg.err.Error())
+		}
+		// Use a slightly different prefix to make it stand out
+		return m, m.setStatus("SUCCESS: All DDLs exported to " + msg.path)
 
 	case results.DeleteDraftMsg:
 		if msg.Err != "" {
@@ -521,7 +531,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.connID == m.activeConnID && msg.dbName == m.activeDB {
 			m.applyEditorSchema(msg.connID, msg.dbName)
 		}
-		cmds = append(cmds, m.setStatus(""))
 		return m, tea.Batch(cmds...)
 
 	case dbDatabasesMsg:
@@ -551,7 +560,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return explorerSelectMsg{node: explorer.NewDatabaseNode(msg.databases[0], msg.connID)}
 			})
 		}
-		cmds = append(cmds, m.setStatus(""))
 		return m, tea.Batch(cmds...)
 
 	case dbColumnsMsg:
@@ -591,7 +599,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.connID == m.activeConnID && msg.dbName == m.activeDB {
 			m.applyEditorSchema(msg.connID, msg.dbName)
 		}
-		cmds = append(cmds, m.setStatus(""))
 		return m, tea.Batch(cmds...)
 
 	case explorerSelectMsg:
@@ -664,6 +671,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshSchemaMsg:
 		if node := m.explorer.SelectedNode(); node != nil && node.DBName != "" {
 			cmds = append(cmds, m.fetchSchemaCmd(node.ConnID, node.DBName))
+		}
+		return m, tea.Batch(cmds...)
+
+	case exportAllDDLFromPaletteMsg:
+		if node := m.explorer.SelectedNode(); node != nil && node.DBName != "" {
+			cmds = append(cmds, m.setStatusPersistent("Exporting all DDLs..."))
+			cmds = append(cmds, m.exportAllDDLCmd(node.ConnID, node.DBName))
+		}
+		return m, tea.Batch(cmds...)
+
+	case fetchTableDDLFromPaletteMsg:
+		if node := m.explorer.SelectedNode(); node != nil && (node.Kind == explorer.NodeTable || node.Kind == explorer.NodeView) {
+			m.activateExplorerDatabase(node.ConnID, node.DBName)
+			isView := node.Kind == explorer.NodeView
+			cmds = append(cmds, m.setStatus("Loading DDL..."))
+			cmds = append(cmds, m.fetchTableDDLCmd(node.ConnID, node.DBName, node.Label, isView))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -1199,6 +1222,8 @@ func (m *Model) openPalette() {
 			{Key: "n", Description: "Add connection", Action: func() tea.Msg { return addConnMsg{} }},
 			{Key: "e", Description: "Edit connection", Action: func() tea.Msg { return editConnMsg{} }},
 			{Key: "d", Description: "Delete connection", Action: func() tea.Msg { return deleteConnMsg{} }},
+			{Key: "v", Description: "Show DDL", Action: func() tea.Msg { return fetchTableDDLFromPaletteMsg{} }},
+			{Key: "V", Description: "Export all DDLs", Action: func() tea.Msg { return exportAllDDLFromPaletteMsg{} }},
 			{Key: "R", Description: "Refresh schema", Action: func() tea.Msg { return refreshSchemaMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
@@ -1354,6 +1379,11 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 		}
 
 	case explorer.NodeDatabase:
+		if node.Detail == "export_all_ddl" {
+			cmds = append(cmds, m.setStatusPersistent("Exporting all DDLs..."))
+			cmds = append(cmds, m.exportAllDDLCmd(node.ConnID, node.DBName))
+			return cmds
+		}
 		// Always sync editor + query draft for this database (expand or collapse).
 		// Only fetch schema when expanding so collapse does not refetch/re-open.
 		m.activateExplorerDatabase(node.ConnID, node.DBName)
@@ -1373,6 +1403,11 @@ func (m *Model) handleExplorerSelect(node *explorer.Node) []tea.Cmd {
 			isView := node.Kind == explorer.NodeView
 			cmds = append(cmds, m.setStatus("Loading DDL..."))
 			cmds = append(cmds, m.fetchTableDDLCmd(node.ConnID, node.DBName, node.Label, isView))
+			return cmds
+		}
+		if node.Detail == "export_all_ddl" {
+			cmds = append(cmds, m.setStatusPersistent("Exporting all DDLs..."))
+			cmds = append(cmds, m.exportAllDDLCmd(node.ConnID, node.DBName))
 			return cmds
 		}
 		m.activateExplorerDatabase(node.ConnID, node.DBName)
@@ -1617,6 +1652,108 @@ func (m *Model) fetchTableDDLCmd(connID, dbName, table string, isView bool) tea.
 	}
 }
 
+func (m *Model) exportAllDDLCmd(connID, dbName string) tea.Cmd {
+	conn := m.findConn(connID)
+	return func() tea.Msg {
+		if conn == nil {
+			return exportAllDDLResultMsg{err: fmt.Errorf("no connection found for ID %q", connID)}
+		}
+		drv, err := db.New(*conn)
+		if err != nil {
+			return exportAllDDLResultMsg{err: fmt.Errorf("failed to create driver: %w", err)}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := drv.Connect(ctx, *conn); err != nil {
+			return exportAllDDLResultMsg{err: fmt.Errorf("failed to connect: %w", err)}
+		}
+		defer drv.Close()
+
+		tables, err := drv.Tables(ctx, dbName)
+		if err != nil {
+			return exportAllDDLResultMsg{err: fmt.Errorf("failed to list tables: %w", err)}
+		}
+		views, err := drv.Views(ctx, dbName)
+		if err != nil {
+			return exportAllDDLResultMsg{err: fmt.Errorf("failed to list views: %w", err)}
+		}
+
+		if len(tables) == 0 && len(views) == 0 {
+			return exportAllDDLResultMsg{err: fmt.Errorf("no tables or views found in database %q", dbName)}
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("-- DDL Export for %s:%s\n", conn.Name, dbName))
+		sb.WriteString(fmt.Sprintf("-- Generated at %s\n", time.Now().Format(time.RFC3339)))
+		sb.WriteString(fmt.Sprintf("-- Tables: %d, Views: %d\n\n", len(tables), len(views)))
+
+		exportedCount := 0
+		for _, t := range tables {
+			ddl, err := drv.TableDDL(ctx, dbName, t, false)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("-- Error fetching DDL for table %q: %v\n\n", t, err))
+				continue
+			}
+			sb.WriteString(ddl)
+			if !strings.HasSuffix(strings.TrimSpace(ddl), ";") {
+				sb.WriteString(";")
+			}
+			sb.WriteString("\n\n")
+			exportedCount++
+		}
+		for _, v := range views {
+			ddl, err := drv.TableDDL(ctx, dbName, v, true)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("-- Error fetching DDL for view %q: %v\n\n", v, err))
+				continue
+			}
+			sb.WriteString(ddl)
+			if !strings.HasSuffix(strings.TrimSpace(ddl), ";") {
+				sb.WriteString(";")
+			}
+			sb.WriteString("\n\n")
+			exportedCount++
+		}
+
+		dir := m.workDir
+		if dir == "" {
+			dir, _ = os.Getwd()
+		}
+		if dir == "" {
+			dir, _ = os.UserHomeDir()
+		}
+		if dir == "" {
+			dir = "."
+		}
+		
+		safeConnName := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				return r
+			}
+			return '_'
+		}, conn.Name)
+		safeDBName := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				return r
+			}
+			return '_'
+		}, dbName)
+		
+		filename := fmt.Sprintf("dbx_export_%s_%s_%d.sql", safeConnName, safeDBName, time.Now().Unix())
+		path := filepath.Join(dir, filename)
+		absPath, err := filepath.Abs(path)
+		if err == nil {
+			path = absPath
+		}
+
+		if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
+			return exportAllDDLResultMsg{err: fmt.Errorf("failed to write file %q: %w", path, err)}
+		}
+
+		return exportAllDDLResultMsg{path: path}
+	}
+}
+
 func (m Model) handleHelpPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	raw := strings.TrimLeft(helpScreenText, "\n")
 	lines := strings.Split(raw, "\n")
@@ -1676,6 +1813,7 @@ const helpScreenText = `
     h           Collapse current branch
     s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
     v           DDL popup for table/view (CREATE + indexes; driver-specific)
+    V           Export all DDLs for database to file
     f           Set filter for tables
 
   EDITOR (Normal mode)
@@ -2085,6 +2223,13 @@ func (m *Model) setStatus(msg string) tea.Cmd {
 	})
 }
 
+// setStatusPersistent sets a status message that does not expire.
+func (m *Model) setStatusPersistent(msg string) tea.Cmd {
+	m.statusMsg = msg
+	m.statusExpiry = time.Time{}
+	return nil
+}
+
 func (m *Model) handleConnFormSubmit(msg explorer.ConnFormSubmitMsg) (tea.Model, tea.Cmd) {
 	conn := msg.Conn
 	if msg.IsEdit {
@@ -2311,7 +2456,7 @@ func (m Model) rightColumnWidth() int {
 func (m Model) panelBottomHintFor(p Panel) string {
 	switch p {
 	case PanelExplorer:
-		return "f: filter · s: show rows · v: DDL · space: commands"
+		return "f: filter · s: show rows · v: DDL · V: Export All · space: commands"
 	case PanelEditor:
 		if m.editor.IsInsertMode() {
 			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter/Ctrl+r: run query"

@@ -256,6 +256,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					}
 				}
 			}
+		case "V":
+			// Export all DDLs for the current database (handled in app)
+			if len(m.flat) > 0 {
+				n := m.flat[m.cursor]
+				if n.Kind == NodeDatabase || n.Kind == NodeTable || n.Kind == NodeView {
+					m.pendingSel = &Node{
+						Kind:   n.Kind,
+						Label:  n.Label,
+						ConnID: n.ConnID,
+						DBName: n.DBName,
+						Detail: "export_all_ddl",
+					}
+				}
+			}
 		case "g":
 			m.cursor = 0
 		case "G":

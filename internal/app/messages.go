@@ -97,6 +97,24 @@ type exportCSVMsg struct{}
 // exportJSONMsg exports results to JSON.
 type exportJSONMsg struct{}
 
+// exportAllDDLMsg triggers exporting all DDLs for a database.
+type exportAllDDLMsg struct {
+	connID string
+	dbName string
+}
+
+// exportAllDDLResultMsg carries the result of exporting all DDLs.
+type exportAllDDLResultMsg struct {
+	path string
+	err  error
+}
+
+// exportAllDDLFromPaletteMsg triggers exporting all DDLs from the palette.
+type exportAllDDLFromPaletteMsg struct{}
+
+// fetchTableDDLFromPaletteMsg triggers fetching DDL for the selected table from the palette.
+type fetchTableDDLFromPaletteMsg struct{}
+
 // aiPreparedPromptMsg carries the full AI prompt after @-mention DDL has been fetched.
 type aiPreparedPromptMsg struct {
 	connKey    string
