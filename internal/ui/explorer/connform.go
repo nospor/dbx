@@ -62,7 +62,7 @@ func protocolIndex(name string) int {
 	return 0
 }
 
-var drivers = []string{"postgres", "mysql", "sqlite", "mssql", "mongodb", "orientdb"}
+var drivers = []string{"postgres", "mysql", "sqlite", "mssql", "mongodb", "orientdb", "oracle"}
 
 func driverIndex(name string) int {
 	for i, d := range drivers {
@@ -297,6 +297,8 @@ func defaultPort(driver string) int {
 		return 27017
 	case "orientdb":
 		return 2480
+	case "oracle":
+		return 1521
 	default:
 		return 0
 	}

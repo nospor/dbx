@@ -2058,6 +2058,11 @@ func quickSelectQuery(driver, database, table string) string {
 		return fmt.Sprintf(`{"find": "%s", "limit": 100}`, table)
 	case "orientdb":
 		return "SELECT FROM " + table + " LIMIT 100"
+	case "oracle":
+		if database != "" {
+			return "SELECT * FROM \"" + database + "\".\"" + table + "\" FETCH FIRST 100 ROWS ONLY"
+		}
+		return "SELECT * FROM \"" + table + "\" FETCH FIRST 100 ROWS ONLY"
 	default: // postgres and anything else
 		return "SELECT * FROM " + table + " LIMIT 100"
 	}

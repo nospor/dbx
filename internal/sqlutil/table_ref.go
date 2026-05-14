@@ -39,6 +39,15 @@ func ParseTableRef(expr string, driver string) (schema, table string) {
 			return "", ""
 		}
 		return "", parts[len(parts)-1]
+	case "oracle":
+		switch len(parts) {
+		case 0:
+			return "", ""
+		case 1:
+			return "", parts[0]
+		default:
+			return parts[len(parts)-2], parts[len(parts)-1]
+		}
 	default: // postgres, postgresql
 		switch len(parts) {
 		case 0:
