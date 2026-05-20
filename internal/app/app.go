@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"fmt"
 	"maps"
 	"os"
@@ -737,19 +739,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.setStatus("No results to copy."))
 			return m, tea.Batch(cmds...)
 		}
-		var sb strings.Builder
+		var buf bytes.Buffer
+		w := csv.NewWriter(&buf)
 		var trimmedCols []string
 		for _, col := range r.Columns {
 			trimmedCols = append(trimmedCols, strings.TrimSpace(col))
 		}
-		sb.WriteString(strings.Join(trimmedCols, "\t") + "\n")
-		for _, row := range r.Rows {
-			sb.WriteString(strings.Join(row, "\t") + "\n")
+		if err := w.Write(trimmedCols); err != nil {
+			cmds = append(cmds, m.setStatus("Failed to format headers: "+err.Error()))
+			return m, tea.Batch(cmds...)
 		}
-		if err := util.Copy(sb.String()); err != nil {
+		for _, row := range r.Rows {
+			if err := w.Write(row); err != nil {
+				cmds = append(cmds, m.setStatus("Failed to format rows: "+err.Error()))
+				return m, tea.Batch(cmds...)
+			}
+		}
+		w.Flush()
+		if err := w.Error(); err != nil {
+			cmds = append(cmds, m.setStatus("CSV formatting error: "+err.Error()))
+			return m, tea.Batch(cmds...)
+		}
+		if err := util.Copy(buf.String()); err != nil {
 			cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
 		} else {
-			cmds = append(cmds, m.setStatus("All rows (with headers) copied to clipboard."))
+			cmds = append(cmds, m.setStatus("All rows (CSV with headers) copied to clipboard."))
 		}
 		return m, tea.Batch(cmds...)
 
