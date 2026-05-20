@@ -221,7 +221,7 @@ Press **space** to open the palette, then the **second** key (e.g. **space** the
 | -------- | --------------------------------------------------------------------------------------------------------------------- |
 | Explorer | `n` add connection, `e` edit, `d` delete, `v` show DDL, `V` export all DDLs, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen        |
 | Editor   | `x` execute, `e` explain, `c` clear, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
-| Results  | `y` copy cell, `Y` copy row, `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| Results  | `y` copy cell, `Y` copy row, `c` copy all rows (headers), `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                                               |
 
 ## History

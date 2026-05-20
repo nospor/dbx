@@ -91,6 +91,9 @@ type copyCellMsg struct{}
 // copyRowMsg copies the selected row to clipboard.
 type copyRowMsg struct{}
 
+// copyAllRowsMsg copies all rows with headers to clipboard.
+type copyAllRowsMsg struct{}
+
 // exportCSVMsg exports results to CSV.
 type exportCSVMsg struct{}
 

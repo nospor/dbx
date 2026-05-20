@@ -87,8 +87,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		default:
 			// Allow single-key shortcuts
+			// 1. Try exact case-sensitive match first
 			for _, cmd := range m.commands {
 				if msg.String() == cmd.Key {
+					m.visible = false
+					if cmd.Action != nil {
+						return m, func() tea.Msg { return ExecuteCommandMsg{Action: cmd.Action} }
+					}
+				}
+			}
+			// 2. Fall back to case-insensitive match (for keys like c/C, e/E, etc. that don't conflict)
+			for _, cmd := range m.commands {
+				if strings.EqualFold(msg.String(), cmd.Key) {
 					m.visible = false
 					if cmd.Action != nil {
 						return m, func() tea.Msg { return ExecuteCommandMsg{Action: cmd.Action} }

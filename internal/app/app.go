@@ -731,6 +731,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case copyAllRowsMsg:
+		r := m.results.Result()
+		if r == nil || len(r.Columns) == 0 {
+			cmds = append(cmds, m.setStatus("No results to copy."))
+			return m, tea.Batch(cmds...)
+		}
+		var sb strings.Builder
+		var trimmedCols []string
+		for _, col := range r.Columns {
+			trimmedCols = append(trimmedCols, strings.TrimSpace(col))
+		}
+		sb.WriteString(strings.Join(trimmedCols, "\t") + "\n")
+		for _, row := range r.Rows {
+			sb.WriteString(strings.Join(row, "\t") + "\n")
+		}
+		if err := util.Copy(sb.String()); err != nil {
+			cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
+		} else {
+			cmds = append(cmds, m.setStatus("All rows (with headers) copied to clipboard."))
+		}
+		return m, tea.Batch(cmds...)
+
 	case exportCSVMsg:
 		dir, _ := os.UserHomeDir()
 		if r := m.results.Result(); r != nil {
@@ -1245,6 +1267,7 @@ func (m *Model) openPalette() {
 		commands = []cmdpalette.Command{
 			{Key: "y", Description: "Copy cell", Action: func() tea.Msg { return copyCellMsg{} }},
 			{Key: "Y", Description: "Copy row", Action: func() tea.Msg { return copyRowMsg{} }},
+			{Key: "c", Description: "Copy all rows (headers)", Action: func() tea.Msg { return copyAllRowsMsg{} }},
 			{Key: "e", Description: "Export CSV", Action: func() tea.Msg { return exportCSVMsg{} }},
 			{Key: "j", Description: "Export JSON", Action: func() tea.Msg { return exportJSONMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
@@ -1876,7 +1899,7 @@ const helpScreenText = `
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
     Editor:     x=execute  e=explain  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
-    Results:    y=copy cell  Y=copy row  e=export CSV  j=export JSON  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    Results:    y=copy cell  Y=copy row  c=copy all (headers)  e=export CSV  j=export JSON  t=toggle explorer  a=toggle AI pane  f=fullscreen
     AI:         t=toggle explorer  a=toggle AI pane  f=fullscreen
 `
 
