@@ -1835,6 +1835,8 @@ const helpScreenText = `
     yw          Yank/copy current word                                                                                                                                                                                            |
     y$          Yank/copy to end of line                                                                                                                                                                                             |
     y0          Yank/copy to start of line                                                                                                                                                                                           |
+    cc          Clean prefix (numbers, |) from line
+    cq          Clean prefix (numbers, |) from query
     gg/G        Go to top/bottom
     J/K         Jump to next/prev query block
 

@@ -98,3 +98,62 @@ func TestCurrentWordBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanLineAndQuery(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cleanLineText patterns", func(t *testing.T) {
+		tests := []struct {
+			input string
+			want  string
+		}{
+			{"     1 │SELECT smid_id, smid_unit_id, prod_id", "SELECT smid_id, smid_unit_id, prod_id"},
+			{"     4 │   OR (smid_id = 617955 AND smid_unit_id = 0);", "  OR (smid_id = 617955 AND smid_unit_id = 0);"},
+			{"  1 | SELECT", "SELECT"},
+			{"1│SELECT", "SELECT"},
+			{"SELECT 1", "SELECT 1"},
+			{"123", "123"},
+			{"  123  ", "  123  "},
+			{"     1 │\tSELECT", "SELECT"},
+			{"     1 │ \tSELECT", "\tSELECT"},
+		}
+
+		for _, tc := range tests {
+			got := cleanLineText(tc.input)
+			if got != tc.want {
+				t.Errorf("cleanLineText(%q) = %q; want %q", tc.input, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("cleanLine in model", func(t *testing.T) {
+		m := New(theme.Dark())
+		m.SwitchConnection("c")
+		m.setLines([]string{
+			"     1 │SELECT a",
+			"     2 │  FROM b",
+		})
+		m.vim.row = 1
+		lines := m.cleanLine(m.lines())
+		if len(lines) != 2 || lines[1] != " FROM b" {
+			t.Errorf("expected ' FROM b', got %#v", lines)
+		}
+	})
+
+	t.Run("cleanQuery in model", func(t *testing.T) {
+		m := New(theme.Dark())
+		m.SwitchConnection("c")
+		m.setLines([]string{
+			"     1 │SELECT a",
+			"     2 │  FROM b",
+			"",
+			"     3 │WHERE c",
+		})
+		// Cursor on first query block
+		m.vim.row = 0
+		lines := m.cleanQuery(m.lines())
+		if lines[0] != "SELECT a" || lines[1] != " FROM b" || lines[2] != "" || lines[3] != "     3 │WHERE c" {
+			t.Errorf("unexpected cleaned lines: %#v", lines)
+		}
+	})
+}

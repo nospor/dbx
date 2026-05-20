@@ -2,6 +2,7 @@ package editor
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -37,6 +38,8 @@ type QueryPanePersistMsg struct {
 type TabSwitchedMsg struct {
 	ConnKey string
 }
+
+var lineNumRegex = regexp.MustCompile(`^\s*\d+\s*[|│]`)
 
 func tabStoreKey(connKey string) string {
 	if connKey == "" {
@@ -850,6 +853,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.pushUndoPoint()
 		lines = m.deleteCharAt(lines)
 		m.setLines(lines)
+	case "c":
+		if m.vim.pendingC {
+			m.pushUndoPoint()
+			lines = m.cleanLine(lines)
+			m.setLines(lines)
+			m.vim.pendingC = false
+		} else {
+			m.vim.pendingC = true
+		}
 	case "d":
 		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
 			m.histPopupPendingDeleteQuery = ""
@@ -876,6 +888,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				util.Copy(q)
 			}
 			m.vim.pendingY = false
+		} else if m.vim.pendingC {
+			m.pushUndoPoint()
+			lines = m.cleanQuery(lines)
+			m.setLines(lines)
+			m.vim.pendingC = false
 		}
 	case "ctrl+d":
 		if m.histPopupVisible && m.histPopupPendingDeleteQuery != "" {
@@ -952,6 +969,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.vim.pendingG = false
 		m.vim.pendingD = false
 		m.vim.pendingY = false
+		m.vim.pendingC = false
 	case "ctrl+p":
 		m.BrowseHistoryPrev()
 		return nil
@@ -964,6 +982,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.vim.pendingG = false
 		m.vim.pendingD = false
 		m.vim.pendingY = false
+		m.vim.pendingC = false
 	}
 
 	m.clampCursor()
@@ -1352,6 +1371,38 @@ func (m *Model) deleteLine(lines []string) []string {
 		m.vim.row = len(lines) - 1
 	}
 	return lines
+}
+
+func (m *Model) cleanLine(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	row := m.vim.row
+	lines[row] = cleanLineText(lines[row])
+	return lines
+}
+
+func (m *Model) cleanQuery(lines []string) []string {
+	start, end := m.currentQueryBounds(lines)
+	if start > end {
+		return lines
+	}
+	for i := start; i <= end; i++ {
+		lines[i] = cleanLineText(lines[i])
+	}
+	return lines
+}
+
+func cleanLineText(line string) string {
+	loc := lineNumRegex.FindStringIndex(line)
+	if loc == nil {
+		return line
+	}
+	trimmed := line[loc[1]:]
+	if len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t') {
+		trimmed = trimmed[1:]
+	}
+	return trimmed
 }
 
 // currentWordBounds returns [start, end) rune indices of the word at or next to col,
@@ -1815,21 +1866,33 @@ func (m Model) View() string {
 	}
 
 	// Render pending operator popup
-	if m.vim.pendingD || m.vim.pendingY {
+	if m.vim.pendingD || m.vim.pendingY || m.vim.pendingC {
 		title := "Delete"
 		cmdKey := "d"
 		actionDesc := "line"
 		if m.vim.pendingY {
 			title = "Yank"
 			cmdKey = "y"
+		} else if m.vim.pendingC {
+			title = "Clean"
+			cmdKey = "c"
+			actionDesc = "line"
 		}
 		
-		rows := []struct{ key, desc string }{
-			{cmdKey, "Current " + actionDesc},
-			{"q", "Current query"},
-			{"w", "Current word"},
-			{"$", "To end of line"},
-			{"0", "To start of line"},
+		var rows []struct{ key, desc string }
+		if m.vim.pendingC {
+			rows = []struct{ key, desc string }{
+				{cmdKey, "Current " + actionDesc},
+				{"q", "Current query"},
+			}
+		} else {
+			rows = []struct{ key, desc string }{
+				{cmdKey, "Current " + actionDesc},
+				{"q", "Current query"},
+				{"w", "Current word"},
+				{"$", "To end of line"},
+				{"0", "To start of line"},
+			}
 		}
 		gap1 := m.theme.PaletteFill.Render(" ")
 		gap2 := m.theme.PaletteFill.Render("  ")
