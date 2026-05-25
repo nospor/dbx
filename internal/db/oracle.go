@@ -4,10 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
 	"strings"
-
-	_ "github.com/sijms/go-ora/v2"
+	go_ora "github.com/sijms/go-ora/v2"
 
 	"github.com/robertn/dbx/internal/config"
 )
@@ -19,20 +17,34 @@ type oracleDriver struct {
 
 func (d *oracleDriver) Connect(ctx context.Context, conn config.Connection) error {
 	d.conn = conn
-	dsn := buildOracleDSN(conn)
+	
+	// First try connecting with Database as Service Name
+	dsn := buildOracleDSN(conn, false)
 	db, err := sql.Open("oracle", dsn)
 	if err != nil {
 		return fmt.Errorf("oracle connect: %w", err)
 	}
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
+		// If ORA-12514, the listener doesn't know the service. It might be a SID.
+		if strings.Contains(err.Error(), "ORA-12514") {
+			dsnSID := buildOracleDSN(conn, true)
+			dbSID, errSID := sql.Open("oracle", dsnSID)
+			if errSID == nil {
+				if errPing := dbSID.PingContext(ctx); errPing == nil {
+					d.db = dbSID
+					return nil
+				}
+				dbSID.Close()
+			}
+		}
 		return fmt.Errorf("oracle ping: %w", err)
 	}
 	d.db = db
 	return nil
 }
 
-func buildOracleDSN(conn config.Connection) string {
+func buildOracleDSN(conn config.Connection, asSID bool) string {
 	host := conn.Host
 	if host == "" {
 		host = "localhost"
@@ -45,15 +57,15 @@ func buildOracleDSN(conn config.Connection) string {
 	if db == "" {
 		db = "ORCLCDB"
 	}
-	// go-ora format: oracle://user:pass@host:port/service_name
-	u := url.URL{
-		Scheme: "oracle",
-		User:   url.UserPassword(conn.User, conn.Password),
-		Host:   fmt.Sprintf("%s:%d", host, port),
-		Path:   db,
+	
+	options := map[string]string{}
+	service := db
+	if asSID {
+		service = ""
+		options["SID"] = db
 	}
-	// Note: go-ora handles SSL implicitly if specified in connection options, but we stick to basic DSN here.
-	return u.String()
+	
+	return go_ora.BuildUrl(host, port, service, conn.User, conn.Password, options)
 }
 
 func (d *oracleDriver) Close() error {
