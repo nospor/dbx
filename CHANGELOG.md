@@ -23,10 +23,13 @@
             - Update GoReleaser archives format to use v2 plural formats key
             - Fix cliff.toml body template to render and indent commit descriptions
 - *(ci)* Fix release asset collision and upgrade actions to v5/v6 ([f8c31a5](https://github.com/nospor/dbx/commit/f8c31a59ae970aa18107d098590edf7105fdb04d))
+- *(ci)* Upgrade goreleaser-action to v7 ([570983c](https://github.com/nospor/dbx/commit/570983cc7fd5ab36a204a23b7faeef9b4308e4a2))
+- *(ci)* Rebase changelog commit on main to avoid push rejection ([0d1ba77](https://github.com/nospor/dbx/commit/0d1ba77c968e7e98d2446b6603ec382ff9bf2eb0))
 
 ### Miscellaneous Tasks
 
 - Update CHANGELOG.md for v0.9.9 [skip ci] ([399394d](https://github.com/nospor/dbx/commit/399394d39fdc2865aab0793423971ca293835556))
+- Update CHANGELOG.md for v0.9.9 [skip ci] ([5a0886b](https://github.com/nospor/dbx/commit/5a0886bab04beecfe7e22af4f9ebf7ef2d2e34da))
 
 ## [0.9.8] - 2026-05-20
 
