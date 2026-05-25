@@ -1,4 +1,30 @@
 
+## [1.0.0] - 2026-05-25
+
+### Bug Fixes
+
+- *(db)* Fixing oracle db connection ([5b9af8d](https://github.com/nospor/dbx/commit/5b9af8d04833056b320f415288520a1be3406e17))
+- *(oracle)* Resolve schema loading, quick-select, and DDL issues ([b538925](https://github.com/nospor/dbx/commit/b5389254684d90f0638ae8a5552d4abbada12fa1))
+
+            - Prevent Oracle from treating the connection SID/Service Name as a
+            schema, ensuring the explorer correctly fetches and displays actual
+            database schemas.
+            - Filter the schema list to only show schemas that contain tables or
+            views, eliminating the clutter of empty default Oracle users.
+            - Use direct uppercase string interpolation for metadata queries
+            (tables, views, columns) to bypass brittle `go-ora` driver
+            parameter-binding issues.
+            - Change the `s` quick-select query syntax from `FETCH FIRST 100 ROWS
+            ONLY` to `WHERE ROWNUM <= 100` to support older instances like Oracle
+            11g.
+            - Inject `DBMS_METADATA.GET_DDL` permission errors directly into the DDL
+            popup text as SQL comments, preventing silent failures when users lack
+            the `SELECT_CATALOG_ROLE`.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v0.9.9 [skip ci] ([a49a3c0](https://github.com/nospor/dbx/commit/a49a3c05aef29d66661b9d12c3f536cccc4edbdd))
+
 ## [0.9.9] - 2026-05-25
 
 ### Features
