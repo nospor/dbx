@@ -80,8 +80,9 @@ func (d *oracleDriver) Ping(ctx context.Context) error {
 }
 
 func (d *oracleDriver) Databases(ctx context.Context) ([]string, error) {
-	// In Oracle, schemas (users) are typically treated as databases in generic tools.
-	rows, err := d.db.QueryContext(ctx, "SELECT username FROM all_users ORDER BY username")
+	// In Oracle, schemas (users) are typically treated as databases.
+	// We only show schemas that actually own tables or views to avoid cluttering the explorer.
+	rows, err := d.db.QueryContext(ctx, "SELECT DISTINCT owner FROM all_objects WHERE object_type IN ('TABLE', 'VIEW') ORDER BY owner")
 	if err != nil {
 		return nil, err
 	}
@@ -90,10 +91,9 @@ func (d *oracleDriver) Databases(ctx context.Context) ([]string, error) {
 }
 
 func (d *oracleDriver) Tables(ctx context.Context, database string) ([]string, error) {
-	schema := d.schemaForQuery(database)
+	schema := strings.TrimSpace(strings.ReplaceAll(d.schemaForQuery(database), "'", "''"))
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT table_name FROM all_tables WHERE owner = :1 ORDER BY table_name",
-		schema)
+		"SELECT table_name FROM all_tables WHERE UPPER(owner) = UPPER('" + schema + "') ORDER BY table_name")
 	if err != nil {
 		return nil, err
 	}
@@ -102,10 +102,9 @@ func (d *oracleDriver) Tables(ctx context.Context, database string) ([]string, e
 }
 
 func (d *oracleDriver) Views(ctx context.Context, database string) ([]string, error) {
-	schema := d.schemaForQuery(database)
+	schema := strings.TrimSpace(strings.ReplaceAll(d.schemaForQuery(database), "'", "''"))
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT view_name FROM all_views WHERE owner = :1 ORDER BY view_name",
-		schema)
+		"SELECT view_name FROM all_views WHERE UPPER(owner) = UPPER('" + schema + "') ORDER BY view_name")
 	if err != nil {
 		return nil, err
 	}
@@ -114,10 +113,10 @@ func (d *oracleDriver) Views(ctx context.Context, database string) ([]string, er
 }
 
 func (d *oracleDriver) Columns(ctx context.Context, database, table string) ([]ColumnInfo, error) {
-	schema := d.schemaForQuery(database)
+	schema := strings.TrimSpace(strings.ReplaceAll(d.schemaForQuery(database), "'", "''"))
+	tbl := strings.ReplaceAll(table, "'", "''")
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT column_name, data_type FROM all_tab_columns WHERE owner = :1 AND table_name = :2 ORDER BY column_id",
-		schema, table)
+		"SELECT column_name, data_type FROM all_tab_columns WHERE UPPER(owner) = UPPER('" + schema + "') AND table_name = '" + tbl + "' ORDER BY column_id")
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +133,12 @@ func (d *oracleDriver) Columns(ctx context.Context, database, table string) ([]C
 }
 
 func (d *oracleDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
-	schema := d.schemaForQuery(database)
+	schema := strings.TrimSpace(strings.ReplaceAll(d.schemaForQuery(database), "'", "''"))
 	rows, err := d.db.QueryContext(ctx,
 		`SELECT table_name, column_name, data_type
 		 FROM all_tab_columns
-		 WHERE owner = :1
-		 ORDER BY table_name, column_id`,
-		schema)
+		 WHERE UPPER(owner) = UPPER('` + schema + `')
+		 ORDER BY table_name, column_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -161,16 +159,17 @@ func (d *oracleDriver) PrimaryKeyColumns(ctx context.Context, database, schema, 
 	if sch == "" {
 		sch = d.schemaForQuery(database)
 	}
+	sch = strings.TrimSpace(strings.ReplaceAll(sch, "'", "''"))
+	tbl := strings.ReplaceAll(table, "'", "''")
 	rows, err := d.db.QueryContext(ctx,
 		`SELECT cols.column_name
 		 FROM all_constraints cons, all_cons_columns cols
-		 WHERE cols.table_name = :1
+		 WHERE cols.table_name = '` + tbl + `'
 		   AND cons.constraint_type = 'P'
 		   AND cons.constraint_name = cols.constraint_name
 		   AND cons.owner = cols.owner
-		   AND cons.owner = :2
-		 ORDER BY cols.position`,
-		table, sch)
+		   AND UPPER(cons.owner) = UPPER('` + sch + `')
+		 ORDER BY cols.position`)
 	if err != nil {
 		return nil, err
 	}
@@ -180,20 +179,21 @@ func (d *oracleDriver) PrimaryKeyColumns(ctx context.Context, database, schema, 
 
 func (d *oracleDriver) TableDDL(ctx context.Context, database, table string, isView bool) (string, error) {
 	// Basic implementation for Oracle TableDDL since retrieving exact DDL usually requires DBMS_METADATA
-	schema := d.schemaForQuery(database)
+	schema := strings.TrimSpace(strings.ReplaceAll(d.schemaForQuery(database), "'", "''"))
+	tbl := strings.ReplaceAll(table, "'", "''")
 	var ddl string
 	if isView {
-		err := d.db.QueryRowContext(ctx, "SELECT text FROM all_views WHERE owner = :1 AND view_name = :2", schema, table).Scan(&ddl)
+		err := d.db.QueryRowContext(ctx, "SELECT text FROM all_views WHERE UPPER(owner) = UPPER('" + schema + "') AND view_name = '" + tbl + "'").Scan(&ddl)
 		if err != nil {
-			return "", err
+			return fmt.Sprintf("-- Error retrieving View definition\n-- %v", err), nil
 		}
 		return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS\n%s", table, ddl), nil
 	}
 
 	// For tables, we'll try DBMS_METADATA.GET_DDL
-	err := d.db.QueryRowContext(ctx, "SELECT DBMS_METADATA.GET_DDL('TABLE', :1, :2) FROM DUAL", table, schema).Scan(&ddl)
+	err := d.db.QueryRowContext(ctx, "SELECT DBMS_METADATA.GET_DDL('TABLE', '" + tbl + "', UPPER('" + schema + "')) FROM DUAL").Scan(&ddl)
 	if err != nil {
-		return "", fmt.Errorf("could not get table DDL (requires DBMS_METADATA privileges): %w", err)
+		return fmt.Sprintf("-- Error retrieving table DDL\n-- Note: This requires DBMS_METADATA privileges.\n-- %v", err), nil
 	}
 	return ddl, nil
 }

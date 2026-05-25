@@ -1488,8 +1488,9 @@ func (m *Model) connectCmd(connID string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		// If connection has database(s) configured, use those instead of fetching all
-		if conn.Database != "" {
+		// If connection has database(s) configured, use those instead of fetching all.
+		// For Oracle, conn.Database is the Service Name or SID, not the schema.
+		if conn.Database != "" && conn.Driver != "oracle" {
 			parts := strings.Split(conn.Database, ",")
 			dbs := make([]string, 0, len(parts))
 			for _, p := range parts {
@@ -2237,9 +2238,9 @@ func quickSelectQuery(driver, database, table string) string {
 		return "SELECT FROM " + table + " LIMIT 100"
 	case "oracle":
 		if database != "" {
-			return "SELECT * FROM \"" + database + "\".\"" + table + "\" FETCH FIRST 100 ROWS ONLY"
+			return "SELECT * FROM \"" + database + "\".\"" + table + "\" WHERE ROWNUM <= 100"
 		}
-		return "SELECT * FROM \"" + table + "\" FETCH FIRST 100 ROWS ONLY"
+		return "SELECT * FROM \"" + table + "\" WHERE ROWNUM <= 100"
 	default: // postgres and anything else
 		return "SELECT * FROM " + table + " LIMIT 100"
 	}
