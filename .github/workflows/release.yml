@@ -58,5 +58,7 @@ jobs:
           git add CHANGELOG.md
           if ! git diff --cached --quiet; then
             git commit -m "chore: update CHANGELOG.md for ${{ github.ref_name }} [skip ci]"
+            git fetch origin main
+            git rebase origin/main
             git push origin HEAD:main
           fi
