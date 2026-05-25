@@ -1,3 +1,7 @@
 openspec
 .cursor
 dbx
+
+# GoReleaser
+dist/
+RELEASE_NOTES.md
