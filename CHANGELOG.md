@@ -1,4 +1,10 @@
 
+## [0.9.9] - 2026-05-25
+
+### Features
+
+- *(ci)* Add CI/CD pipeline, GoReleaser, and git-cliff setup
+
 ## [0.9.8] - 2026-05-20
 
 ### Features
