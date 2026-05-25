@@ -21,9 +21,15 @@
             popup text as SQL comments, preventing silent failures when users lack
             the `SELECT_CATALOG_ROLE`.
 
+### Styling
+
+- *(oracle)* Format oracle.go to resolve ci lint error ([773da3a](https://github.com/nospor/dbx/commit/773da3a65d68f0b07fd7ccaf2fcb0a5603a1e7b7))
+
 ### Miscellaneous Tasks
 
 - Update CHANGELOG.md for v0.9.9 [skip ci] ([a49a3c0](https://github.com/nospor/dbx/commit/a49a3c05aef29d66661b9d12c3f536cccc4edbdd))
+- Update CHANGELOG.md for v1.0.0 [skip ci] ([e57b2fa](https://github.com/nospor/dbx/commit/e57b2fad886403ba1361fcf92f65ad027b931d99))
+- Resolve changelog rebase conflicts automatically ([d7dc6c1](https://github.com/nospor/dbx/commit/d7dc6c1cd1b0d78cea27e5a93059538a69f7650b))
 
 ## [0.9.9] - 2026-05-25
 
