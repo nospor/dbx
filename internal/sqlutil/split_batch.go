@@ -6,7 +6,7 @@ import (
 )
 
 // SplitSemicolonStatements splits SQL on semicolons that are not inside strings
-// ('' / "" / ``) or parentheses.
+// (” / "" / “) or parentheses.
 func SplitSemicolonStatements(sql string) []string {
 	s := sql
 	var parts []string

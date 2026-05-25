@@ -167,27 +167,27 @@ func (d *oracleDriver) PrimaryKeyColumns(ctx context.Context, database, schema, 
 }
 
 func (d *oracleDriver) TableDDL(ctx context.Context, database, table string, isView bool) (string, error) {
-    // Basic implementation for Oracle TableDDL since retrieving exact DDL usually requires DBMS_METADATA
-    schema := d.schemaForQuery(database)
-    var ddl string
-    if isView {
-        err := d.db.QueryRowContext(ctx, "SELECT text FROM all_views WHERE owner = :1 AND view_name = :2", schema, table).Scan(&ddl)
-        if err != nil {
-            return "", err
-        }
-        return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS\n%s", table, ddl), nil
-    }
-    
-    // For tables, we'll try DBMS_METADATA.GET_DDL
-    err := d.db.QueryRowContext(ctx, "SELECT DBMS_METADATA.GET_DDL('TABLE', :1, :2) FROM DUAL", table, schema).Scan(&ddl)
-    if err != nil {
-        return "", fmt.Errorf("could not get table DDL (requires DBMS_METADATA privileges): %w", err)
-    }
-    return ddl, nil
+	// Basic implementation for Oracle TableDDL since retrieving exact DDL usually requires DBMS_METADATA
+	schema := d.schemaForQuery(database)
+	var ddl string
+	if isView {
+		err := d.db.QueryRowContext(ctx, "SELECT text FROM all_views WHERE owner = :1 AND view_name = :2", schema, table).Scan(&ddl)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS\n%s", table, ddl), nil
+	}
+
+	// For tables, we'll try DBMS_METADATA.GET_DDL
+	err := d.db.QueryRowContext(ctx, "SELECT DBMS_METADATA.GET_DDL('TABLE', :1, :2) FROM DUAL", table, schema).Scan(&ddl)
+	if err != nil {
+		return "", fmt.Errorf("could not get table DDL (requires DBMS_METADATA privileges): %w", err)
+	}
+	return ddl, nil
 }
 
 func (d *oracleDriver) Query(ctx context.Context, database, sqlStr string) (*QueryResult, error) {
-	// Oracle doesn't really 'USE schema', we just execute the query. 
+	// Oracle doesn't really 'USE schema', we just execute the query.
 	// The user should qualify tables with the schema if needed, or rely on the connected user.
 	rows, err := d.db.QueryContext(ctx, sqlStr)
 	if err != nil {

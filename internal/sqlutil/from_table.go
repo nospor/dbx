@@ -268,6 +268,7 @@ func StripSQLComments(sql string) string {
 	}
 	return out.String()
 }
+
 // CollectionFromMongoCommand extracts the collection name from a raw JSON command.
 // It looks for "find", "aggregate", "insert", "update", or "delete" keys.
 func CollectionFromMongoCommand(cmd string) (string, bool) {

@@ -17,7 +17,11 @@ body = """
     {% for commit in commits %}
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
             {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }}\
+            {{ commit.message | upper_first }} (\
+            [{{ commit.id | truncate(length=7, end="") }}](<REPO>/commit/{{ commit.id }}))\
+            {% if commit.body %}\n\n\
+            {{ commit.body | indent(prefix="            ", first=true) }}\
+            {% endif %}\
     {% endfor %}
 {% endfor %}
 """

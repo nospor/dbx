@@ -19,16 +19,16 @@ type dbQueryResultMsg struct {
 	result    *db.QueryResult
 	elapsed   time.Duration
 	sourceSQL string // statement that was executed (for results delete drafts)
-	connID    string  // connection/db the query ran under (for per-tab results)
+	connID    string // connection/db the query ran under (for per-tab results)
 	dbName    string
 }
 
 // dbSchemaMsg carries the result of an async schema fetch.
 type dbSchemaMsg struct {
-	connID  string
-	dbName  string
-	tables  []string
-	views   []string
+	connID string
+	dbName string
+	tables []string
+	views  []string
 	// allColumns is loaded in the same fetch for editor autocomplete (no need to expand each table).
 	allColumns []db.TableColumn
 	err        error

@@ -29,11 +29,11 @@ type Theme struct {
 	TreeColumn     lipgloss.Style
 
 	// Command palette
-	PaletteBox     lipgloss.Style
-	PaletteFill    lipgloss.Style // panel interior bg (matches PaletteBox); use for row width padding
-	PaletteTitle   lipgloss.Style
-	PaletteItem    lipgloss.Style
-	PaletteKey     lipgloss.Style
+	PaletteBox   lipgloss.Style
+	PaletteFill  lipgloss.Style // panel interior bg (matches PaletteBox); use for row width padding
+	PaletteTitle lipgloss.Style
+	PaletteItem  lipgloss.Style
+	PaletteKey   lipgloss.Style
 
 	// Editor tab bar
 	TabActive   lipgloss.Style
@@ -51,10 +51,10 @@ type Theme struct {
 
 // Terminal theme — uses terminal default colors so it works with any terminal palette.
 func Terminal() Theme {
-	accentBg := lipgloss.Color("6")       // calmer cyan instead of vivid blue
-	accentFg := lipgloss.Color("0")       // dark text on accent backgrounds
-	accentSoftBg := lipgloss.Color("8")   // muted dark-gray selection background
-	accentSoftFg := lipgloss.Color("15")  // light text for contrast
+	accentBg := lipgloss.Color("6")      // calmer cyan instead of vivid blue
+	accentFg := lipgloss.Color("0")      // dark text on accent backgrounds
+	accentSoftBg := lipgloss.Color("8")  // muted dark-gray selection background
+	accentSoftFg := lipgloss.Color("15") // light text for contrast
 
 	focused := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

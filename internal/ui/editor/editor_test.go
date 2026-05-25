@@ -74,19 +74,19 @@ func TestGlobalCursorDisplayRow_secondLogicalLine(t *testing.T) {
 func TestCurrentWordBounds(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		line       string
-		col        int
-		wantStart  int
-		wantEnd    int
-		wantOK     bool
+		line      string
+		col       int
+		wantStart int
+		wantEnd   int
+		wantOK    bool
 	}{
-		{"SELECT foo", 7, 7, 10, true},   // cursor on 'f' in foo
-		{"SELECT foo", 6, 7, 10, true},   // cursor on space before foo → word to right
-		{"SELECT foo", 9, 7, 10, true},   // cursor on last 'o'
-		{"hello world", 3, 0, 5, true},   // middle of hello
-		{"hello world", 5, 6, 11, true},  // cursor on space between → word to the right (world)
-		{"(bar)", 1, 1, 4, true},         // cursor after '(' → bar
-		{"   x", 0, 3, 4, true},          // skip spaces to x
+		{"SELECT foo", 7, 7, 10, true},  // cursor on 'f' in foo
+		{"SELECT foo", 6, 7, 10, true},  // cursor on space before foo → word to right
+		{"SELECT foo", 9, 7, 10, true},  // cursor on last 'o'
+		{"hello world", 3, 0, 5, true},  // middle of hello
+		{"hello world", 5, 6, 11, true}, // cursor on space between → word to the right (world)
+		{"(bar)", 1, 1, 4, true},        // cursor after '(' → bar
+		{"   x", 0, 3, 4, true},         // skip spaces to x
 		{"", 0, 0, 0, false},
 		{"   ", 1, 0, 0, false},
 	}

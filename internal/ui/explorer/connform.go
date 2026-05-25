@@ -75,17 +75,17 @@ func driverIndex(name string) int {
 
 // ConnForm is a simple form for adding/editing a connection.
 type ConnForm struct {
-	theme     theme.Theme
-	fields    [fieldCount]string
+	theme       theme.Theme
+	fields      [fieldCount]string
 	driverIdx   int // index into drivers slice
 	protocolIdx int // index into protocols slice
 	cursor      int
-	isEdit    bool
-	origID    string
-	width     int
-	height    int
-	testMsg   string // result of last test (success/error)
-	testing   bool   // true while a test is in progress
+	isEdit      bool
+	origID      string
+	width       int
+	height      int
+	testMsg     string // result of last test (success/error)
+	testing     bool   // true while a test is in progress
 }
 
 // NewConnForm creates a blank add-connection form.

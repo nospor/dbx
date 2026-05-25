@@ -50,7 +50,7 @@ type Model struct {
 	nodes      []*Node // top-level connection nodes
 	flat       []*Node // flattened visible nodes for rendering
 	cursor     int
-	pendingSel *Node   // set when user presses Enter/s on a node
+	pendingSel *Node // set when user presses Enter/s on a node
 
 	filterInput textinput.Model
 	filtering   bool

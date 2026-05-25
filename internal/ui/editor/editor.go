@@ -1878,7 +1878,7 @@ func (m Model) View() string {
 			cmdKey = "c"
 			actionDesc = "line"
 		}
-		
+
 		var rows []struct{ key, desc string }
 		if m.vim.pendingC {
 			rows = []struct{ key, desc string }{
@@ -1917,18 +1917,22 @@ func (m Model) View() string {
 			d := m.theme.PaletteItem.Render(r.desc)
 			opSb.WriteString(rowStyler.Render(gap1+k+gap2+d) + "\n")
 		}
-		
+
 		box := m.theme.PaletteBox.Render(opSb.String())
-		
+
 		boxH := lipgloss.Height(box)
 		boxW := lipgloss.Width(box)
-		
+
 		totalLines := 1 + editorTopGutterLines + viewportRows
 		startRow := totalLines - boxH
-		if startRow < 0 { startRow = 0 }
+		if startRow < 0 {
+			startRow = 0
+		}
 		startCol := m.width - boxW - 2
-		if startCol < 0 { startCol = 0 }
-		
+		if startCol < 0 {
+			startCol = 0
+		}
+
 		result = overlayStyledBlockAt(result, box, startRow, startCol, m.width)
 	}
 

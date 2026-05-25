@@ -12,7 +12,7 @@ const historyFile = "history.json"
 
 // Entry is a single history record.
 type Entry struct {
-	ConnKey   string    `json:"conn_key"`   // "connID:database"
+	ConnKey   string    `json:"conn_key"` // "connID:database"
 	Query     string    `json:"query"`
 	CreatedAt time.Time `json:"created_at"`
 }

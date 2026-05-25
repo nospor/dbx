@@ -1762,7 +1762,7 @@ func (m *Model) exportAllDDLCmd(connID, dbName string) tea.Cmd {
 		if dir == "" {
 			dir = "."
 		}
-		
+
 		safeConnName := strings.Map(func(r rune) rune {
 			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
 				return r
@@ -1775,7 +1775,7 @@ func (m *Model) exportAllDDLCmd(connID, dbName string) tea.Cmd {
 			}
 			return '_'
 		}, dbName)
-		
+
 		filename := fmt.Sprintf("dbx_export_%s_%s_%d.sql", safeConnName, safeDBName, time.Now().Unix())
 		path := filepath.Join(dir, filename)
 		absPath, err := filepath.Abs(path)

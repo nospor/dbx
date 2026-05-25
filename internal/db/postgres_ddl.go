@@ -55,10 +55,10 @@ ORDER BY a.attnum`
 	defer rows.Close()
 
 	type col struct {
-		name     string
-		typ      string
-		notNull  bool
-		defExpr  *string
+		name    string
+		typ     string
+		notNull bool
+		defExpr *string
 	}
 	var cols []col
 	for rows.Next() {

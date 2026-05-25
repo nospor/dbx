@@ -111,13 +111,13 @@ type Model struct {
 	sqlRegions []sqlBlockRegion
 
 	// Dropdown state for @ or #
-	showOverlay     bool
-	overlayType     rune // '@' or '#'
-	overlayAllItems []string
-	overlayFiltered   []string
-	overlayCursor     int
-	overlayQuery      string
-	overlayScrollTop  int // first visible index in overlayFiltered
+	showOverlay      bool
+	overlayType      rune // '@' or '#'
+	overlayAllItems  []string
+	overlayFiltered  []string
+	overlayCursor    int
+	overlayQuery     string
+	overlayScrollTop int // first visible index in overlayFiltered
 }
 
 const inputH = 3
