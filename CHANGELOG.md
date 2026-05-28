@@ -1,4 +1,31 @@
 
+## [1.0.2] - 2026-05-28
+
+### Features
+
+- Support multi-statement execution and session connection caching ([6f3dcd6](https://github.com/nospor/dbx/commit/6f3dcd60a12113d61520802f639c42b88dac6f0e))
+
+            - Add sequential execution for multi-statement SQL query blocks.
+            - Cache active database driver connections thread-safely in
+            `Model.drivers` instead of reconnecting/disconnecting on every query.
+            - Maintain session-scoped states (such as user-defined variables and
+            temp tables) across separate query executions.
+            - Implement auto-reconnection using Ping on cached connection checks.
+            - Add unit tests verifying batch execution and driver caching.
+- Support copying query error messages from the results pane ([dc10ab7](https://github.com/nospor/dbx/commit/dc10ab764bcac8c810b4106a36566aa78dc02c7b))
+
+            - Intercept and copy query error messages when copy commands (cell, row,
+            all rows) are executed while an error is displayed in the results pane.
+            - Map direct key bindings 'y', 'Y', and 'c' in the results pane to copy
+            cells, rows, and all rows respectively.
+            - Add unit tests verifying that copy operations copy error details if a
+            query error is displayed.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.1 [skip ci] ([1234c66](https://github.com/nospor/dbx/commit/1234c6658dd260d4c91624912952ba51ffcc6dd7))
+- Update CHANGELOG.md for v1.0.1 [skip ci] ([c64e3f2](https://github.com/nospor/dbx/commit/c64e3f244651fe442ce92f25685c9040c5b31f2b))
+
 ## [1.0.1] - 2026-05-28
 
 ### Features
