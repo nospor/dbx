@@ -228,3 +228,33 @@ func TestMultiTabs(t *testing.T) {
 		t.Errorf("expected active tab index 1, ID 'conn1#2', got index %d, ID %q", m.activeTabIdx, m.activeTabID)
 	}
 }
+
+func TestCursorStatePreservedOnTabSwitch(t *testing.T) {
+	t.Parallel()
+	m := New(theme.Dark())
+
+	// Open two tabs
+	m.OpenTab("conn1", "Conn 1")
+	m.setLines([]string{"SELECT 1;", "SELECT 2;", "SELECT 3;"})
+	m.vim.row = 2
+	m.vim.col = 5
+	m.scrollTop = 1
+
+	m.OpenTab("conn2", "Conn 2")
+	m.setLines([]string{"SELECT A;", "SELECT B;"})
+	m.vim.row = 1
+	m.vim.col = 3
+	m.scrollTop = 0
+
+	// Switch back to conn1
+	m.activateTabIndex(0)
+	if m.vim.row != 2 || m.vim.col != 5 || m.scrollTop != 1 {
+		t.Errorf("expected conn1 state to be preserved (row=2, col=5, scrollTop=1), got row=%d, col=%d, scrollTop=%d", m.vim.row, m.vim.col, m.scrollTop)
+	}
+
+	// Switch back to conn2
+	m.activateTabIndex(1)
+	if m.vim.row != 1 || m.vim.col != 3 || m.scrollTop != 0 {
+		t.Errorf("expected conn2 state to be preserved (row=1, col=3, scrollTop=0), got row=%d, col=%d, scrollTop=%d", m.vim.row, m.vim.col, m.scrollTop)
+	}
+}

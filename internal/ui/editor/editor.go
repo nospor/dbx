@@ -82,8 +82,10 @@ type Model struct {
 	focused bool
 
 	// Per-tab state: tabID -> lines
-	tabs        map[string][]string
-	activeTabID string
+	tabs         map[string][]string
+	tabVimState  map[string]*VimState
+	tabScrollTop map[string]int
+	activeTabID  string
 
 	// Visible tabs (ordered). When empty, editor is idle (activeTabID "").
 	openTabs     []TabInfo
@@ -122,11 +124,13 @@ type Model struct {
 // New creates a new editor model.
 func New(t theme.Theme) Model {
 	m := Model{
-		theme:       t,
-		tabs:        make(map[string][]string),
-		activeTabID: "",
-		vim:         newVimState(),
-		completer:   NewCompletionProvider(),
+		theme:        t,
+		tabs:         make(map[string][]string),
+		tabVimState:  make(map[string]*VimState),
+		tabScrollTop: make(map[string]int),
+		activeTabID:  "",
+		vim:          newVimState(),
+		completer:    NewCompletionProvider(),
 	}
 	m.switchToIdle()
 	return m
@@ -294,22 +298,72 @@ func (m *Model) setLines(lines []string) {
 	m.tabs[tabStoreKey(m.activeTabID)] = lines
 }
 
+func (m *Model) saveCurrentTabState() {
+	if m.activeTabID == "" {
+		return
+	}
+	if m.tabVimState == nil {
+		m.tabVimState = make(map[string]*VimState)
+	}
+	if m.tabScrollTop == nil {
+		m.tabScrollTop = make(map[string]int)
+	}
+	m.tabVimState[m.activeTabID] = m.vim
+	m.tabScrollTop[m.activeTabID] = m.scrollTop
+}
+
+func (m *Model) restoreTabState(tabID string) {
+	if tabID == "" {
+		return
+	}
+	if m.tabVimState == nil {
+		m.tabVimState = make(map[string]*VimState)
+	}
+	if m.tabScrollTop == nil {
+		m.tabScrollTop = make(map[string]int)
+	}
+	if state, ok := m.tabVimState[tabID]; ok && state != nil {
+		m.vim = state
+	} else {
+		m.vim = newVimState()
+		m.tabVimState[tabID] = m.vim
+	}
+	if top, ok := m.tabScrollTop[tabID]; ok {
+		m.scrollTop = top
+	} else {
+		m.scrollTop = 0
+		m.tabScrollTop[tabID] = 0
+	}
+}
+
+func (m *Model) deleteTabState(tabID string) {
+	if tabID == "" {
+		return
+	}
+	if m.tabVimState != nil {
+		delete(m.tabVimState, tabID)
+	}
+	if m.tabScrollTop != nil {
+		delete(m.tabScrollTop, tabID)
+	}
+}
+
 // SwitchConnection switches the editor to the tab for the given connection key.
 func (m *Model) SwitchConnection(key string) {
+	m.saveCurrentTabState()
 	m.activeTabID = key
 	m.ensureTab(key)
-	m.vim = newVimState()
-	m.scrollTop = 0
+	m.restoreTabState(key)
 	m.insertUndoSeeded = false
 }
 
 func (m *Model) switchToIdle() {
+	m.saveCurrentTabState()
 	m.openTabs = nil
 	m.activeTabIdx = 0
 	m.activeTabID = ""
 	m.ensureTab("")
-	m.vim = newVimState()
-	m.scrollTop = 0
+	m.restoreTabState("")
 	m.insertUndoSeeded = false
 	m.compVisible = false
 	m.closeHistoryPopup()
@@ -321,11 +375,11 @@ func (m *Model) activateTabIndex(i int) {
 	if i < 0 || i >= len(m.openTabs) {
 		return
 	}
+	m.saveCurrentTabState()
 	m.activeTabIdx = i
 	m.activeTabID = m.openTabs[i].ID
 	m.ensureTab(m.activeTabID)
-	m.vim = newVimState()
-	m.scrollTop = 0
+	m.restoreTabState(m.activeTabID)
 	m.insertUndoSeeded = false
 	m.compVisible = false
 	m.closeHistoryPopup()
@@ -452,15 +506,18 @@ func (m *Model) CloseActiveTab() *TabSwitchedMsg {
 	if idx < 0 || idx >= len(m.openTabs) {
 		idx = len(m.openTabs) - 1
 	}
+	closedTabID := m.openTabs[idx].ID
 	m.openTabs = append(m.openTabs[:idx], m.openTabs[idx+1:]...)
 	if len(m.openTabs) == 0 {
 		m.switchToIdle()
+		m.deleteTabState(closedTabID)
 		return &TabSwitchedMsg{ConnKey: ""}
 	}
 	if m.activeTabIdx >= len(m.openTabs) {
 		m.activeTabIdx = len(m.openTabs) - 1
 	}
 	m.activateTabIndex(m.activeTabIdx)
+	m.deleteTabState(closedTabID)
 	return &TabSwitchedMsg{ConnKey: m.activeTabID}
 }
 
