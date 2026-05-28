@@ -1,4 +1,49 @@
 
+## [1.0.1] - 2026-05-28
+
+### Features
+
+- *(editor)* Support multiple query tabs per connection/database ([f1c9622](https://github.com/nospor/dbx/commit/f1c9622901b23e5d581a268db8be25d3e38c2ea9))
+
+            - Add capability to open multiple query tabs for the same
+            connection/database.
+            - Assign unique sequence IDs (e.g. `#1`, `#2`) to tabs of the same
+            connection, showing dynamic numbering labels (e.g. `(2)`, `(3)`).
+            - Key the results pane cache and loading status by unique tab IDs so
+            each tab retains independent results.
+- *(ui/editor)* Remember cursor position and scroll state on tab switch ([5b09ba7](https://github.com/nospor/dbx/commit/5b09ba75f038c9307f5f31a0001afbc441eccd46))
+- Support JSON and MongoDB query code blocks in AI pane ([5976e72](https://github.com/nospor/dbx/commit/5976e7270c70fcb12e537e6948d5d141edbd91e4))
+
+### Bug Fixes
+
+- *(query)* Strip comments before classifying query execution type ([41c109b](https://github.com/nospor/dbx/commit/41c109bc1f3414ea53e4d3c6fa51ac1da5acc79a))
+
+            - Strips SQL comments before parsing the statement type to prevent
+            queries
+              with leading comments from being incorrectly routed to Exec.
+            - Adds PRAGMA, VALUES, and EXEC to the list of prefixes routed to Query.
+            - Fixes EXPLAIN query wrapping to ignore leading comments.
+            - Adds test cases for the explain wrapper with comments.
+
+### Performance
+
+- *(editor)* Optimize query editor rendering and scroll layout ([5ae22b1](https://github.com/nospor/dbx/commit/5ae22b1a6fa2a03601d4e43c9bad505bbd2b6454))
+
+            Avoid rendering-heavy syntax highlighting (Chroma) on non-visible lines
+            and wrapping calculations, removing O(N) lag on cursor movement in
+            large documents.
+            - Add `linePlainForWrap` helper to wrap plain text instead of
+            highlighted
+              text when calculating heights and cursor offsets.
+            - Skip highlighting logical lines in View() that are entirely scrolled
+              out of the viewport.
+            - Skip syntax highlighting on the active cursor line since it gets
+              rendered as plain text with a reverse-video cursor anyway.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.0 [skip ci] ([8c88953](https://github.com/nospor/dbx/commit/8c889537c3af7ff996119595f47bdfe0e9b9ed90))
+
 ## [1.0.0] - 2026-05-25
 
 ### Bug Fixes
