@@ -26,7 +26,8 @@ func WrapQueryForExplain(driver, query string) (wrapped string, ok bool) {
 }
 
 func queryAlreadyExplained(driver, query string) bool {
-	t := strings.TrimSpace(strings.ToUpper(query))
+	stripped := StripSQLComments(query)
+	t := strings.TrimSpace(strings.ToUpper(stripped))
 	if strings.HasPrefix(t, "EXPLAIN") {
 		return true
 	}

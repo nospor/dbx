@@ -20,6 +20,8 @@ func TestWrapQueryForExplain(t *testing.T) {
 		{"postgres", "EXPLAIN SELECT 1", "", false, true},
 		{"sqlite", "EXPLAIN QUERY PLAN SELECT 1", "", false, true},
 		{"mssql", "SET SHOWPLAN_ALL ON;\nSELECT 1", "", false, true},
+		{"postgres", "-- Some comment\nEXPLAIN SELECT 1", "", false, true},
+		{"postgres", "-- Some comment\nSELECT 1", "EXPLAIN -- Some comment\nSELECT 1", true, false},
 	}
 	for _, tt := range tests {
 		got, ok := WrapQueryForExplain(tt.driver, tt.in)

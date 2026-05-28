@@ -2149,12 +2149,14 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 		}
 
 		// Determine if SELECT or DML
-		trimmed := strings.TrimSpace(strings.ToUpper(query))
+		stripped := sqlutil.StripSQLComments(query)
+		trimmed := strings.TrimSpace(strings.ToUpper(stripped))
 		var result *db.QueryResult
 		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") ||
 			strings.HasPrefix(trimmed, "SHOW") || strings.HasPrefix(trimmed, "EXPLAIN") ||
 			strings.HasPrefix(trimmed, "DESCRIBE") || strings.HasPrefix(trimmed, "DESC") ||
-			strings.HasPrefix(trimmed, "SET SHOWPLAN_ALL ON") {
+			strings.HasPrefix(trimmed, "PRAGMA") || strings.HasPrefix(trimmed, "VALUES") ||
+			strings.HasPrefix(trimmed, "EXEC") || strings.HasPrefix(trimmed, "SET SHOWPLAN_ALL ON") {
 			result, err = driver.Query(ctx, dbName, query)
 		} else {
 			result, err = driver.Exec(ctx, dbName, query)
