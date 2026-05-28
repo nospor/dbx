@@ -59,4 +59,12 @@ go build -o dbx .
 ./dbx
 ```
 
+## Formatting & Linting
+
+All Go code must be properly formatted using `gofmt` before committing. Run the following command in the project root to format all files:
+
+```bash
+gofmt -w .
+```
+
 See `README.md` for keybindings and configuration.

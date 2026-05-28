@@ -59,7 +59,7 @@ type Model struct {
 	activeConnID  string
 	activeDB      string
 	activeTabID   string
-	drivers       map[string]db.Driver           // connID -> driver
+	drivers       map[string]db.Driver // connID -> driver
 	driversMu     sync.Mutex
 	schemaTables  map[string][]string            // connID:db -> tables/views
 	schemaViewSet map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)

@@ -46,4 +46,3 @@ type CopyRowMsg struct{}
 
 // CopyAllRowsMsg requests the app to copy all rows (or error message) to the clipboard.
 type CopyAllRowsMsg struct{}
-
