@@ -161,7 +161,7 @@ func TestCleanLineAndQuery(t *testing.T) {
 func TestMultiTabs(t *testing.T) {
 	t.Parallel()
 	m := New(theme.Dark())
-	
+
 	// Helper functions tests
 	if got := cleanTabID("conn#1"); got != "conn" {
 		t.Errorf("expected cleanTabID to be 'conn', got %q", got)

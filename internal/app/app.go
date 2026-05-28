@@ -846,7 +846,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			chat := m.aiStore.GetSession(msg.ConnKey)
 			// Only before AppendUserMessageAt: after append, len would always be ≥ 1.
 			if len(chat.Messages) == 0 {
-				sysPrefix = aiOutboundSystemPrefix
+				connID, _ := splitConnKey(msg.ConnKey)
+				if conn := m.findConn(connID); conn != nil && conn.Driver == "mongodb" {
+					sysPrefix = aiOutboundMongoSystemPrefix
+				} else {
+					sysPrefix = aiOutboundSystemPrefix
+				}
 			}
 		}
 		m.aiPane.AppendUserMessageAt(msg.ConnKey, transcript) // chat shows what the user sent (/results line or plain prompt)
@@ -1024,6 +1029,12 @@ const aiOutboundSystemPrefix = "You are a database assistant. This conversation 
 	"When you include SQL, wrap each query in a fenced code block exactly like this:\n```sql\n" +
 	"...your SQL here...\n```\n\n"
 
+const aiOutboundMongoSystemPrefix = "You are a database assistant. This conversation is about MongoDB and database data — " +
+	"NOT about source code or files. Do not search the filesystem or codebase. " +
+	"Answer questions about queries, data, and database structure.\n\n" +
+	"When you include MongoDB commands or queries, wrap each query in a fenced code block exactly like this:\n```json\n" +
+	"...your JSON query/command here...\n```\n\n"
+
 // collectAIMentionedTables returns unique table/view names from @tokens in the prompt.
 // @all expands to every table and view in the schema for connID:dbName.
 func (m *Model) collectAIMentionedTables(connID, dbName, userPrompt string) []string {
@@ -1087,7 +1098,11 @@ func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 		sqlPart = sqlPart[:aiResultsSQLMaxBytes] + "\n-- … query truncated for context size\n"
 	}
 	var sb strings.Builder
-	hdr := "## Results pane context\n\n### Query\n\n```sql\n" + sqlPart + "\n```\n\n### Rows (tab-separated)\n\n"
+	fence := "sql"
+	if r != nil && r.Driver == "mongodb" {
+		fence = "json"
+	}
+	hdr := "## Results pane context\n\n### Query\n\n```" + fence + "\n" + sqlPart + "\n```\n\n### Rows (tab-separated)\n\n"
 	if len(hdr) >= maxBytes {
 		return "## Results pane context\n\n(Context limit too small for query + rows.)\n\n"
 	}
@@ -1177,7 +1192,11 @@ func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) te
 								sb.WriteString("### `" + tbl + "`\n/* Error loading DDL: " + err.Error() + " */\n\n")
 								continue
 							}
-							sb.WriteString("### `" + tbl + "`\n```sql\n" + strings.TrimSpace(ddl) + "\n```\n\n")
+							fence := "sql"
+							if conn != nil && conn.Driver == "mongodb" {
+								fence = "json"
+							}
+							sb.WriteString("### `" + tbl + "`\n```" + fence + "\n" + strings.TrimSpace(ddl) + "\n```\n\n")
 						}
 					}
 				}

@@ -649,9 +649,49 @@ func (m Model) wrapPlainMarkdown(paragraph string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+func findNextQueryBlock(s string) (int, string) {
+	lower := strings.ToLower(s)
+	markers := []string{"```sql", "```json", "```javascript", "```js", "```mongo", "```mongodb"}
+	bestIdx := -1
+	bestMarker := ""
+	for _, m := range markers {
+		idx := strings.Index(lower, m)
+		if idx == -1 {
+			continue
+		}
+		if bestIdx == -1 || idx < bestIdx {
+			bestIdx = idx
+			bestMarker = m
+		}
+	}
+	if bestIdx != -1 {
+		return bestIdx, s[bestIdx : bestIdx+len(bestMarker)]
+	}
+	return -1, ""
+}
+
+func countQueryBlocks(s string) int {
+	count := 0
+	remaining := s
+	for {
+		idx, marker := findNextQueryBlock(remaining)
+		if idx == -1 {
+			break
+		}
+		after := remaining[idx+len(marker):]
+		endIdx := strings.Index(after, "```")
+		if endIdx == -1 {
+			break
+		}
+		count++
+		remaining = after[endIdx+3:]
+	}
+	return count
+}
+
 // renderMessage renders a single chat message with word-wrap and code block highlighting.
-// If isActiveSQL is true, the last SQL code block in this message uses a brighter foreground.
-// All SQL blocks use the same border so line wrapping matches (needed for cursor-based extraction).
+// If isActiveSQL is true, the last SQL/query code block in this message uses a brighter foreground.
+// All SQL/query blocks use the same border so line wrapping matches (needed for cursor-based extraction).
 func (m Model) renderMessage(sb *strings.Builder, role, content string, isActiveSQL bool, blocks *[]sqlBlockRaw) {
 	w := m.width
 	if w <= 4 {
@@ -675,7 +715,7 @@ func (m Model) renderMessage(sb *strings.Builder, role, content string, isActive
 		BorderForeground(lipgloss.Color("8")).
 		Width(w - 4)
 
-	// Active SQL block: brighter text, same border as normal so layout matches other fences.
+	// Active SQL/query block: brighter text, same border as normal so layout matches other fences.
 	activeCodeStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("11")).
 		Border(lipgloss.NormalBorder()).
@@ -686,12 +726,11 @@ func (m Model) renderMessage(sb *strings.Builder, role, content string, isActive
 	sb.WriteByte('\n')
 
 	remaining := content
-	sqlBlockCount := strings.Count(content, "```sql")
+	queryBlockCount := countQueryBlocks(content)
 	currentBlock := 0
 
 	for {
-		startMark := "```sql"
-		startIdx := strings.Index(remaining, startMark)
+		startIdx, startMark := findNextQueryBlock(remaining)
 		if startIdx == -1 {
 			sb.WriteString(m.wrapPlainMarkdown(remaining, w))
 			break
@@ -711,8 +750,8 @@ func (m Model) renderMessage(sb *strings.Builder, role, content string, isActive
 		code := strings.TrimSpace(after[:endIdx])
 		sb.WriteByte('\n')
 		regionStart := sb.Len()
-		// Highlight only the last SQL block in the last AI msg
-		if isActiveSQL && currentBlock == sqlBlockCount {
+		// Highlight only the last query block in the last AI msg
+		if isActiveSQL && currentBlock == queryBlockCount {
 			sb.WriteString(activeCodeStyle.Render(code))
 		} else {
 			sb.WriteString(normalCodeStyle.Render(code))
@@ -743,10 +782,10 @@ func (m *Model) refreshViewport() {
 	m.hasSQL = false
 	m.sqlRegions = nil
 
-	// Find index of last AI message that has a SQL block
+	// Find index of last AI message that has a query block
 	lastSQLIdx := -1
 	for i, msg := range chat.Messages {
-		if msg.Role == "ai" && strings.Contains(msg.Content, "```sql") {
+		if msg.Role == "ai" && countQueryBlocks(msg.Content) > 0 {
 			lastSQLIdx = i
 			m.hasSQL = true
 		}
@@ -1134,11 +1173,11 @@ func (m Model) extractLastSQLFallback() string {
 		remaining := msg.Content
 		var last string
 		for {
-			start := strings.Index(remaining, "```sql")
+			start, startMark := findNextQueryBlock(remaining)
 			if start == -1 {
 				break
 			}
-			rem := remaining[start+len("```sql"):]
+			rem := remaining[start+len(startMark):]
 			end := strings.Index(rem, "```")
 			if end == -1 {
 				break
