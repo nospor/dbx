@@ -1,4 +1,14 @@
 
+## [1.0.3] - 2026-05-28
+
+### Miscellaneous Tasks
+
+- Format codebase and add lint instructions to AGENTS.md ([aecf4cb](https://github.com/nospor/dbx/commit/aecf4cb6e2326bcf01dde423256698fabb236244))
+
+            - Format all Go source files with gofmt.
+            - Add code formatting/linting instructions to AGENTS.md to prevent
+            future GitHub Action check failures.
+
 ## [1.0.2] - 2026-05-28
 
 ### Features
