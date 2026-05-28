@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -59,6 +60,7 @@ type Model struct {
 	activeDB      string
 	activeTabID   string
 	drivers       map[string]db.Driver           // connID -> driver
+	driversMu     sync.Mutex
 	schemaTables  map[string][]string            // connID:db -> tables/views
 	schemaViewSet map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)
 	schemaCols    map[string][]string            // connID:db -> column tokens
@@ -669,6 +671,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case deleteConnMsg:
 		if node := m.explorer.SelectedNode(); node != nil {
+			m.driversMu.Lock()
+			if d, ok := m.drivers[node.ConnID]; ok && d != nil {
+				_ = d.Close()
+				delete(m.drivers, node.ConnID)
+			}
+			m.driversMu.Unlock()
 			for i, c := range m.cfg.Connections {
 				if c.ID == node.ConnID {
 					m.cfg.Connections = append(m.cfg.Connections[:i], m.cfg.Connections[i+1:]...)
@@ -1535,13 +1543,10 @@ func (m *Model) connectCmd(connID string) tea.Cmd {
 			}
 		}
 
-		driver, err := db.New(*conn)
-		if err != nil {
-			return dbDatabasesMsg{connID: connID, err: err}
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := driver.Connect(ctx, *conn); err != nil {
+		driver, err := m.getOrCreateDriver(ctx, connID)
+		if err != nil {
 			return dbDatabasesMsg{connID: connID, err: err}
 		}
 		dbs, err := driver.Databases(ctx)
@@ -1555,16 +1560,12 @@ func (m *Model) fetchSchemaCmd(connID, dbName string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		driver, err := db.New(*conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		driver, err := m.getOrCreateDriver(ctx, connID)
 		if err != nil {
 			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		if err := driver.Connect(ctx, *conn); err != nil {
-			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
-		}
-		defer driver.Close()
 		tables, err := driver.Tables(ctx, dbName)
 		if err != nil {
 			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
@@ -1584,16 +1585,12 @@ func (m *Model) fetchColumnsCmd(connID, dbName, table string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		driver, err := db.New(*conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		driver, err := m.getOrCreateDriver(ctx, connID)
 		if err != nil {
 			return dbColumnsMsg{connID: connID, dbName: dbName, table: table, err: err}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := driver.Connect(ctx, *conn); err != nil {
-			return dbColumnsMsg{connID: connID, dbName: dbName, table: table, err: err}
-		}
-		defer driver.Close()
 		cols, err := driver.Columns(ctx, dbName, table)
 		return dbColumnsMsg{connID: connID, dbName: dbName, table: table, columns: cols, err: err}
 	}
@@ -1615,18 +1612,10 @@ func (m *Model) buildDeleteDraftCmd(msg results.DeleteDraftRequestMsg) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		conn := m.findConn(m.activeConnID)
-		if conn == nil {
-			return results.DeleteDraftMsg{Err: "No active connection."}
-		}
-		drv, err := db.New(*conn)
+		drv, err := m.getOrCreateDriver(ctx, m.activeConnID)
 		if err != nil {
 			return results.DeleteDraftMsg{Err: err.Error()}
 		}
-		if err := drv.Connect(ctx, *conn); err != nil {
-			return results.DeleteDraftMsg{Err: err.Error()}
-		}
-		defer drv.Close()
 
 		schema, tbl := sqlutil.ParseTableRef(msg.TableExpr, msg.Driver)
 		var whereCols []string
@@ -1648,18 +1637,10 @@ func (m *Model) buildUpdateDraftCmd(msg results.UpdateDraftRequestMsg) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		conn := m.findConn(m.activeConnID)
-		if conn == nil {
-			return results.UpdateDraftMsg{Err: "No active connection."}
-		}
-		drv, err := db.New(*conn)
+		drv, err := m.getOrCreateDriver(ctx, m.activeConnID)
 		if err != nil {
 			return results.UpdateDraftMsg{Err: err.Error()}
 		}
-		if err := drv.Connect(ctx, *conn); err != nil {
-			return results.UpdateDraftMsg{Err: err.Error()}
-		}
-		defer drv.Close()
 
 		schema, tbl := sqlutil.ParseTableRef(msg.TableExpr, msg.Driver)
 		var whereCols []string
@@ -1707,16 +1688,12 @@ func (m *Model) fetchTableDDLCmd(connID, dbName, table string, isView bool) tea.
 		if conn == nil {
 			return tableDDLMsg{title: title, err: fmt.Errorf("no connection")}
 		}
-		drv, err := db.New(*conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		drv, err := m.getOrCreateDriver(ctx, connID)
 		if err != nil {
 			return tableDDLMsg{title: title, err: err}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		if err := drv.Connect(ctx, *conn); err != nil {
-			return tableDDLMsg{title: title, err: err}
-		}
-		defer drv.Close()
 		ddl, err := drv.TableDDL(ctx, dbName, table, isView)
 		return tableDDLMsg{title: title, ddl: ddl, err: err}
 	}
@@ -1728,16 +1705,12 @@ func (m *Model) exportAllDDLCmd(connID, dbName string) tea.Cmd {
 		if conn == nil {
 			return exportAllDDLResultMsg{err: fmt.Errorf("no connection found for ID %q", connID)}
 		}
-		drv, err := db.New(*conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		drv, err := m.getOrCreateDriver(ctx, connID)
 		if err != nil {
 			return exportAllDDLResultMsg{err: fmt.Errorf("failed to create driver: %w", err)}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		if err := drv.Connect(ctx, *conn); err != nil {
-			return exportAllDDLResultMsg{err: fmt.Errorf("failed to connect: %w", err)}
-		}
-		defer drv.Close()
 
 		tables, err := drv.Tables(ctx, dbName)
 		if err != nil {
@@ -2146,12 +2119,14 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 	connID := m.activeConnID
 	dbName := m.activeDB
 	tabID := m.editor.EditorConnKey()
-	conn := m.findConn(connID)
 	return func() tea.Msg {
 		start := time.Now()
-		if conn == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		driver, err := m.getOrCreateDriver(ctx, connID)
+		if err != nil {
 			return dbQueryResultMsg{
-				result:    &db.QueryResult{Error: "No active connection. Select a database in the explorer first."},
+				result:    &db.QueryResult{Error: err.Error()},
 				elapsed:   0,
 				sourceSQL: query,
 				connID:    connID,
@@ -2159,31 +2134,28 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 				tabID:     tabID,
 			}
 		}
-		driver, err := db.New(*conn)
-		if err != nil {
-			return dbQueryResultMsg{
-				result:    &db.QueryResult{Error: err.Error()},
-				sourceSQL: query,
-				connID:    connID,
-				dbName:    dbName,
-				tabID:     tabID,
-			}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := driver.Connect(ctx, *conn); err != nil {
-			return dbQueryResultMsg{
-				result:    &db.QueryResult{Error: err.Error()},
-				sourceSQL: query,
-				connID:    connID,
-				dbName:    dbName,
-				tabID:     tabID,
-			}
-		}
-		defer driver.Close()
 
 		if stmts, ok := sqlutil.SplitExecBatchDeleteUpdate(query); ok && len(stmts) > 1 {
 			return execDeleteUpdateBatch(ctx, driver, connID, dbName, tabID, stmts, start, query)
+		}
+
+		// Split on semicolons to check if there are multiple statements
+		parts := sqlutil.SplitSemicolonStatements(query)
+		var stmts []string
+		for _, part := range parts {
+			stmt := strings.TrimSpace(part)
+			if stmt == "" {
+				continue
+			}
+			// Skip if it only contains comments
+			if strings.TrimSpace(sqlutil.StripSQLComments(stmt)) == "" {
+				continue
+			}
+			stmts = append(stmts, stmt)
+		}
+
+		if len(stmts) > 1 {
+			return execMultiStatementBatch(ctx, driver, connID, dbName, tabID, stmts, start, query)
 		}
 
 		// Determine if SELECT or DML
@@ -2261,6 +2233,58 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName
 	}
 }
 
+// execMultiStatementBatch runs several arbitrary SQL statements sequentially on the same connection.
+func execMultiStatementBatch(ctx context.Context, driver db.Driver, connID, dbName, tabID string, stmts []string, start time.Time, sourceSQL string) dbQueryResultMsg {
+	var lastResult *db.QueryResult
+	for i, stmt := range stmts {
+		stripped := sqlutil.StripSQLComments(stmt)
+		trimmed := strings.TrimSpace(strings.ToUpper(stripped))
+		var result *db.QueryResult
+		var err error
+		if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") ||
+			strings.HasPrefix(trimmed, "SHOW") || strings.HasPrefix(trimmed, "EXPLAIN") ||
+			strings.HasPrefix(trimmed, "DESCRIBE") || strings.HasPrefix(trimmed, "DESC") ||
+			strings.HasPrefix(trimmed, "PRAGMA") || strings.HasPrefix(trimmed, "VALUES") ||
+			strings.HasPrefix(trimmed, "EXEC") || strings.HasPrefix(trimmed, "SET SHOWPLAN_ALL ON") {
+			result, err = driver.Query(ctx, dbName, stmt)
+		} else {
+			result, err = driver.Exec(ctx, dbName, stmt)
+		}
+		if err != nil {
+			return dbQueryResultMsg{
+				result:    &db.QueryResult{Error: fmt.Sprintf("statement %d: %v", i+1, err)},
+				elapsed:   time.Since(start),
+				sourceSQL: sourceSQL,
+				connID:    connID,
+				dbName:    dbName,
+				tabID:     tabID,
+			}
+		}
+		if result != nil && result.Error != "" {
+			return dbQueryResultMsg{
+				result:    &db.QueryResult{Error: fmt.Sprintf("statement %d: %s", i+1, result.Error)},
+				elapsed:   time.Since(start),
+				sourceSQL: sourceSQL,
+				connID:    connID,
+				dbName:    dbName,
+				tabID:     tabID,
+			}
+		}
+		lastResult = result
+	}
+	if lastResult == nil {
+		lastResult = &db.QueryResult{}
+	}
+	return dbQueryResultMsg{
+		result:    lastResult,
+		elapsed:   time.Since(start),
+		sourceSQL: sourceSQL,
+		connID:    connID,
+		dbName:    dbName,
+		tabID:     tabID,
+	}
+}
+
 // quickSelectQuery returns a driver-appropriate SELECT 100 query.
 func quickSelectQuery(driver, database, table string) string {
 	switch driver {
@@ -2317,6 +2341,12 @@ func (m *Model) setStatusPersistent(msg string) tea.Cmd {
 func (m *Model) handleConnFormSubmit(msg explorer.ConnFormSubmitMsg) (tea.Model, tea.Cmd) {
 	conn := msg.Conn
 	if msg.IsEdit {
+		m.driversMu.Lock()
+		if d, ok := m.drivers[conn.ID]; ok && d != nil {
+			_ = d.Close()
+			delete(m.drivers, conn.ID)
+		}
+		m.driversMu.Unlock()
 		for i, c := range m.cfg.Connections {
 			if c.ID == conn.ID {
 				m.cfg.Connections[i] = conn
@@ -2344,10 +2374,46 @@ func (m *Model) findConn(connID string) *config.Connection {
 	return nil
 }
 
+func (m *Model) getOrCreateDriver(ctx context.Context, connID string) (db.Driver, error) {
+	m.driversMu.Lock()
+	defer m.driversMu.Unlock()
+
+	if d, ok := m.drivers[connID]; ok && d != nil {
+		pingCtx, pingCancel := context.WithTimeout(ctx, 2*time.Second)
+		err := d.Ping(pingCtx)
+		pingCancel()
+		if err == nil {
+			return d, nil
+		}
+		_ = d.Close()
+		delete(m.drivers, connID)
+	}
+
+	conn := m.findConn(connID)
+	if conn == nil {
+		return nil, fmt.Errorf("connection config %s not found", connID)
+	}
+
+	driver, err := db.New(*conn)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := driver.Connect(ctx, *conn); err != nil {
+		return nil, err
+	}
+
+	m.drivers[connID] = driver
+	return driver, nil
+}
+
 func (m *Model) closeAllDrivers() {
+	m.driversMu.Lock()
+	defer m.driversMu.Unlock()
 	for _, d := range m.drivers {
 		_ = d.Close()
 	}
+	clear(m.drivers)
 }
 
 func (m *Model) persistPaneVisibility() {
