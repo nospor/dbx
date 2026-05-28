@@ -1119,9 +1119,8 @@ func (m Model) lineVisualForWrap(lines []string, i int) string {
 		return ""
 	}
 	lineStr := lines[i]
-	lineRunes := []rune(lineStr)
-	rendered := renderHighlighted(lineStr, m.theme)
 	if m.focused && i == m.vim.row {
+		lineRunes := []rune(lineStr)
 		col := m.vim.col
 		if col > len(lineRunes) {
 			col = len(lineRunes)
@@ -1137,10 +1136,38 @@ func (m Model) lineVisualForWrap(lines []string, i int) string {
 		if col+1 < len(lineRunes) {
 			after = string(lineRunes[col+1:])
 		}
-		_ = rendered
-		rendered = before + lipgloss.NewStyle().Reverse(true).Render(cursorChar) + after
+		return before + lipgloss.NewStyle().Reverse(true).Render(cursorChar) + after
 	}
-	return rendered
+	return renderHighlighted(lineStr, m.theme)
+}
+
+// linePlainForWrap returns a plain string matching the structure of lineVisualForWrap
+// but without syntax highlighting or styled ANSI codes, used for fast wrap/row-count calculations.
+func (m Model) linePlainForWrap(lines []string, i int) string {
+	if i < 0 || i >= len(lines) {
+		return ""
+	}
+	lineStr := lines[i]
+	if m.focused && i == m.vim.row {
+		lineRunes := []rune(lineStr)
+		col := m.vim.col
+		if col > len(lineRunes) {
+			col = len(lineRunes)
+		}
+		before := string(lineRunes[:col])
+		var cursorChar string
+		if col < len(lineRunes) {
+			cursorChar = string(lineRunes[col])
+		} else {
+			cursorChar = " "
+		}
+		after := ""
+		if col+1 < len(lineRunes) {
+			after = string(lineRunes[col+1:])
+		}
+		return before + cursorChar + after
+	}
+	return lineStr
 }
 
 // wrappedRowsForVisual returns display lines for one logical row after wrapping (same algorithm as lipgloss Width).
@@ -1159,7 +1186,7 @@ func wrappedRowsForVisual(visual string, width int) []string {
 }
 
 func (m Model) wrappedRowCount(lines []string, i, width int) int {
-	return len(wrappedRowsForVisual(m.lineVisualForWrap(lines, i), width))
+	return len(wrappedRowsForVisual(m.linePlainForWrap(lines, i), width))
 }
 
 // cursorSentinel marks the cursor column when mapping to wrapped rows (avoids ambiguous strings.Index).
@@ -1810,8 +1837,18 @@ func (m Model) View() string {
 	remainingSkip := m.scrollTop
 	emitted := 0
 	for i := 0; i < len(lines) && emitted < viewportRows; i++ {
+		plainVis := m.linePlainForWrap(lines, i)
+		plainWrapped := wrappedRowsForVisual(plainVis, width)
+		wCount := len(plainWrapped)
+
+		if remainingSkip >= wCount {
+			remainingSkip -= wCount
+			continue
+		}
+
 		vis := m.lineVisualForWrap(lines, i)
-		for _, p := range wrappedRowsForVisual(vis, width) {
+		wrapped := wrappedRowsForVisual(vis, width)
+		for _, p := range wrapped {
 			if remainingSkip > 0 {
 				remainingSkip--
 				continue
