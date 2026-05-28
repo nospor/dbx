@@ -120,6 +120,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	if m.result == nil {
 		return nil
 	}
+	if m.result.Error != "" {
+		switch msg.String() {
+		case "y":
+			return func() tea.Msg { return CopyCellMsg{} }
+		case "Y":
+			return func() tea.Msg { return CopyRowMsg{} }
+		case "c":
+			return func() tea.Msg { return CopyAllRowsMsg{} }
+		}
+		return nil
+	}
 	if m.showUpdatePopup {
 		return m.handleUpdatePopupKey(msg)
 	}
@@ -270,6 +281,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.insertDraftCmd()
 	case "u":
 		m.openUpdatePopup()
+	case "y":
+		return func() tea.Msg { return CopyCellMsg{} }
+	case "Y":
+		return func() tea.Msg { return CopyRowMsg{} }
+	case "c":
+		return func() tea.Msg { return CopyAllRowsMsg{} }
 	}
 	return nil
 }

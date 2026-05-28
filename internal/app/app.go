@@ -734,7 +734,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.persistEditorDraft()
 		return m, nil
 
-	case copyCellMsg:
+	case copyCellMsg, results.CopyCellMsg:
+		r := m.results.Result()
+		if r != nil && r.Error != "" {
+			if err := util.Copy(r.Error); err != nil {
+				cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
+			} else {
+				cmds = append(cmds, m.setStatus("Error message copied to clipboard."))
+			}
+			return m, tea.Batch(cmds...)
+		}
 		cell := m.results.SelectedCell()
 		if err := util.Copy(cell); err != nil {
 			cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
@@ -743,7 +752,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case copyRowMsg:
+	case copyRowMsg, results.CopyRowMsg:
+		r := m.results.Result()
+		if r != nil && r.Error != "" {
+			if err := util.Copy(r.Error); err != nil {
+				cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
+			} else {
+				cmds = append(cmds, m.setStatus("Error message copied to clipboard."))
+			}
+			return m, tea.Batch(cmds...)
+		}
 		row := m.results.SelectedRow()
 		if err := util.Copy(strings.Join(row, "\t")); err != nil {
 			cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
@@ -752,9 +770,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case copyAllRowsMsg:
+	case copyAllRowsMsg, results.CopyAllRowsMsg:
 		r := m.results.Result()
-		if r == nil || len(r.Columns) == 0 {
+		if r == nil {
+			cmds = append(cmds, m.setStatus("No results to copy."))
+			return m, tea.Batch(cmds...)
+		}
+		if r.Error != "" {
+			if err := util.Copy(r.Error); err != nil {
+				cmds = append(cmds, m.setStatus("Clipboard unavailable: "+err.Error()))
+			} else {
+				cmds = append(cmds, m.setStatus("Error message copied to clipboard."))
+			}
+			return m, tea.Batch(cmds...)
+		}
+		if len(r.Columns) == 0 {
 			cmds = append(cmds, m.setStatus("No results to copy."))
 			return m, tea.Batch(cmds...)
 		}

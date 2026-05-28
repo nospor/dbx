@@ -37,3 +37,13 @@ type UpdateDraftRequestMsg struct {
 	ColName   string // column being updated
 	NewValue  string // new value entered by the user
 }
+
+// CopyCellMsg requests the app to copy the selected cell (or error message) to the clipboard.
+type CopyCellMsg struct{}
+
+// CopyRowMsg requests the app to copy the selected row (or error message) to the clipboard.
+type CopyRowMsg struct{}
+
+// CopyAllRowsMsg requests the app to copy all rows (or error message) to the clipboard.
+type CopyAllRowsMsg struct{}
+

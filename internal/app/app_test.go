@@ -3,10 +3,13 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/robertn/dbx/internal/db"
+	"github.com/robertn/dbx/internal/ui/results"
+	"github.com/robertn/dbx/internal/ui/theme"
 )
 
 type mockDriver struct {
@@ -107,5 +110,27 @@ func TestGetOrCreateDriverCaching(t *testing.T) {
 
 	if drv2 != drv1 {
 		t.Fatal("expected returned driver to be the cached driver instance, but got a different one")
+	}
+}
+
+func TestCopyErrorMsg(t *testing.T) {
+	m := Model{
+		results: results.New(theme.Theme{}),
+	}
+	res := &results.QueryResult{
+		Error: "mock error details here",
+	}
+	m.results.SetResult(res)
+
+	// Dispatch copyCellMsg
+	m2, _ := m.Update(copyCellMsg{})
+	typedM, ok := m2.(Model)
+	if !ok {
+		t.Fatalf("expected updated model to be Model, got %T", m2)
+	}
+
+	// The statusMsg should contain either "Error message copied" or "Clipboard unavailable"
+	if !strings.Contains(typedM.statusMsg, "Error message") && !strings.Contains(typedM.statusMsg, "Clipboard unavailable") {
+		t.Fatalf("expected status message for error copy, got: %q", typedM.statusMsg)
 	}
 }
