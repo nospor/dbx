@@ -12,7 +12,7 @@
             - Key the results pane cache and loading status by unique tab IDs so
             each tab retains independent results.
 - *(ui/editor)* Remember cursor position and scroll state on tab switch ([5b09ba7](https://github.com/nospor/dbx/commit/5b09ba75f038c9307f5f31a0001afbc441eccd46))
-- Support JSON and MongoDB query code blocks in AI pane ([5976e72](https://github.com/nospor/dbx/commit/5976e7270c70fcb12e537e6948d5d141edbd91e4))
+- Support JSON and MongoDB query code blocks in AI pane ([44fbaa3](https://github.com/nospor/dbx/commit/44fbaa3ae5040f76f661181902ad20de7d1fb06a))
 
 ### Bug Fixes
 
