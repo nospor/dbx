@@ -57,13 +57,14 @@ type Model struct {
 	// Active connection state
 	activeConnID  string
 	activeDB      string
+	activeTabID   string
 	drivers       map[string]db.Driver           // connID -> driver
 	schemaTables  map[string][]string            // connID:db -> tables/views
 	schemaViewSet map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)
 	schemaCols    map[string][]string            // connID:db -> column tokens
 	tableCols     map[string][]db.ColumnInfo     // connID:db:table -> columns (cache + explorer)
 
-	// Per editor-tab results for this session only (key = connID:dbName).
+	// Per editor-tab results for this session only (key = tabID).
 	tabResultCache   map[string]*results.QueryResult
 	tabResultLoading map[string]bool
 
@@ -102,7 +103,7 @@ func newEditorWithDrafts(t theme.Theme, drafts map[string]string, cfg *config.Co
 	keys := ot.Keys()
 	valid := make([]string, 0, len(keys))
 	for _, k := range keys {
-		connID, _ := splitConnKey(k)
+		connID, _ := splitConnKey(cleanTabID(k))
 		found := false
 		for _, c := range cfg.Connections {
 			if c.ID == connID {
@@ -168,7 +169,7 @@ func New(cfg *config.Config, workDir string) Model {
 		workDir:          workDir,
 	}
 	if kt := m.editor.OpenTabKeys(); len(kt) > 0 {
-		connID, dbName := splitConnKey(m.editor.EditorConnKey())
+		connID, dbName := splitConnKey(cleanTabID(m.editor.EditorConnKey()))
 		m.activeConnID = connID
 		m.activeDB = dbName
 		if connID != "" && dbName != "" {
@@ -400,6 +401,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sub := m.syncActiveFromEditorTab(msg.ConnKey)
 		return m, tea.Batch(sub...)
 
+	case newTabMsg:
+		if switched := m.editor.OpenNewTab(); switched != nil {
+			sub := m.syncActiveFromEditorTab(switched.ConnKey)
+			cmds = append(cmds, sub...)
+		}
+		return m, tea.Batch(cmds...)
+
 	case closeTabPromptMsg:
 		if len(m.editor.OpenTabKeys()) == 0 {
 			return m, m.setStatus("No tab to close.")
@@ -471,7 +479,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.result == nil {
 			msg.result = &db.QueryResult{Error: "internal error: nil query result"}
 		}
-		k := m.tabResultCacheKey(msg.connID, msg.dbName)
+		k := msg.tabID
+		if k == "" {
+			k = msg.connID + ":" + msg.dbName
+		}
 		if k != "" {
 			m.tabResultLoading[k] = false
 		}
@@ -491,7 +502,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if k != "" {
 			m.tabResultCache[k] = results.CloneQueryResult(qr)
 		}
-		belongsToActive := m.tabResultCacheKey(msg.connID, msg.dbName) == m.tabResultCacheKey(m.activeConnID, m.activeDB)
+		belongsToActive := k == m.editor.EditorConnKey()
 		if belongsToActive {
 			m.results.SetResult(qr)
 		}
@@ -914,16 +925,8 @@ func (m *Model) connKey() string {
 	return m.activeConnID + ":" + m.activeDB
 }
 
-// tabResultCacheKey matches editor tab keys (connID:dbName).
-func (m *Model) tabResultCacheKey(connID, dbName string) string {
-	if connID == "" {
-		return ""
-	}
-	return connID + ":" + dbName
-}
-
 func (m *Model) syncIsLoadingWithActiveTab() {
-	k := m.tabResultCacheKey(m.activeConnID, m.activeDB)
+	k := m.editor.EditorConnKey()
 	if k == "" {
 		m.isLoading = false
 		return
@@ -931,25 +934,23 @@ func (m *Model) syncIsLoadingWithActiveTab() {
 	m.isLoading = m.tabResultLoading[k]
 }
 
-func (m *Model) stashResultsForTab(connID, dbName string) {
-	k := m.tabResultCacheKey(connID, dbName)
-	if k == "" {
+func (m *Model) stashResultsForTab(tabID string) {
+	if tabID == "" {
 		return
 	}
-	m.tabResultCache[k] = results.CloneQueryResult(m.results.Result())
-	m.tabResultLoading[k] = m.results.Loading()
+	m.tabResultCache[tabID] = results.CloneQueryResult(m.results.Result())
+	m.tabResultLoading[tabID] = m.results.Loading()
 }
 
-func (m *Model) applyResultsForTab(connID, dbName string) {
-	k := m.tabResultCacheKey(connID, dbName)
-	if k == "" {
+func (m *Model) applyResultsForTab(tabID string) {
+	if tabID == "" {
 		m.results.SetResult(nil)
 		m.results.SetLoading(false)
 		m.isLoading = false
 		return
 	}
-	loading := m.tabResultLoading[k]
-	r := m.tabResultCache[k]
+	loading := m.tabResultLoading[tabID]
+	r := m.tabResultCache[tabID]
 	if r != nil {
 		m.results.SetResult(r)
 	} else {
@@ -962,7 +963,7 @@ func (m *Model) applyResultsForTab(connID, dbName string) {
 }
 
 func (m *Model) beginQueryForActiveTab() {
-	k := m.tabResultCacheKey(m.activeConnID, m.activeDB)
+	k := m.editor.EditorConnKey()
 	if k == "" {
 		m.results.SetLoading(true)
 		m.isLoading = true
@@ -996,6 +997,13 @@ func schemaKey(connID, dbName string) string {
 		return ""
 	}
 	return connID + ":" + dbName
+}
+
+func cleanTabID(tabID string) string {
+	if idx := strings.LastIndex(tabID, "#"); idx != -1 {
+		return tabID[:idx]
+	}
+	return tabID
 }
 
 func (m *Model) applyEditorSchema(connID, dbName string) {
@@ -1271,6 +1279,7 @@ func (m *Model) openPalette() {
 			{Key: "x", Description: "Execute query (enter)", Action: func() tea.Msg { return execQueryFromPaletteMsg{} }},
 			{Key: "e", Description: "Explain current query", Action: func() tea.Msg { return explainQueryFromPaletteMsg{} }},
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
+			{Key: "n", Description: "New tab", Action: func() tea.Msg { return newTabMsg{} }},
 			{Key: "D", Description: "Close tab (confirm)", Action: func() tea.Msg { return closeTabPromptMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
@@ -1321,22 +1330,24 @@ func (m *Model) persistOpenTabs() {
 // syncActiveFromEditorTab applies app + explorer state when the editor active tab changes (keyboard).
 func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 	var cmds []tea.Cmd
+	prevTabID := m.activeTabID
 	prevConn, prevDB := m.activeConnID, m.activeDB
 	if connKey == "" {
 		if prevConn != "" {
 			m.explorer.CollapseConnection(prevConn)
 		}
-		m.stashResultsForTab(prevConn, prevDB)
+		m.stashResultsForTab(prevTabID)
 		m.activeConnID = ""
 		m.activeDB = ""
-		m.applyResultsForTab("", "")
+		m.activeTabID = ""
+		m.applyResultsForTab("")
 		m.pruneTabResultsCache()
 		m.persistOpenTabs()
 		m.aiPane.SetConnKey("")
 		return cmds
 	}
-	connID, dbName := splitConnKey(connKey)
-	m.stashResultsForTab(prevConn, prevDB)
+	connID, dbName := splitConnKey(cleanTabID(connKey))
+	m.stashResultsForTab(prevTabID)
 	if prevConn != "" && (prevConn != connID || prevDB != dbName) {
 		if prevConn != connID {
 			m.explorer.CollapseConnection(prevConn)
@@ -1348,7 +1359,8 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 	}
 	m.activeConnID = connID
 	m.activeDB = dbName
-	m.applyResultsForTab(connID, dbName)
+	m.activeTabID = connKey
+	m.applyResultsForTab(connKey)
 	m.pruneTabResultsCache()
 	if m.explorer.SelectDatabaseNode(connID, dbName) {
 		// Aligning the tree does not run the same path as Enter on a database (handleExplorerSelect),
@@ -1365,7 +1377,7 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 	}
 	m.applyEditorSchema(connID, dbName)
 	if m.history != nil {
-		entries := m.history.ForKey(connKey)
+		entries := m.history.ForKey(cleanTabID(connKey))
 		queries := make([]string, len(entries))
 		for i, e := range entries {
 			queries[i] = e.Query
@@ -1373,7 +1385,7 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 		m.editor.SetHistory(queries)
 	}
 	m.persistOpenTabs()
-	m.aiPane.SetConnKey(connKey)
+	m.aiPane.SetConnKey(cleanTabID(connKey))
 	return cmds
 }
 
@@ -1381,12 +1393,13 @@ func (m *Model) syncActiveFromEditorTab(connKey string) []tea.Cmd {
 // Call before any explorer action that should show that database's query pane (expand/collapse/select table).
 func (m *Model) activateExplorerDatabase(connID, dbName string) {
 	m.persistEditorDraft()
-	prevConn, prevDB := m.activeConnID, m.activeDB
-	m.stashResultsForTab(prevConn, prevDB)
+	prevTabID := m.activeTabID
+	m.stashResultsForTab(prevTabID)
 	m.activeConnID = connID
 	m.activeDB = dbName
-	m.applyResultsForTab(connID, dbName)
 	m.editor.OpenTab(m.connKey(), m.tabLabelForConn(connID, dbName))
+	m.activeTabID = m.editor.EditorConnKey()
+	m.applyResultsForTab(m.activeTabID)
 	m.pruneTabResultsCache()
 	m.persistOpenTabs()
 	m.applyEditorSchema(connID, dbName)
@@ -1857,6 +1870,8 @@ const helpScreenText = `
   EDITOR (Normal mode)
     tab         Next query tab
     shift+tab   Previous query tab
+    space+n     New query tab next to current tab
+    space+D     Close active tab (confirm popup)
     i/o         Enter insert mode
     enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
     u           Undo edit (whole insert session until esc; normal edits undo separately)
@@ -1913,7 +1928,7 @@ const helpScreenText = `
 
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
-    Editor:     x=execute  e=explain  c=clear  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    Editor:     x=execute  e=explain  c=clear  n=new tab  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
     Results:    y=copy cell  Y=copy row  c=copy all (headers)  e=export CSV  j=export JSON  t=toggle explorer  a=toggle AI pane  f=fullscreen
     AI:         t=toggle explorer  a=toggle AI pane  f=fullscreen
 `
@@ -2111,6 +2126,7 @@ func (m Model) renderDDLPopupBorderLine(width int, label string, top bool) strin
 func (m *Model) execQueryCmd(query string) tea.Cmd {
 	connID := m.activeConnID
 	dbName := m.activeDB
+	tabID := m.editor.EditorConnKey()
 	conn := m.findConn(connID)
 	return func() tea.Msg {
 		start := time.Now()
@@ -2121,6 +2137,7 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 				sourceSQL: query,
 				connID:    connID,
 				dbName:    dbName,
+				tabID:     tabID,
 			}
 		}
 		driver, err := db.New(*conn)
@@ -2130,6 +2147,7 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 				sourceSQL: query,
 				connID:    connID,
 				dbName:    dbName,
+				tabID:     tabID,
 			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2140,12 +2158,13 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 				sourceSQL: query,
 				connID:    connID,
 				dbName:    dbName,
+				tabID:     tabID,
 			}
 		}
 		defer driver.Close()
 
 		if stmts, ok := sqlutil.SplitExecBatchDeleteUpdate(query); ok && len(stmts) > 1 {
-			return execDeleteUpdateBatch(ctx, driver, connID, dbName, stmts, start, query)
+			return execDeleteUpdateBatch(ctx, driver, connID, dbName, tabID, stmts, start, query)
 		}
 
 		// Determine if SELECT or DML
@@ -2173,13 +2192,14 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 			sourceSQL: query,
 			connID:    connID,
 			dbName:    dbName,
+			tabID:     tabID,
 		}
 	}
 }
 
 // execDeleteUpdateBatch runs several DELETE/UPDATE statements sequentially (drivers often
 // reject multiple statements in a single Exec call).
-func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName string, stmts []string, start time.Time, sourceSQL string) dbQueryResultMsg {
+func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName, tabID string, stmts []string, start time.Time, sourceSQL string) dbQueryResultMsg {
 	var rows [][]string
 	for i, stmt := range stmts {
 		result, err := driver.Exec(ctx, dbName, stmt)
@@ -2190,6 +2210,7 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName
 				sourceSQL: sourceSQL,
 				connID:    connID,
 				dbName:    dbName,
+				tabID:     tabID,
 			}
 		}
 		if result != nil && result.Error != "" {
@@ -2199,6 +2220,7 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName
 				sourceSQL: sourceSQL,
 				connID:    connID,
 				dbName:    dbName,
+				tabID:     tabID,
 			}
 		}
 		ra := "0"
@@ -2216,6 +2238,7 @@ func execDeleteUpdateBatch(ctx context.Context, driver db.Driver, connID, dbName
 		sourceSQL: sourceSQL,
 		connID:    connID,
 		dbName:    dbName,
+		tabID:     tabID,
 	}
 }
 

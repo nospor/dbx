@@ -23,7 +23,7 @@ func cloneLines(lines []string) []string {
 }
 
 func (m *Model) tabUndoKey() string {
-	return tabStoreKey(m.connKey)
+	return tabStoreKey(m.activeTabID)
 }
 
 func (m *Model) ensureTabUndo() *tabUndoState {

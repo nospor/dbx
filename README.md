@@ -13,7 +13,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Tab autocomplete** for table names, column names, and SQL keywords (columns are loaded automatically when you expand a database / refresh schema—no need to open each table first)
 - **Query history** per connection/database — `ctrl+p` / `ctrl+n` replace the buffer with older/newer entries; `backspace` (normal mode) opens a **filterable** popup — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
-- **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs are restored on startup (`open-tabs.json`)
+- **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `n` opens a new tab for the active connection next to the current tab; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs are restored on startup (`open-tabs.json`)
 - **Folder-scoped tabs and drafts** (optional) — set **`folder_based`** to **`true`** in `config.json` so open tabs and query drafts are grouped by the **directory you start dbx from** (`cd` into project A vs project B). Data still lives under `~/.cache/dbx` (or `$XDG_CACHE_HOME/dbx`); nothing is written inside your project folders
 - **Command palette** (**space**, then a letter) with context-aware commands per panel (`n` add connection in explorer; `a` toggles AI pane from explorer / editor / results / AI)
 - **Fullscreen** any panel with space+f
@@ -220,7 +220,7 @@ Press **space** to open the palette, then the **second** key (e.g. **space** the
 | Panel    | Commands                                                                                                              |
 | -------- | --------------------------------------------------------------------------------------------------------------------- |
 | Explorer | `n` add connection, `e` edit, `d` delete, `v` show DDL, `V` export all DDLs, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen        |
-| Editor   | `x` execute, `e` explain, `c` clear, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| Editor   | `x` execute, `e` explain, `c` clear, `n` new tab, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | Results  | `y` copy cell, `Y` copy row, `c` copy all rows (headers), `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                                               |
 

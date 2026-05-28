@@ -21,6 +21,7 @@ type dbQueryResultMsg struct {
 	sourceSQL string // statement that was executed (for results delete drafts)
 	connID    string // connection/db the query ran under (for per-tab results)
 	dbName    string
+	tabID     string
 }
 
 // dbSchemaMsg carries the result of an async schema fetch.
@@ -126,3 +127,6 @@ type aiPreparedPromptMsg struct {
 
 // closeTabPromptMsg asks to close the current editor tab (confirmation follows).
 type closeTabPromptMsg struct{}
+
+// newTabMsg triggers creating a new tab for the active connection.
+type newTabMsg struct{}

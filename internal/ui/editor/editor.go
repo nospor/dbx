@@ -3,6 +3,7 @@ package editor
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -48,6 +49,23 @@ func tabStoreKey(connKey string) string {
 	return connKey
 }
 
+func cleanTabID(tabID string) string {
+	if idx := strings.LastIndex(tabID, "#"); idx != -1 {
+		return tabID[:idx]
+	}
+	return tabID
+}
+
+func tabLabelSuffix(tabID string) string {
+	if idx := strings.LastIndex(tabID, "#"); idx != -1 {
+		suffix := tabID[idx+1:]
+		if val, err := strconv.Atoi(suffix); err == nil {
+			return fmt.Sprintf(" (%d)", val+1)
+		}
+	}
+	return ""
+}
+
 // editorTopGutterLines is blank rows between the tab bar and query text.
 const editorTopGutterLines = 1
 
@@ -63,11 +81,11 @@ type Model struct {
 	height  int
 	focused bool
 
-	// Per-connection state: connKey -> lines
-	tabs    map[string][]string
-	connKey string
+	// Per-tab state: tabID -> lines
+	tabs        map[string][]string
+	activeTabID string
 
-	// Visible tabs (ordered). When empty, editor is idle (connKey "").
+	// Visible tabs (ordered). When empty, editor is idle (activeTabID "").
 	openTabs     []TabInfo
 	activeTabIdx int
 
@@ -104,11 +122,11 @@ type Model struct {
 // New creates a new editor model.
 func New(t theme.Theme) Model {
 	m := Model{
-		theme:     t,
-		tabs:      make(map[string][]string),
-		connKey:   "",
-		vim:       newVimState(),
-		completer: NewCompletionProvider(),
+		theme:       t,
+		tabs:        make(map[string][]string),
+		activeTabID: "",
+		vim:         newVimState(),
+		completer:   NewCompletionProvider(),
 	}
 	m.switchToIdle()
 	return m
@@ -266,19 +284,19 @@ func (m *Model) ensureTab(key string) {
 }
 
 func (m *Model) lines() []string {
-	return m.tabs[tabStoreKey(m.connKey)]
+	return m.tabs[tabStoreKey(m.activeTabID)]
 }
 
 func (m *Model) setLines(lines []string) {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	m.tabs[tabStoreKey(m.connKey)] = lines
+	m.tabs[tabStoreKey(m.activeTabID)] = lines
 }
 
 // SwitchConnection switches the editor to the tab for the given connection key.
 func (m *Model) SwitchConnection(key string) {
-	m.connKey = key
+	m.activeTabID = key
 	m.ensureTab(key)
 	m.vim = newVimState()
 	m.scrollTop = 0
@@ -288,7 +306,7 @@ func (m *Model) SwitchConnection(key string) {
 func (m *Model) switchToIdle() {
 	m.openTabs = nil
 	m.activeTabIdx = 0
-	m.connKey = ""
+	m.activeTabID = ""
 	m.ensureTab("")
 	m.vim = newVimState()
 	m.scrollTop = 0
@@ -304,8 +322,8 @@ func (m *Model) activateTabIndex(i int) {
 		return
 	}
 	m.activeTabIdx = i
-	m.connKey = m.openTabs[i].ConnKey
-	m.ensureTab(m.connKey)
+	m.activeTabID = m.openTabs[i].ID
+	m.ensureTab(m.activeTabID)
 	m.vim = newVimState()
 	m.scrollTop = 0
 	m.insertUndoSeeded = false
@@ -316,21 +334,23 @@ func (m *Model) activateTabIndex(i int) {
 }
 
 // RestoreOpenTabs rebuilds visible tabs from persisted keys (after SeedQueryTabs).
-// activeKey is the connID:database key for the tab that should be selected; if empty or not found, the first tab is activated.
+// activeKey is the active tab ID for the tab that should be selected; if empty or not found, the first tab is activated.
 func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(string) string) {
 	m.openTabs = m.openTabs[:0]
 	for _, k := range keys {
 		if k == "" || k == "_" {
 			continue
 		}
+		connKey := cleanTabID(k)
 		lbl := ""
 		if labelFor != nil {
-			lbl = labelFor(k)
+			lbl = labelFor(connKey)
 		}
 		if lbl == "" {
-			lbl = k
+			lbl = connKey
 		}
-		m.openTabs = append(m.openTabs, TabInfo{ConnKey: k, Label: lbl})
+		lbl += tabLabelSuffix(k)
+		m.openTabs = append(m.openTabs, TabInfo{ID: k, ConnKey: connKey, Label: lbl})
 		m.ensureTab(k)
 	}
 	if len(m.openTabs) == 0 {
@@ -340,7 +360,7 @@ func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(s
 	idx := 0
 	if activeKey != "" {
 		for i, t := range m.openTabs {
-			if t.ConnKey == activeKey {
+			if t.ID == activeKey {
 				idx = i
 				break
 			}
@@ -354,6 +374,15 @@ func (m *Model) OpenTab(connKey, label string) {
 	if connKey == "" {
 		return
 	}
+	// If currently active tab already matches the requested connKey, stay on it!
+	if m.activeTabIdx >= 0 && m.activeTabIdx < len(m.openTabs) {
+		if m.openTabs[m.activeTabIdx].ConnKey == connKey {
+			if label != "" {
+				m.openTabs[m.activeTabIdx].Label = label
+			}
+			return
+		}
+	}
 	for i, t := range m.openTabs {
 		if t.ConnKey == connKey {
 			if label != "" {
@@ -363,8 +392,55 @@ func (m *Model) OpenTab(connKey, label string) {
 			return
 		}
 	}
-	m.openTabs = append(m.openTabs, TabInfo{ConnKey: connKey, Label: label})
+	m.openTabs = append(m.openTabs, TabInfo{ID: connKey, ConnKey: connKey, Label: label})
 	m.activateTabIndex(len(m.openTabs) - 1)
+}
+
+func (m *Model) generateUniqueTabID(connKey string) (string, string) {
+	// Find a unique ID
+	for i := 1; ; i++ {
+		candidateID := fmt.Sprintf("%s#%d", connKey, i)
+		exists := false
+		for _, t := range m.openTabs {
+			if t.ID == candidateID {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return candidateID, fmt.Sprintf(" (%d)", i+1)
+		}
+	}
+}
+
+// OpenNewTab creates a new empty tab for the active connection.
+func (m *Model) OpenNewTab() *TabSwitchedMsg {
+	if len(m.openTabs) == 0 {
+		return nil
+	}
+	activeTab := m.openTabs[m.activeTabIdx]
+	connKey := activeTab.ConnKey
+
+	// Generate unique tab ID and label suffix
+	tabID, suffix := m.generateUniqueTabID(connKey)
+
+	// Visual label: base label of the active tab (without sequence suffix) + new suffix
+	baseLabel := strings.TrimSuffix(activeTab.Label, tabLabelSuffix(activeTab.ID))
+	newLabel := baseLabel + suffix
+
+	newTab := TabInfo{
+		ID:      tabID,
+		ConnKey: connKey,
+		Label:   newLabel,
+	}
+
+	insertIdx := m.activeTabIdx + 1
+	m.openTabs = append(m.openTabs, TabInfo{})
+	copy(m.openTabs[insertIdx+1:], m.openTabs[insertIdx:])
+	m.openTabs[insertIdx] = newTab
+
+	m.activateTabIndex(insertIdx)
+	return &TabSwitchedMsg{ConnKey: m.activeTabID}
 }
 
 // CloseActiveTab removes the current tab. Returns a message for the app if the connection changed.
@@ -385,7 +461,7 @@ func (m *Model) CloseActiveTab() *TabSwitchedMsg {
 		m.activeTabIdx = len(m.openTabs) - 1
 	}
 	m.activateTabIndex(m.activeTabIdx)
-	return &TabSwitchedMsg{ConnKey: m.connKey}
+	return &TabSwitchedMsg{ConnKey: m.activeTabID}
 }
 
 // CycleTab moves the active tab by delta (-1 or +1). Returns nil if unchanged.
@@ -398,7 +474,7 @@ func (m *Model) CycleTab(delta int) *TabSwitchedMsg {
 		m.activeTabIdx += len(m.openTabs)
 	}
 	m.activateTabIndex(m.activeTabIdx)
-	return &TabSwitchedMsg{ConnKey: m.connKey}
+	return &TabSwitchedMsg{ConnKey: m.activeTabID}
 }
 
 // OpenTabKeys returns conn keys in tab order for persistence.
@@ -408,14 +484,14 @@ func (m Model) OpenTabKeys() []string {
 	}
 	out := make([]string, len(m.openTabs))
 	for i, t := range m.openTabs {
-		out[i] = t.ConnKey
+		out[i] = t.ID
 	}
 	return out
 }
 
 // EditorConnKey returns the logical connection key for the active tab (may be "").
 func (m Model) EditorConnKey() string {
-	return m.connKey
+	return m.activeTabID
 }
 
 // TabText returns the full buffer for the active tab.
@@ -424,7 +500,7 @@ func (m Model) TabText() string {
 }
 
 func (m *Model) queryPanePersistCmd() tea.Cmd {
-	persistKey := m.connKey
+	persistKey := m.activeTabID
 	persistText := m.TabText()
 	return func() tea.Msg {
 		return QueryPanePersistMsg{ConnKey: persistKey, Text: persistText}
@@ -489,7 +565,7 @@ func (m *Model) WrapCurrentQueryExplain(driver string) bool {
 
 // SetContent replaces the current tab content (e.g. when pressing 's' in explorer).
 func (m *Model) SetContent(content string) {
-	m.clearTabUndo(tabStoreKey(m.connKey))
+	m.clearTabUndo(tabStoreKey(m.activeTabID))
 	m.setLines(strings.Split(content, "\n"))
 	m.vim.row = len(m.lines()) - 1
 	m.vim.col = 0

@@ -157,3 +157,74 @@ func TestCleanLineAndQuery(t *testing.T) {
 		}
 	})
 }
+
+func TestMultiTabs(t *testing.T) {
+	t.Parallel()
+	m := New(theme.Dark())
+	
+	// Helper functions tests
+	if got := cleanTabID("conn#1"); got != "conn" {
+		t.Errorf("expected cleanTabID to be 'conn', got %q", got)
+	}
+	if got := cleanTabID("conn"); got != "conn" {
+		t.Errorf("expected cleanTabID to be 'conn', got %q", got)
+	}
+	if got := tabLabelSuffix("conn#1"); got != " (2)" {
+		t.Errorf("expected suffix to be ' (2)', got %q", got)
+	}
+	if got := tabLabelSuffix("conn"); got != "" {
+		t.Errorf("expected suffix to be empty, got %q", got)
+	}
+
+	// Tab opening tests
+	m.OpenTab("conn1", "Conn 1")
+	if len(m.openTabs) != 1 || m.openTabs[0].ID != "conn1" || m.openTabs[0].Label != "Conn 1" {
+		t.Errorf("expected one tab 'conn1', got %#v", m.openTabs)
+	}
+
+	// Open another tab for the same connection key using OpenNewTab
+	switched := m.OpenNewTab()
+	if switched == nil {
+		t.Fatal("expected OpenNewTab to return non-nil switched msg")
+	}
+	if len(m.openTabs) != 2 {
+		t.Fatalf("expected 2 tabs, got %d", len(m.openTabs))
+	}
+	if m.openTabs[1].ID != "conn1#1" || m.openTabs[1].Label != "Conn 1 (2)" {
+		t.Errorf("expected second tab ID 'conn1#1' and Label 'Conn 1 (2)', got ID %q, Label %q", m.openTabs[1].ID, m.openTabs[1].Label)
+	}
+	if m.activeTabIdx != 1 || m.activeTabID != "conn1#1" {
+		t.Errorf("expected active tab index 1, ID 'conn1#1', got index %d, ID %q", m.activeTabIdx, m.activeTabID)
+	}
+
+	// SwitchedMsg should carry the active tab ID
+	if switched.ConnKey != "conn1#1" {
+		t.Errorf("expected switched.ConnKey to be 'conn1#1', got %q", switched.ConnKey)
+	}
+
+	// OpenTab on same connection key should stay on current active tab (conn1#1) because it has the same ConnKey
+	m.OpenTab("conn1", "Conn 1")
+	if m.activeTabIdx != 1 || m.activeTabID != "conn1#1" {
+		t.Errorf("expected to stay on active tab index 1, got index %d, ID %q", m.activeTabIdx, m.activeTabID)
+	}
+
+	// Verify insertion position.
+	// Currently m.openTabs is: [conn1, conn1#1]
+	// Let's activate the first tab (index 0)
+	m.activateTabIndex(0)
+	// Now call OpenNewTab. It should insert the new tab at index 1.
+	// The list should become: [conn1, conn1#2, conn1#1]
+	switched2 := m.OpenNewTab()
+	if switched2 == nil {
+		t.Fatal("expected OpenNewTab to return non-nil switched msg")
+	}
+	if len(m.openTabs) != 3 {
+		t.Fatalf("expected 3 tabs, got %d", len(m.openTabs))
+	}
+	if m.openTabs[0].ID != "conn1" || m.openTabs[1].ID != "conn1#2" || m.openTabs[2].ID != "conn1#1" {
+		t.Errorf("unexpected tab order: got ID[0]=%q, ID[1]=%q, ID[2]=%q", m.openTabs[0].ID, m.openTabs[1].ID, m.openTabs[2].ID)
+	}
+	if m.activeTabIdx != 1 || m.activeTabID != "conn1#2" {
+		t.Errorf("expected active tab index 1, ID 'conn1#2', got index %d, ID %q", m.activeTabIdx, m.activeTabID)
+	}
+}
