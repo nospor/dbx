@@ -41,10 +41,12 @@ type Model struct {
 	scrollLeft int
 	loading    bool
 
-	showCellPopup          bool
-	cellPopupTop           int
-	cellPopupMsg           string
-	cellPopupJSONFormatted bool
+	showCellPopup           bool
+	cellPopupTop            int
+	cellPopupMsg            string
+	cellPopupJSONFormatted  bool
+	cellPopupLines          []string
+	cellPopupScrollbarLines []string
 
 	// Row marks for bulk delete draft (s / S); rangeSelect + rangeAnchor for Shift+S band selection
 	selectedRows map[int]struct{}
@@ -65,6 +67,7 @@ func New(t theme.Theme) Model {
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+	m.rebuildCellPopupLines()
 }
 
 func (m *Model) SetFocused(f bool) {
@@ -258,6 +261,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.cellPopupTop = 0
 		m.cellPopupMsg = ""
 		m.cellPopupJSONFormatted = false
+		m.rebuildCellPopupLines()
 	case "esc":
 		m.rangeSelect = false
 		m.selectedRows = nil
@@ -307,18 +311,14 @@ func (m Model) cellPopupContentLinesHeight(innerH int) int {
 }
 
 func (m Model) cellPopupScrollBounds() (visible, maxTop int) {
-	_, _, innerW, innerH := m.cellPopupLayout()
-	lines := m.cellPopupDisplayLines(innerW)
+	_, _, _, innerH := m.cellPopupLayout()
 	ch := m.cellPopupContentLinesHeight(innerH)
 	if ch < 1 {
 		return 1, 0
 	}
+	lines := m.cellPopupLines
 	if len(lines) > ch {
-		contentW := innerW - 2
-		if contentW < 1 {
-			contentW = 1
-		}
-		lines = m.cellPopupDisplayLines(contentW)
+		lines = m.cellPopupScrollbarLines
 	}
 	maxTop = 0
 	if len(lines) > ch {
@@ -361,29 +361,34 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 				m.cellPopupMsg = "Not valid JSON"
 			}
 		}
+		m.rebuildCellPopupLines()
 	case "h", "left":
 		if m.cursorCol > 0 {
 			m.cursorCol--
 			m.cellPopupTop = 0
 			m.cellPopupMsg = ""
+			m.rebuildCellPopupLines()
 		}
 	case "l", "right":
 		if m.cursorCol < len(cols)-1 {
 			m.cursorCol++
 			m.cellPopupTop = 0
 			m.cellPopupMsg = ""
+			m.rebuildCellPopupLines()
 		}
 	case "k", "up":
 		if m.cursorRow > 0 {
 			m.cursorRow--
 			m.cellPopupTop = 0
 			m.cellPopupMsg = ""
+			m.rebuildCellPopupLines()
 		}
 	case "j", "down":
 		if m.cursorRow < len(rows)-1 {
 			m.cursorRow++
 			m.cellPopupTop = 0
 			m.cellPopupMsg = ""
+			m.rebuildCellPopupLines()
 		}
 	case "pgdown":
 		visible, maxTop := m.cellPopupScrollBounds()
@@ -1056,8 +1061,27 @@ func wrapLinesToWidth(lines []string, width int) []string {
 	return out
 }
 
-func (m Model) cellPopupDisplayLines(innerW int) []string {
-	return wrapLinesToWidth(m.cellPopupContentLines(), innerW)
+func (m *Model) rebuildCellPopupLines() {
+	if !m.showCellPopup {
+		return
+	}
+	_, _, innerW, _ := m.cellPopupLayout()
+
+	val := m.cellPopupSourceText()
+	val = strings.ReplaceAll(val, "\r\n", "\n")
+	val = strings.ReplaceAll(val, "\r", "\n")
+	rawLines := strings.Split(val, "\n")
+	if len(rawLines) == 0 {
+		rawLines = []string{""}
+	}
+
+	m.cellPopupLines = wrapLinesToWidth(rawLines, innerW)
+
+	contentW := innerW - 2
+	if contentW < 1 {
+		contentW = 1
+	}
+	m.cellPopupScrollbarLines = wrapLinesToWidth(rawLines, contentW)
 }
 
 // cellPopupLayout returns the same box and inner dimensions as renderCellPopup (for scroll bounds).
@@ -1084,7 +1108,7 @@ func (m Model) cellPopupLayout() (boxW, boxH, innerW, innerH int) {
 func (m Model) renderCellPopup() string {
 	boxW, boxH, innerW, innerH := m.cellPopupLayout()
 
-	lines := m.cellPopupDisplayLines(innerW)
+	lines := m.cellPopupLines
 	contentH := m.cellPopupContentLinesHeight(innerH)
 
 	showScrollbar := false
@@ -1095,7 +1119,7 @@ func (m Model) renderCellPopup() string {
 		if contentW < 1 {
 			contentW = 1
 		}
-		lines = m.cellPopupDisplayLines(contentW)
+		lines = m.cellPopupScrollbarLines
 	}
 
 	maxTop := 0
