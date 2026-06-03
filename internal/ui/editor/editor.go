@@ -866,7 +866,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.setLines(lines)
 			m.compVisible = false
 			return func() tea.Msg { return ExecuteQueryMsg{Query: q} }
-		case "ctrl+v":
+		case "ctrl+v", "ctrl+shift+v", "ctrl+V":
 			if text, err := util.Paste(); err == nil && text != "" {
 				m.beforeInsertEdit()
 				for _, ch := range text {
@@ -879,7 +879,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				m.compVisible = false
 			}
 		default:
-			if len(msg.Runes) == 1 {
+			if msg.Paste || len(msg.Runes) > 1 {
+				m.beforeInsertEdit()
+				for _, ch := range msg.Runes {
+					if ch == '\n' {
+						lines = m.insertNewline(lines)
+					} else if ch != '\r' {
+						lines = m.insertRune(lines, ch)
+					}
+				}
+				m.refreshCompletions(lines)
+			} else if len(msg.Runes) == 1 {
 				m.beforeInsertEdit()
 				lines = m.insertRune(lines, msg.Runes[0])
 				m.refreshCompletions(lines)

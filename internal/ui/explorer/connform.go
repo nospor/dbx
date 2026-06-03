@@ -231,7 +231,7 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			f.testMsg = "Testing connection…"
 			conn := f.toConnection()
 			return f, func() tea.Msg { return ConnTestRequestMsg{Conn: conn} }
-		case "ctrl+v":
+		case "ctrl+v", "ctrl+shift+v", "ctrl+V":
 			if f.cursor != fieldDriver {
 				if text, err := util.Paste(); err == nil {
 					text = strings.NewReplacer("\n", "", "\r", "").Replace(text)
@@ -244,8 +244,16 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 				f.fields[f.cursor] = string(runes[:len(runes)-1])
 			}
 		default:
-			if f.cursor != fieldDriver && len(msg.Runes) == 1 {
-				f.fields[f.cursor] += string(msg.Runes[0])
+			if f.cursor != fieldDriver {
+				if msg.Paste || len(msg.Runes) > 1 {
+					for _, r := range msg.Runes {
+						if r != '\n' && r != '\r' {
+							f.fields[f.cursor] += string(r)
+						}
+					}
+				} else if len(msg.Runes) == 1 {
+					f.fields[f.cursor] += string(msg.Runes[0])
+				}
 			}
 		}
 	}

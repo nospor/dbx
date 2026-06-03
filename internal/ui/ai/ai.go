@@ -16,6 +16,7 @@ import (
 
 	internalAi "github.com/robertn/dbx/internal/ai"
 	"github.com/robertn/dbx/internal/ui/theme"
+	"github.com/robertn/dbx/internal/util"
 )
 
 type Mode int
@@ -989,6 +990,11 @@ func (m Model) Update(msg tea.Msg, schemaTables, schemaCols []string) (Model, te
 			case "alt+enter":
 				m.textarea.InsertString("\n")
 				return m, textarea.Blink
+			case "ctrl+v", "ctrl+shift+v", "ctrl+V":
+				if text, err := util.Paste(); err == nil && text != "" {
+					m.textarea.InsertString(text)
+					return m, textarea.Blink
+				}
 			case "enter":
 				val := strings.TrimSpace(m.textarea.Value())
 				if val == "" || m.loadingForCurrentConn() {
