@@ -1,4 +1,22 @@
 
+## [1.0.7] - 2026-06-03
+
+### Features
+
+- *(ui/editor)* Support query tab renaming ([5f1b0d5](https://github.com/nospor/dbx/commit/5f1b0d582fb0a03a8e0b59036733a7ac4432f821))
+- *(results)* Add ctrl+d/u half-page scroll in view popup ([e4ced62](https://github.com/nospor/dbx/commit/e4ced625aab3f235b11a3e7e2c04041f042f40c7))
+- *(results)* Add vertical scrollbar to view cell popup ([1e0c0da](https://github.com/nospor/dbx/commit/1e0c0dabdf98a96ce08964db55bba1b7e9035b94))
+- *(ui)* Support ctrl+shift+v and bracketed paste in inputs ([0fba398](https://github.com/nospor/dbx/commit/0fba3985019983e45a9e37e51798fbf6efed9d1b))
+- *(editor)* Support pasting queries after current block and document shortcuts ([0f177a5](https://github.com/nospor/dbx/commit/0f177a5254e9eb90a27dc3df2077f47ec1fe6929))
+
+### Performance
+
+- *(results)* Cache cell view popup lines to speed up scrolling ([62ba3fe](https://github.com/nospor/dbx/commit/62ba3fe0cd02dbafaf0cb50da38cd764da18e8e1))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.6 [skip ci] ([eb8880f](https://github.com/nospor/dbx/commit/eb8880f919e9a85b0ff3f1a8c9e227a4eea4a34f))
+
 ## [1.0.6] - 2026-06-03
 
 ### Features
