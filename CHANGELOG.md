@@ -1,4 +1,10 @@
 
+## [1.0.5] - 2026-06-03
+
+### Bug Fixes
+
+- *(app)* Change driversMu to *sync.Mutex to prevent copying lock value ([94f671f](https://github.com/nospor/dbx/commit/94f671f863c65a338385c921b4c9e43a6778f408))
+
 ## [1.0.4] - 2026-06-03
 
 ### Features
