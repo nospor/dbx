@@ -130,3 +130,6 @@ type closeTabPromptMsg struct{}
 
 // newTabMsg triggers creating a new tab for the active connection.
 type newTabMsg struct{}
+
+// renameTabPromptMsg triggers the rename tab input popup.
+type renameTabPromptMsg struct{}

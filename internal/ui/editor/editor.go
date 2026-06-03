@@ -389,7 +389,7 @@ func (m *Model) activateTabIndex(i int) {
 
 // RestoreOpenTabs rebuilds visible tabs from persisted keys (after SeedQueryTabs).
 // activeKey is the active tab ID for the tab that should be selected; if empty or not found, the first tab is activated.
-func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(string) string) {
+func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(string) string, customTitles map[string]string) {
 	m.openTabs = m.openTabs[:0]
 	for _, k := range keys {
 		if k == "" || k == "_" {
@@ -397,14 +397,20 @@ func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(s
 		}
 		connKey := cleanTabID(k)
 		lbl := ""
-		if labelFor != nil {
-			lbl = labelFor(connKey)
+		isCustom := false
+		if customTitles != nil && customTitles[k] != "" {
+			lbl = customTitles[k]
+			isCustom = true
+		} else {
+			if labelFor != nil {
+				lbl = labelFor(connKey)
+			}
+			if lbl == "" {
+				lbl = connKey
+			}
+			lbl += tabLabelSuffix(k)
 		}
-		if lbl == "" {
-			lbl = connKey
-		}
-		lbl += tabLabelSuffix(k)
-		m.openTabs = append(m.openTabs, TabInfo{ID: k, ConnKey: connKey, Label: lbl})
+		m.openTabs = append(m.openTabs, TabInfo{ID: k, ConnKey: connKey, Label: lbl, IsCustom: isCustom})
 		m.ensureTab(k)
 	}
 	if len(m.openTabs) == 0 {
@@ -423,6 +429,40 @@ func (m *Model) RestoreOpenTabs(keys []string, activeKey string, labelFor func(s
 	m.activateTabIndex(idx)
 }
 
+// RenameActiveTab sets a custom name/label for the active tab.
+func (m *Model) RenameActiveTab(newLabel string) {
+	if len(m.openTabs) == 0 || m.activeTabIdx < 0 || m.activeTabIdx >= len(m.openTabs) {
+		return
+	}
+	m.openTabs[m.activeTabIdx].Label = newLabel
+	m.openTabs[m.activeTabIdx].IsCustom = true
+}
+
+// CustomTabTitles returns a map of tab ID to its custom label, for tabs that were renamed by the user.
+func (m Model) CustomTabTitles() map[string]string {
+	if len(m.openTabs) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, t := range m.openTabs {
+		if t.IsCustom {
+			out[t.ID] = t.Label
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// ActiveTabLabel returns the label of the currently active tab.
+func (m Model) ActiveTabLabel() string {
+	if len(m.openTabs) == 0 || m.activeTabIdx < 0 || m.activeTabIdx >= len(m.openTabs) {
+		return ""
+	}
+	return m.openTabs[m.activeTabIdx].Label
+}
+
 // OpenTab opens or activates a tab for the given connection key.
 func (m *Model) OpenTab(connKey, label string) {
 	if connKey == "" {
@@ -431,7 +471,7 @@ func (m *Model) OpenTab(connKey, label string) {
 	// If currently active tab already matches the requested connKey, stay on it!
 	if m.activeTabIdx >= 0 && m.activeTabIdx < len(m.openTabs) {
 		if m.openTabs[m.activeTabIdx].ConnKey == connKey {
-			if label != "" {
+			if label != "" && !m.openTabs[m.activeTabIdx].IsCustom {
 				m.openTabs[m.activeTabIdx].Label = label
 			}
 			return
@@ -439,14 +479,14 @@ func (m *Model) OpenTab(connKey, label string) {
 	}
 	for i, t := range m.openTabs {
 		if t.ConnKey == connKey {
-			if label != "" {
+			if label != "" && !m.openTabs[i].IsCustom {
 				m.openTabs[i].Label = label
 			}
 			m.activateTabIndex(i)
 			return
 		}
 	}
-	m.openTabs = append(m.openTabs, TabInfo{ID: connKey, ConnKey: connKey, Label: label})
+	m.openTabs = append(m.openTabs, TabInfo{ID: connKey, ConnKey: connKey, Label: label, IsCustom: false})
 	m.activateTabIndex(len(m.openTabs) - 1)
 }
 
@@ -483,9 +523,10 @@ func (m *Model) OpenNewTab() *TabSwitchedMsg {
 	newLabel := baseLabel + suffix
 
 	newTab := TabInfo{
-		ID:      tabID,
-		ConnKey: connKey,
-		Label:   newLabel,
+		ID:       tabID,
+		ConnKey:  connKey,
+		Label:    newLabel,
+		IsCustom: false,
 	}
 
 	insertIdx := m.activeTabIdx + 1

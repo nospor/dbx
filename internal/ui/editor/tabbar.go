@@ -11,9 +11,10 @@ import (
 
 // TabInfo is one open editor tab (connection + database).
 type TabInfo struct {
-	ID      string
-	ConnKey string
-	Label   string
+	ID       string
+	ConnKey  string
+	Label    string
+	IsCustom bool
 }
 
 func maxInt(a, b int) int {

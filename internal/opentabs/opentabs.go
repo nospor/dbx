@@ -14,8 +14,9 @@ const diskVersion = 2
 
 // snapshot is one persisted tab set (ordered keys + active connID:database key).
 type snapshot struct {
-	Keys   []string `json:"keys"`
-	Active string   `json:"active,omitempty"`
+	Keys   []string          `json:"keys"`
+	Active string            `json:"active,omitempty"`
+	Titles map[string]string `json:"titles,omitempty"`
 }
 
 // diskFile is the on-disk JSON shape (v2). Legacy files are a bare array of keys or a root snapshot.
@@ -218,17 +219,34 @@ func (s *Store) Keys() []string {
 	return out
 }
 
+// Titles returns the last saved custom titles (copy) for the active scope.
+func (s *Store) Titles() map[string]string {
+	cur := s.currentSnap()
+	if len(cur.Titles) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(cur.Titles))
+	for k, v := range cur.Titles {
+		out[k] = v
+	}
+	return out
+}
+
 // ActiveKey returns the last saved active tab connection key (connID:db), or "" if none / legacy file.
 func (s *Store) ActiveKey() string {
 	return s.currentSnap().Active
 }
 
 // Save persists the ordered tab keys and which tab was active for the active scope.
-func (s *Store) Save(keys []string, activeKey string) error {
+func (s *Store) Save(keys []string, activeKey string, titles map[string]string) error {
 	if s == nil {
 		return nil
 	}
-	snap := snapshot{Keys: append([]string(nil), keys...), Active: activeKey}
+	snap := snapshot{
+		Keys:   append([]string(nil), keys...),
+		Active: activeKey,
+		Titles: titles,
+	}
 	if s.folderBased && s.workDirKey != "" {
 		if s.byFolder == nil {
 			s.byFolder = make(map[string]snapshot)

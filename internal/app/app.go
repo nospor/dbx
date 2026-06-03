@@ -95,6 +95,9 @@ type Model struct {
 
 	// Editor tabs + restore
 	tabCloseConfirm             bool
+	tabRenameOpen               bool
+	tabRenameInput              []rune
+	tabRenameCursorPos          int
 	pendingExplorerSelectConnID string
 	pendingExplorerSelectDB     string
 }
@@ -127,7 +130,7 @@ func newEditorWithDrafts(t theme.Theme, drafts map[string]string, cfg *config.Co
 			}
 		}
 	}
-	ed.RestoreOpenTabs(valid, validActive, func(s string) string { return tabLabelForConfig(cfg, s) })
+	ed.RestoreOpenTabs(valid, validActive, func(s string) string { return tabLabelForConfig(cfg, s) }, ot.Titles())
 	return ed
 }
 
@@ -317,6 +320,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.tabRenameOpen {
+			return m.handleTabRenameKey(msg)
+		}
+
 		if m.ddlPopupOpen {
 			return m.handleDDLPopupKey(msg)
 		}
@@ -338,7 +345,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		explorerFiltering := m.explorer.IsFiltering()
 		// While AI answers, stay navigable: insert mode suppresses e/q/r/space unless loading (prompt in flight).
 		aiInput := m.aiPane.IsInputMode() && !m.aiPane.IsLoading()
-		suppressGlobals := editorInsert || historyPopup || explorerFiltering || aiInput
+		suppressGlobals := editorInsert || historyPopup || explorerFiltering || aiInput || m.tabRenameOpen
 
 		switch msg.String() {
 		case "ctrl+c":
@@ -410,6 +417,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, sub...)
 		}
 		return m, tea.Batch(cmds...)
+
+	case renameTabPromptMsg:
+		if len(m.editor.OpenTabKeys()) == 0 {
+			return m, m.setStatus("No tab to rename.")
+		}
+		m.tabRenameOpen = true
+		lbl := m.editor.ActiveTabLabel()
+		m.tabRenameInput = []rune(lbl)
+		m.tabRenameCursorPos = len(m.tabRenameInput)
+		return m, nil
 
 	case closeTabPromptMsg:
 		if len(m.editor.OpenTabKeys()) == 0 {
@@ -1338,6 +1355,7 @@ func (m *Model) openPalette() {
 			{Key: "e", Description: "Explain current query", Action: func() tea.Msg { return explainQueryFromPaletteMsg{} }},
 			{Key: "c", Description: "Clear editor", Action: func() tea.Msg { return clearEditorMsg{} }},
 			{Key: "n", Description: "New tab", Action: func() tea.Msg { return newTabMsg{} }},
+			{Key: "r", Description: "Rename tab", Action: func() tea.Msg { return renameTabPromptMsg{} }},
 			{Key: "D", Description: "Close tab (confirm)", Action: func() tea.Msg { return closeTabPromptMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
@@ -1382,7 +1400,7 @@ func (m *Model) persistOpenTabs() {
 	if m.openTabsStore == nil {
 		return
 	}
-	_ = m.openTabsStore.Save(m.editor.OpenTabKeys(), m.editor.EditorConnKey())
+	_ = m.openTabsStore.Save(m.editor.OpenTabKeys(), m.editor.EditorConnKey(), m.editor.CustomTabTitles())
 }
 
 // syncActiveFromEditorTab applies app + explorer state when the editor active tab changes (keyboard).
@@ -1828,6 +1846,140 @@ func (m *Model) exportAllDDLCmd(connID, dbName string) tea.Cmd {
 	}
 }
 
+func (m Model) handleTabRenameKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.tabRenameOpen = false
+		m.tabRenameInput = nil
+		m.tabRenameCursorPos = 0
+		return m, nil
+	case "enter":
+		m.tabRenameOpen = false
+		newName := strings.TrimSpace(string(m.tabRenameInput))
+		m.tabRenameInput = nil
+		m.tabRenameCursorPos = 0
+		if newName != "" {
+			m.editor.RenameActiveTab(newName)
+			m.persistOpenTabs()
+			return m, m.setStatus("Tab renamed to: " + newName)
+		}
+		return m, nil
+	case "backspace":
+		if m.tabRenameCursorPos > 0 {
+			m.tabRenameInput = append(m.tabRenameInput[:m.tabRenameCursorPos-1], m.tabRenameInput[m.tabRenameCursorPos:]...)
+			m.tabRenameCursorPos--
+		}
+		return m, nil
+	case "delete":
+		if m.tabRenameCursorPos < len(m.tabRenameInput) {
+			m.tabRenameInput = append(m.tabRenameInput[:m.tabRenameCursorPos], m.tabRenameInput[m.tabRenameCursorPos+1:]...)
+		}
+		return m, nil
+	case "left":
+		if m.tabRenameCursorPos > 0 {
+			m.tabRenameCursorPos--
+		}
+		return m, nil
+	case "right":
+		if m.tabRenameCursorPos < len(m.tabRenameInput) {
+			m.tabRenameCursorPos++
+		}
+		return m, nil
+	case "home", "ctrl+a":
+		m.tabRenameCursorPos = 0
+		return m, nil
+	case "end", "ctrl+e":
+		m.tabRenameCursorPos = len(m.tabRenameInput)
+		return m, nil
+	}
+
+	if len(msg.Runes) > 0 {
+		for _, r := range msg.Runes {
+			m.tabRenameInput = append(m.tabRenameInput[:m.tabRenameCursorPos], append([]rune{r}, m.tabRenameInput[m.tabRenameCursorPos:]...)...)
+			m.tabRenameCursorPos++
+		}
+	}
+	return m, nil
+}
+
+func (m Model) renderTabRenamePopup() string {
+	boxW := min(max(40, m.width*50/100), m.width-4)
+	if boxW < 28 {
+		boxW = min(m.width-2, 40)
+	}
+	if boxW < 24 {
+		boxW = m.width
+	}
+	innerW := boxW - 6
+	if innerW < 12 {
+		innerW = 12
+	}
+
+	title := "Rename active tab"
+	footer := "Enter: confirm · Esc: cancel"
+
+	inputStr := string(m.tabRenameInput)
+	displayed := inputStr
+	cursorPos := m.tabRenameCursorPos
+
+	if ansi.StringWidth(displayed) > innerW-1 {
+		start := cursorPos - innerW/2
+		if start < 0 {
+			start = 0
+		}
+		end := start + innerW - 1
+		runes := m.tabRenameInput
+		if end > len(runes) {
+			end = len(runes)
+			start = end - innerW + 1
+			if start < 0 {
+				start = 0
+			}
+		}
+		displayed = string(runes[start:end])
+		cursorPos = cursorPos - start
+	}
+
+	var sb strings.Builder
+	sb.WriteString(displayed)
+	dispW := ansi.StringWidth(displayed)
+	if dispW < innerW {
+		sb.WriteString(strings.Repeat(" ", innerW-dispW))
+	}
+	line := sb.String()
+
+	runes := []rune(line)
+	if cursorPos < 0 {
+		cursorPos = 0
+	}
+	if cursorPos > len(runes) {
+		cursorPos = len(runes)
+	}
+	before := string(runes[:cursorPos])
+	cursorChar := " "
+	if cursorPos < len(runes) {
+		cursorChar = string(runes[cursorPos])
+	}
+	after := ""
+	if cursorPos+1 < len(runes) {
+		after = string(runes[cursorPos+1:])
+	}
+
+	cursorStyle := lipgloss.NewStyle().Reverse(true)
+	bodyText := before + cursorStyle.Render(cursorChar) + after
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		bodyText,
+		"",
+	)
+
+	body := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(inner)
+	popup := m.theme.BorderFocused.Width(boxW - 2).Render(body)
+	popup = m.embedDDLPopupBorderLabels(popup, title, footer)
+	return popup
+}
+
 func (m Model) handleHelpPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	raw := strings.TrimLeft(helpScreenText, "\n")
 	lines := strings.Split(raw, "\n")
@@ -1894,6 +2046,7 @@ const helpScreenText = `
     tab         Next query tab
     shift+tab   Previous query tab
     space+n     New query tab next to current tab
+    space+r     Rename active tab (input popup)
     space+D     Close active tab (confirm popup)
     i/o         Enter insert mode
     enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
@@ -1951,7 +2104,7 @@ const helpScreenText = `
 
   COMMAND PALETTE (space, then key)
     Explorer:   n=add connection  e=edit  d=delete  R=refresh  t=toggle explorer  a=toggle AI pane  f=fullscreen
-    Editor:     x=execute  e=explain  c=clear  n=new tab  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
+    Editor:     x=execute  e=explain  c=clear  n=new tab  r=rename tab  D=close tab (popup: y/enter · n esc q)  t=toggle explorer  a=toggle AI pane  f=fullscreen
     Results:    y=copy cell  Y=copy row  c=copy all (headers)  e=export CSV  j=export JSON  t=toggle explorer  a=toggle AI pane  f=fullscreen
     AI:         t=toggle explorer  a=toggle AI pane  f=fullscreen
 `
@@ -2524,6 +2677,9 @@ func (m Model) View() string {
 		if m.ddlPopupOpen {
 			view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
 		}
+		if m.tabRenameOpen {
+			view = overlayCentered(view, m.renderTabRenamePopup(), m.width, m.height)
+		}
 		if m.tabCloseConfirm {
 			view = overlayCentered(view, m.renderTabCloseConfirmPopup(), m.width, m.height)
 		}
@@ -2575,6 +2731,10 @@ func (m Model) View() string {
 
 	if m.ddlPopupOpen {
 		view = overlayCentered(view, m.renderDDLPopup(), m.width, m.height)
+	}
+
+	if m.tabRenameOpen {
+		view = overlayCentered(view, m.renderTabRenamePopup(), m.width, m.height)
 	}
 
 	if m.tabCloseConfirm {
