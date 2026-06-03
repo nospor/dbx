@@ -60,7 +60,7 @@ type Model struct {
 	activeDB      string
 	activeTabID   string
 	drivers       map[string]db.Driver // connID -> driver
-	driversMu     sync.Mutex
+	driversMu     *sync.Mutex
 	schemaTables  map[string][]string            // connID:db -> tables/views
 	schemaViewSet map[string]map[string]struct{} // connID:db -> view names (for TableDDL isView)
 	schemaCols    map[string][]string            // connID:db -> column tokens
@@ -156,6 +156,7 @@ func New(cfg *config.Config, workDir string) Model {
 		aiHidden:         *cfg.Layout.AIPaneHidden,
 		aiStore:          aiStore,
 		drivers:          make(map[string]db.Driver),
+		driversMu:        new(sync.Mutex),
 		schemaTables:     make(map[string][]string),
 		schemaViewSet:    make(map[string]map[string]struct{}),
 		schemaCols:       make(map[string][]string),

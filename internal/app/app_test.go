@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -98,7 +99,8 @@ func TestExecMultiStatementBatch_Error(t *testing.T) {
 
 func TestGetOrCreateDriverCaching(t *testing.T) {
 	m := &Model{
-		drivers: make(map[string]db.Driver),
+		drivers:   make(map[string]db.Driver),
+		driversMu: new(sync.Mutex),
 	}
 	drv1 := &mockDriver{}
 	m.drivers["conn1"] = drv1
@@ -115,7 +117,8 @@ func TestGetOrCreateDriverCaching(t *testing.T) {
 
 func TestCopyErrorMsg(t *testing.T) {
 	m := Model{
-		results: results.New(theme.Theme{}),
+		driversMu: new(sync.Mutex),
+		results:   results.New(theme.Theme{}),
 	}
 	res := &results.QueryResult{
 		Error: "mock error details here",
