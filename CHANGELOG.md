@@ -1,4 +1,15 @@
 
+## [1.0.6] - 2026-06-03
+
+### Features
+
+- *(results)* Include column name in cell view popup title ([d43dfc0](https://github.com/nospor/dbx/commit/d43dfc0f67c1d1adfa7296494ea99b630390b39b))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.4 [skip ci] ([6c87d41](https://github.com/nospor/dbx/commit/6c87d41e3973d6cdb49e4299ffef4605e7414526))
+- Update CHANGELOG.md for v1.0.5 [skip ci] ([f9ef4f4](https://github.com/nospor/dbx/commit/f9ef4f49684a6e5431ea6a4cc37153fc2faa188e))
+
 ## [1.0.5] - 2026-06-03
 
 ### Bug Fixes
