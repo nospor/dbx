@@ -1,4 +1,20 @@
 
+## [1.0.4] - 2026-06-03
+
+### Features
+
+- *(ui/editor)* Center active query tab when tabs exceed width ([d20863b](https://github.com/nospor/dbx/commit/d20863b907b8d866a75f4f70a82b691dd0269d2b))
+
+            Implement a sliding window centered around the active tab in the editor
+            tab bar. When there are too many tabs to fit, scroll the view and
+            display dimmed ellipsis indicators at the edges to show there are hidden
+            tabs.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.2 [skip ci] ([a3633bc](https://github.com/nospor/dbx/commit/a3633bc9aff135296f03f924376ef5c29f9658c2))
+- Update CHANGELOG.md for v1.0.3 [skip ci] ([db78da8](https://github.com/nospor/dbx/commit/db78da8fb88b1fe646d77b3a3f542b8b37866863))
+
 ## [1.0.3] - 2026-05-28
 
 ### Miscellaneous Tasks
