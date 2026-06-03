@@ -2064,6 +2064,7 @@ const helpScreenText = `
     yw          Yank/copy current word                                                                                                                                                                                            |
     y$          Yank/copy to end of line                                                                                                                                                                                             |
     y0          Yank/copy to start of line                                                                                                                                                                                           |
+    p           Paste clipboard contents after current query
     cc          Clean prefix (numbers, |) from line
     cq          Clean prefix (numbers, |) from query
     gg/G        Go to top/bottom
@@ -2802,7 +2803,7 @@ func (m Model) panelBottomHintFor(p Panel) string {
 		if m.editor.IsInsertMode() {
 			return "Esc: normal mode · Tab: autocomplete · Ctrl+Enter/Ctrl+r: run query"
 		}
-		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · d: delete · y: yank/copy · backspace: history · space: commands"
+		return "Enter: run query · Tab: next tab · Sh-Tab: prev tab · i: insert · d: delete · y: yank/copy · p: paste · backspace: history · space: commands"
 	case PanelResults:
 		return "h/l, 0/$, PgUp/PgDn: movement, s: toggle row mark · S: band select rows · d: delete draft · i: insert draft · u: update cell · v: full cell · space: commands"
 	case PanelAI:

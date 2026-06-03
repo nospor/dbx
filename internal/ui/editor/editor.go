@@ -710,6 +710,75 @@ func (m *Model) AppendAtEnd(text string) {
 	m.adjustScroll()
 }
 
+// PasteAfterCurrentQuery inserts the pasted text as a new query block directly after the query block
+// the cursor currently resides in, separated by a blank line. If no query block exists or is found,
+// it appends it at the end of the file.
+func (m *Model) PasteAfterCurrentQuery(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	m.pushUndoPoint()
+	m.vim.mode = ModeNormal
+	m.insertUndoSeeded = false
+
+	lines := m.lines()
+	if len(lines) == 0 {
+		lines = strings.Split(text, "\n")
+		m.setLines(lines)
+		m.vim.row = len(lines) - 1
+		m.vim.col = 0
+		m.clampCursor()
+		m.adjustScroll()
+		return
+	}
+
+	start, end := m.currentQueryBounds(lines)
+	if end < 0 || start > end {
+		// No query found (e.g. empty file). Just append at the end.
+		for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+			lines = lines[:len(lines)-1]
+		}
+		chunk := strings.Split(text, "\n")
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, chunk...)
+		m.setLines(lines)
+		m.vim.row = len(lines) - 1
+		m.vim.col = 0
+		m.clampCursor()
+		m.adjustScroll()
+		return
+	}
+
+	// Insert the pasted query after 'end' row.
+	chunk := strings.Split(text, "\n")
+	insertIndex := end + 1
+
+	// Find where the next content/query starts.
+	nextContentIndex := insertIndex
+	for nextContentIndex < len(lines) && strings.TrimSpace(lines[nextContentIndex]) == "" {
+		nextContentIndex++
+	}
+
+	newLines := make([]string, 0, len(lines)+len(chunk)+2)
+	newLines = append(newLines, lines[:insertIndex]...)
+	newLines = append(newLines, "")
+	newLines = append(newLines, chunk...)
+
+	if nextContentIndex < len(lines) {
+		newLines = append(newLines, "")
+		newLines = append(newLines, lines[nextContentIndex:]...)
+	}
+
+	m.setLines(newLines)
+	m.vim.row = insertIndex + 1 + len(chunk) - 1
+	m.vim.col = 0
+	m.clampCursor()
+	m.adjustScroll()
+}
+
 // LastNonBlankLine returns the last non-empty line in the buffer (trimmed), or "".
 func (m *Model) LastNonBlankLine() string {
 	lines := m.lines()
@@ -913,7 +982,28 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	if !m.histPopupVisible {
+		if msg.Paste || len(msg.Runes) > 1 {
+			m.PasteAfterCurrentQuery(string(msg.Runes))
+			return m.queryPanePersistCmd()
+		}
+	}
+
 	switch msg.String() {
+	case "ctrl+v", "ctrl+shift+v", "ctrl+V":
+		if !m.histPopupVisible {
+			if text, err := util.Paste(); err == nil && text != "" {
+				m.PasteAfterCurrentQuery(text)
+				return m.queryPanePersistCmd()
+			}
+		}
+	case "p":
+		if !m.histPopupVisible {
+			if text, err := util.Paste(); err == nil && text != "" {
+				m.PasteAfterCurrentQuery(text)
+				return m.queryPanePersistCmd()
+			}
+		}
 	case "i":
 		m.vim.mode = ModeInsert
 	case "I":

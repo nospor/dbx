@@ -96,15 +96,15 @@ Connections are stored separately in `~/.cache/dbx/connections.json`.
 
 ## Data files
 
-| File                               | Purpose                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------- |
-| `~/.config/dbx/config.json`        | UI preferences (theme, layout, status message duration, optional **`folder_based`**) |
-| `~/.cache/dbx/connections.json`    | Saved connections                                                                      |
-| `~/.cache/dbx/history.json`        | Executed queries (filterable history popup, ctrl+p/n buffer browse)                    |
-| `~/.cache/dbx/query-contents.json` | Full editor buffer text per `connection_id:database` (drafts; not the same as history). With **`folder_based`**, includes **`global`** and **`by_folder`** (path → per-tab text) |
-| `~/.cache/dbx/open-tabs.json`      | Ordered open query tabs and active tab. With **`folder_based`**, includes **`global`** and **`by_folder`** (path → tab list); otherwise only **`global`** is used |
-| `~/.cache/dbx/ai_sessions.json`    | AI chat messages and session ids per `connection_id:database`                          |
-| `~/.cache/dbx/aiagentfolder` (default) | AI CLI subprocess cwd when `ai.disable_agent_workdir` is false and `agent_workdir` is empty; configurable |
+| File                                   | Purpose                                                                                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.config/dbx/config.json`            | UI preferences (theme, layout, status message duration, optional **`folder_based`**)                                                                                             |
+| `~/.cache/dbx/connections.json`        | Saved connections                                                                                                                                                                |
+| `~/.cache/dbx/history.json`            | Executed queries (filterable history popup, ctrl+p/n buffer browse)                                                                                                              |
+| `~/.cache/dbx/query-contents.json`     | Full editor buffer text per `connection_id:database` (drafts; not the same as history). With **`folder_based`**, includes **`global`** and **`by_folder`** (path → per-tab text) |
+| `~/.cache/dbx/open-tabs.json`          | Ordered open query tabs and active tab. With **`folder_based`**, includes **`global`** and **`by_folder`** (path → tab list); otherwise only **`global`** is used                |
+| `~/.cache/dbx/ai_sessions.json`        | AI chat messages and session ids per `connection_id:database`                                                                                                                    |
+| `~/.cache/dbx/aiagentfolder` (default) | AI CLI subprocess cwd when `ai.disable_agent_workdir` is false and `agent_workdir` is empty; configurable                                                                        |
 
 ## Layout
 
@@ -124,54 +124,56 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `ctrl+c` | Quit                                                                                                                                                                                                 |
 
 ### Explorer
-| Key           | Action                                                                                                                                                      |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `j` / `k`     | Navigate                                                                                                                                                    |
-| `enter` / `l` | Expand/collapse (connections, databases, tables)                                                                                                            |
-| `h`           | Collapse current branch (from child -> parent)                                                                                                              |
-| `s`           | Append quick `SELECT * … LIMIT/TOP 100` at end of editor (blank line before it), run it; focus stays here (`r` for results)                                 |
-| `v`           | Open popup with recreate DDL for the focused table or view (`y` copy, scroll keys, `esc` close; MySQL: `SHOW CREATE`, Postgres/SQLite/MSSQL: assembled DDL) |
-| `V`           | **Bulk export** all table and view DDLs for the selected database into a single `.sql` file in the current folder; runs in the background with progress indicator      |
-| `f`           | Set filter for tables. Set it empty to see all tables                                                                                                       |
-| `g` / `G`     | First / last item                                                                                                                                           |
+| Key           | Action                                                                                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `j` / `k`     | Navigate                                                                                                                                                          |
+| `enter` / `l` | Expand/collapse (connections, databases, tables)                                                                                                                  |
+| `h`           | Collapse current branch (from child -> parent)                                                                                                                    |
+| `s`           | Append quick `SELECT * … LIMIT/TOP 100` at end of editor (blank line before it), run it; focus stays here (`r` for results)                                       |
+| `v`           | Open popup with recreate DDL for the focused table or view (`y` copy, scroll keys, `esc` close; MySQL: `SHOW CREATE`, Postgres/SQLite/MSSQL: assembled DDL)       |
+| `V`           | **Bulk export** all table and view DDLs for the selected database into a single `.sql` file in the current folder; runs in the background with progress indicator |
+| `f`           | Set filter for tables. Set it empty to see all tables                                                                                                             |
+| `g` / `G`     | First / last item                                                                                                                                                 |
 
 ### Editor (Normal mode)
-| Key                 | Action                                                                                                                                                                                                            |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tab`               | Next query tab (explorer selection follows)                                                                                                                                                                       |
-| `shift+tab`         | Previous query tab                                                                                                                                                                                                |
-| `i` / `o`           | Enter insert mode                                                                                                                                                                                                 |
-| `enter`             | Execute query under cursor. If the block is **only** multiple `DELETE` and/or `UPDATE` statements separated by `;`, they run **one after another**; the results grid shows `#` and `rows_affected` per statement. |
-| `u`                 | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits                                                                       |
-| `ctrl+r`            | Redo (normal mode only; see insert mode for run-query)                                                                                                                                                            |
-| `ctrl+p` / `ctrl+n` | Browse history (replace buffer)                                                                                                                                                                                   |
-| `backspace`         | Open **history popup** — filter and pick a query to append (see **History** below)                                                                                                                                |
-| `dd`                | Delete line                                                                                                                                                                                                       |
-| `dq`                | Delete query                                                                                                                                                                                                      |
-| `dw`                | Delete current word                                                                                                                                                                                               |
-| `d$`                | Delete to end of line                                                                                                                                                                                             |
-| `d0`                | Delete to start of line                                                                                                                                                                                           |
-| `yy`                | Yank/copy line                                                                                                                                                                                                    |
-| `yq`                | Yank/copy query                                                                                                                                                                                                   |
-| `yw`                | Yank/copy current word                                                                                                                                                                                            |
-| `y$`                | Yank/copy to end of line                                                                                                                                                                                          |
-| `y0`                | Yank/copy to start of line                                                                                                                                                                                        |
-| `cc`                | Clean prefix (numbers, |) from line                                                                                                                                                                       |
-| `cq`                | Clean prefix (numbers, |) from query                                                                                                                                                                      |
-| `gg` / `G`          | Go to top / bottom                                                                                                                                                                                                |
-| `J` / `K`           | Jump to next / previous query block (queries separated by blank lines)                                                                                                                                            |
-| `h/j/k/l`           | Move cursor                                                                                                                                                                                                       |
-| `w` / `b`           | Word forward / backward                                                                                                                                                                                           |
+| Key                             | Action                                                                                                                                                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tab`                           | Next query tab (explorer selection follows)                                                                                                                                                                       |
+| `shift+tab`                     | Previous query tab                                                                                                                                                                                                |
+| `i` / `o`                       | Enter insert mode                                                                                                                                                                                                 |
+| `enter`                         | Execute query under cursor. If the block is **only** multiple `DELETE` and/or `UPDATE` statements separated by `;`, they run **one after another**; the results grid shows `#` and `rows_affected` per statement. |
+| `u`                             | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits                                                                       |
+| `ctrl+r`                        | Redo (normal mode only; see insert mode for run-query)                                                                                                                                                            |
+| `ctrl+p` / `ctrl+n`             | Browse history (replace buffer)                                                                                                                                                                                   |
+| `backspace`                     | Open **history popup** — filter and pick a query to append (see **History** below)                                                                                                                                |
+| `dd`                            | Delete line                                                                                                                                                                                                       |
+| `dq`                            | Delete query                                                                                                                                                                                                      |
+| `dw`                            | Delete current word                                                                                                                                                                                               |
+| `d$`                            | Delete to end of line                                                                                                                                                                                             |
+| `d0`                            | Delete to start of line                                                                                                                                                                                           |
+| `yy`                            | Yank/copy line                                                                                                                                                                                                    |
+| `yq`                            | Yank/copy query                                                                                                                                                                                                   |
+| `yw`                            | Yank/copy current word                                                                                                                                                                                            |
+| `y$`                            | Yank/copy to end of line                                                                                                                                                                                          |
+| `y0`                            | Yank/copy to start of line                                                                                                                                                                                        |
+| `p` / `ctrl+v` / `ctrl+shift+v` | Paste clipboard contents after current query                                                                                                                                                                      |
+| `cc`                            | Clean prefix (numbers,                                                                                                                                                                                            | ) from line  |
+| `cq`                            | Clean prefix (numbers,                                                                                                                                                                                            | ) from query |
+| `gg` / `G`                      | Go to top / bottom                                                                                                                                                                                                |
+| `J` / `K`                       | Jump to next / previous query block (queries separated by blank lines)                                                                                                                                            |
+| `h/j/k/l`                       | Move cursor                                                                                                                                                                                                       |
+| `w` / `b`                       | Word forward / backward                                                                                                                                                                                           |
 
 ### Editor (Insert mode)
-| Key                 | Action                                                                                                                                        |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `esc`               | Return to normal mode                                                                                                                         |
-| `←` `→` `↑` `↓`     | Move cursor (arrows)                                                                                                                          |
-| `tab`               | Open autocomplete from context (no need to type first) / accept selected suggestion; suggestions also appear as you type an identifier prefix |
-| `ctrl+n` / `ctrl+p` | Next / previous suggestion (when autocomplete is open)                                                                                        |
-| `ctrl+enter`        | Execute query                                                                                                                                 |
-| `ctrl+r`            | Execute query                                                                                                                                 |
+| Key                       | Action                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `esc`                     | Return to normal mode                                                                                                                         |
+| `←` `→` `↑` `↓`           | Move cursor (arrows)                                                                                                                          |
+| `tab`                     | Open autocomplete from context (no need to type first) / accept selected suggestion; suggestions also appear as you type an identifier prefix |
+| `ctrl+n` / `ctrl+p`       | Next / previous suggestion (when autocomplete is open)                                                                                        |
+| `ctrl+enter`              | Execute query                                                                                                                                 |
+| `ctrl+r`                  | Execute query                                                                                                                                 |
+| `ctrl+v` / `ctrl+shift+v` | Paste clipboard contents at cursor                                                                                                            |
 
 ### Results
 | Key             | Action                                                                                                                                                                                                                                                                                                                                                                                                         |
