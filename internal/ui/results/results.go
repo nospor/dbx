@@ -313,6 +313,13 @@ func (m Model) cellPopupScrollBounds() (visible, maxTop int) {
 	if ch < 1 {
 		return 1, 0
 	}
+	if len(lines) > ch {
+		contentW := innerW - 2
+		if contentW < 1 {
+			contentW = 1
+		}
+		lines = m.cellPopupDisplayLines(contentW)
+	}
 	maxTop = 0
 	if len(lines) > ch {
 		maxTop = len(lines) - ch
@@ -1079,6 +1086,18 @@ func (m Model) renderCellPopup() string {
 
 	lines := m.cellPopupDisplayLines(innerW)
 	contentH := m.cellPopupContentLinesHeight(innerH)
+
+	showScrollbar := false
+	contentW := innerW
+	if contentH > 0 && len(lines) > contentH {
+		showScrollbar = true
+		contentW = innerW - 2
+		if contentW < 1 {
+			contentW = 1
+		}
+		lines = m.cellPopupDisplayLines(contentW)
+	}
+
 	maxTop := 0
 	if contentH > 0 && len(lines) > contentH {
 		maxTop = len(lines) - contentH
@@ -1090,8 +1109,58 @@ func (m Model) renderCellPopup() string {
 
 	var rows []string
 	if contentH > 0 {
-		for i := top; i < len(lines) && i < top+contentH; i++ {
-			rows = append(rows, lines[i])
+		visibleLines := lines[top:]
+		if len(visibleLines) > contentH {
+			visibleLines = visibleLines[:contentH]
+		}
+
+		// Calculate scrollbar bounds
+		thumbH := 1
+		thumbTop := 0
+		if showScrollbar {
+			totalH := len(lines)
+			thumbH = contentH * contentH / totalH
+			if thumbH < 1 {
+				thumbH = 1
+			}
+			if thumbH > contentH {
+				thumbH = contentH
+			}
+			maxScroll := totalH - contentH
+			if maxScroll > 0 {
+				thumbTop = (contentH - thumbH) * top / maxScroll
+			}
+		}
+
+		thumbStyle := lipgloss.NewStyle().Foreground(m.theme.BorderFocused.GetBorderTopForeground())
+		trackStyle := m.theme.Dimmed
+
+		for i := 0; i < contentH; i++ {
+			lineContent := ""
+			if i < len(visibleLines) {
+				lineContent = visibleLines[i]
+			}
+			if showScrollbar {
+				w := len([]rune(lineContent))
+				padding := ""
+				if w < contentW {
+					padding = strings.Repeat(" ", contentW-w)
+				} else if w > contentW {
+					lineContent = string([]rune(lineContent)[:contentW])
+				}
+
+				// Determine scrollbar character for this row
+				isThumb := i >= thumbTop && i < thumbTop+thumbH
+				var sbChar string
+				if isThumb {
+					sbChar = thumbStyle.Render("█")
+				} else {
+					sbChar = trackStyle.Render("│")
+				}
+				rows = append(rows, lineContent+padding+" "+sbChar)
+			} else {
+				rows = append(rows, lineContent)
+			}
 		}
 	}
 	if m.cellPopupMsg != "" {
