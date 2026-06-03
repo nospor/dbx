@@ -1090,9 +1090,24 @@ func (m Model) renderCellPopup() string {
 	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(strings.Join(rows, "\n"))
 	body = lipgloss.Place(innerW, innerH, lipgloss.Left, lipgloss.Top, body)
 
-	title := fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
-	if m.cellPopupJSONFormatted {
-		title = fmt.Sprintf("Cell Value — JSON formatted (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
+	colName := ""
+	if m.cursorCol >= 0 && m.cursorCol < len(m.result.Columns) {
+		colName = m.result.Columns[m.cursorCol]
+	}
+
+	var title string
+	if colName != "" {
+		if m.cellPopupJSONFormatted {
+			title = fmt.Sprintf("Cell Value — %s — JSON formatted (row %d col %d)", colName, m.cursorRow+1, m.cursorCol+1)
+		} else {
+			title = fmt.Sprintf("Cell Value — %s (row %d col %d)", colName, m.cursorRow+1, m.cursorCol+1)
+		}
+	} else {
+		if m.cellPopupJSONFormatted {
+			title = fmt.Sprintf("Cell Value — JSON formatted (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
+		} else {
+			title = fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
+		}
 	}
 	footer := "y: copy · f: JSON · h/l: col · j/k: row · PgDn/PgUp: scroll · g/G: top/bottom · Esc: close"
 	if maxTop == 0 {
