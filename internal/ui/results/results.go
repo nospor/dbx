@@ -427,6 +427,17 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 	case "G":
 		_, maxTop := m.cellPopupScrollBounds()
 		m.cellPopupTop = maxTop
+	case "J":
+		_, maxTop := m.cellPopupScrollBounds()
+		m.cellPopupTop++
+		if m.cellPopupTop > maxTop {
+			m.cellPopupTop = maxTop
+		}
+	case "K":
+		m.cellPopupTop--
+		if m.cellPopupTop < 0 {
+			m.cellPopupTop = 0
+		}
 	}
 	m.clampCellPopupScroll()
 }
@@ -1222,7 +1233,7 @@ func (m Model) renderCellPopup() string {
 			title = fmt.Sprintf("Cell Value (row %d col %d)", m.cursorRow+1, m.cursorCol+1)
 		}
 	}
-	footer := "y: copy · f: JSON · h/l: col · j/k: row · PgDn/PgUp/Ctrl+d/u: scroll · g/G: top/bottom · Esc: close"
+	footer := "y: copy · f: JSON · h/l: col · j/k: row · PgDn/PgUp/Ctrl+d/u/J/K: scroll · g/G: top/bottom · Esc: close"
 	if maxTop == 0 {
 		footer = "y: copy · f: JSON · h/l: col · j/k: row · Esc: close"
 	}
