@@ -1,4 +1,15 @@
 
+## [1.0.8] - 2026-06-10
+
+### Features
+
+- *(results)* Add J/K line-by-line scrolling to cell view popup ([3fa8783](https://github.com/nospor/dbx/commit/3fa87831b2dae5dc91e6747a9d38d2856bae54ba))
+- *(ai)* Instruct MongoDB assistant to output raw JSON commands instead of shell syntax ([07f7f6c](https://github.com/nospor/dbx/commit/07f7f6c4dd64cebe3444f3da39fe412ecf3d7c22))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.7 [skip ci] ([3568551](https://github.com/nospor/dbx/commit/3568551d1e454bc87ba5aa37deee789a9bf54753))
+
 ## [1.0.7] - 2026-06-03
 
 ### Features
