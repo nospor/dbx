@@ -1089,7 +1089,17 @@ const aiOutboundMongoSystemPrefix = "You are a database assistant. This conversa
 	"NOT about source code or files. Do not search the filesystem or codebase. " +
 	"Answer questions about queries, data, and database structure.\n\n" +
 	"When you include MongoDB commands or queries, wrap each query in a fenced code block exactly like this:\n```json\n" +
-	"...your JSON query/command here...\n```\n\n"
+	"...your JSON query/command here...\n```\n\n" +
+	"IMPORTANT: Do NOT write MongoDB shell helper queries (e.g. do NOT write `db.collection.find({}).limit(500)`). " +
+	"Instead, write raw database commands in standard JSON format, which can be run with RunCommand. For example, " +
+	"instead of `db.users.find({\"age\": {\"$gt\": 30}}).limit(50)`, write:\n" +
+	"```json\n" +
+	"{\n" +
+	"  \"find\": \"users\",\n" +
+	"  \"filter\": {\"age\": {\"$gt\": 30}},\n" +
+	"  \"limit\": 50\n" +
+	"}\n" +
+	"```\n\n"
 
 // collectAIMentionedTables returns unique table/view names from @tokens in the prompt.
 // @all expands to every table and view in the schema for connID:dbName.
