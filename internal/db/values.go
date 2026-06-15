@@ -99,6 +99,30 @@ func formatPGValue(oid uint32, v interface{}) string {
 		return fmt.Sprintf("%v", x)
 	case net.IP:
 		return x.String()
+	case pgtype.Numeric:
+		if !x.Valid {
+			return "NULL"
+		}
+		val, err := x.Value()
+		if err != nil {
+			return fmt.Sprintf("%v", x)
+		}
+		if val == nil {
+			return "NULL"
+		}
+		return fmt.Sprintf("%v", val)
+	case *pgtype.Numeric:
+		if x == nil || !x.Valid {
+			return "NULL"
+		}
+		val, err := x.Value()
+		if err != nil {
+			return fmt.Sprintf("%v", x)
+		}
+		if val == nil {
+			return "NULL"
+		}
+		return fmt.Sprintf("%v", val)
 	default:
 		return formatSQLValue(v)
 	}

@@ -85,3 +85,53 @@ func TestFormatPGValueByteaDecodesTimestampBinary(t *testing.T) {
 		t.Fatalf("bytea column should try timestamp binary first: got %q", got)
 	}
 }
+
+func TestNumeric(t *testing.T) {
+	var n pgtype.Numeric
+	err := n.Scan("95.62")
+	if err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+
+	gotVal := formatPGValue(pgtype.NumericOID, n)
+	if gotVal != "95.62" {
+		t.Errorf("formatPGValue(Numeric) = %q, want %q", gotVal, "95.62")
+	}
+
+	gotPtr := formatPGValue(pgtype.NumericOID, &n)
+	if gotPtr != "95.62" {
+		t.Errorf("formatPGValue(*Numeric) = %q, want %q", gotPtr, "95.62")
+	}
+
+	// Test invalid/null Numeric
+	var nullNum pgtype.Numeric
+	gotNull := formatPGValue(pgtype.NumericOID, nullNum)
+	if gotNull != "NULL" {
+		t.Errorf("formatPGValue(null Numeric) = %q, want %q", gotNull, "NULL")
+	}
+
+	gotNullPtr := formatPGValue(pgtype.NumericOID, &nullNum)
+	if gotNullPtr != "NULL" {
+		t.Errorf("formatPGValue(null *Numeric) = %q, want %q", gotNullPtr, "NULL")
+	}
+
+	// Test NaN
+	var nanNum pgtype.Numeric
+	err = nanNum.Scan("NaN")
+	if err == nil {
+		gotNaN := formatPGValue(pgtype.NumericOID, nanNum)
+		if gotNaN != "NaN" {
+			t.Errorf("formatPGValue(NaN) = %q, want %q", gotNaN, "NaN")
+		}
+	}
+
+	// Test Infinity
+	var infNum pgtype.Numeric
+	err = infNum.Scan("Infinity")
+	if err == nil {
+		gotInf := formatPGValue(pgtype.NumericOID, infNum)
+		if gotInf != "Infinity" {
+			t.Errorf("formatPGValue(Infinity) = %q, want %q", gotInf, "Infinity")
+		}
+	}
+}
