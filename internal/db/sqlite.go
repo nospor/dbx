@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -25,12 +28,34 @@ func (d *sqliteDriver) Connect(ctx context.Context, conn config.Connection) erro
 	if path == "" {
 		return fmt.Errorf("sqlite: file path is required (set file_path or database in config)")
 	}
-	db, err := sql.Open("sqlite", path)
+	resolvedPath, err := resolveSQLitePath(path)
+	if err != nil {
+		return fmt.Errorf("sqlite path resolve: %w", err)
+	}
+
+	if !isSQLiteMemory(resolvedPath) {
+		filePath := resolvedPath
+		if idx := strings.Index(resolvedPath, "?"); idx != -1 {
+			filePath = resolvedPath[:idx]
+		}
+		filePath = strings.TrimPrefix(filePath, "file://")
+		filePath = strings.TrimPrefix(filePath, "file:")
+
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			return fmt.Errorf("sqlite: database file %q does not exist", filePath)
+		}
+	}
+
+	db, err := sql.Open("sqlite", resolvedPath)
 	if err != nil {
 		return fmt.Errorf("sqlite open: %w", err)
 	}
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "unable to open database file") {
+			return fmt.Errorf("sqlite ping: %w (verify file permissions and that the path is valid)", err)
+		}
 		return fmt.Errorf("sqlite ping: %w", err)
 	}
 	d.db = db
@@ -203,4 +228,69 @@ func (d *sqliteDriver) Exec(ctx context.Context, _ string, sqlStr string) (*Quer
 		Columns: []string{"rows_affected"},
 		Rows:    [][]string{{fmt.Sprintf("%d", affected)}},
 	}, nil
+}
+
+func isSQLiteMemory(path string) bool {
+	return path == ":memory:" ||
+		strings.Contains(path, "mode=memory") ||
+		strings.Contains(path, ":memory:")
+}
+
+func expandTilde(path string) string {
+	if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+	} else if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	} else if strings.HasPrefix(path, "~\\") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
+}
+
+func resolveSQLitePath(dsn string) (string, error) {
+	if isSQLiteMemory(dsn) {
+		return dsn, nil
+	}
+
+	// Separate query parameters if present
+	basePath := dsn
+	params := ""
+	if idx := strings.Index(dsn, "?"); idx != -1 {
+		basePath = dsn[:idx]
+		params = dsn[idx:]
+	}
+
+	hasFilePrefix := false
+	filePrefix := ""
+	if strings.HasPrefix(basePath, "file://") {
+		hasFilePrefix = true
+		filePrefix = "file://"
+		basePath = strings.TrimPrefix(basePath, "file://")
+	} else if strings.HasPrefix(basePath, "file:") {
+		hasFilePrefix = true
+		filePrefix = "file:"
+		basePath = strings.TrimPrefix(basePath, "file:")
+	}
+
+	basePath = expandTilde(basePath)
+
+	dir := filepath.Dir(basePath)
+	if dir != "." && dir != "/" && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create sqlite parent directory %q: %w", dir, err)
+		}
+	}
+
+	resolved := basePath
+	if hasFilePrefix {
+		resolved = filePrefix + resolved
+	}
+	resolved = resolved + params
+	return resolved, nil
 }
