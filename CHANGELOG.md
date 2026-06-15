@@ -1,4 +1,10 @@
 
+## [1.0.10] - 2026-06-15
+
+### Bug Fixes
+
+- *(db)* Correctly format PostgreSQL numeric fields ([d9871e6](https://github.com/nospor/dbx/commit/d9871e67613bc6ce405de47730de7ee9fc5e182d))
+
 ## [1.0.9] - 2026-06-15
 
 ### Bug Fixes
