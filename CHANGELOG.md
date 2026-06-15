@@ -1,4 +1,14 @@
 
+## [1.0.9] - 2026-06-15
+
+### Bug Fixes
+
+- Now it can connect with sqlite db ([fceebef](https://github.com/nospor/dbx/commit/fceebef5589a729208f9cc66202431ff29885bf6))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.8 [skip ci] ([23f2e33](https://github.com/nospor/dbx/commit/23f2e3356025ecd285f141c37c796f29e55616d0))
+
 ## [1.0.8] - 2026-06-10
 
 ### Features
