@@ -1,4 +1,21 @@
 
+## [1.0.11] - 2026-06-19
+
+### Features
+
+- Make query execution timeout configurable ([c0afb1c](https://github.com/nospor/dbx/commit/c0afb1ca8dfe16022d78fc3f037e6a39bf371996))
+- *(editor)* Add external editor integration via ctrl+g and space+g ([c0dd54f](https://github.com/nospor/dbx/commit/c0dd54fb3d447c6d67fea269386c631d1aee8f80))
+
+            Allows editing the query tab buffer in an external terminal editor
+            (defined by $EDITOR / $VISUAL, defaulting to nano). Writes the active
+            buffer to a temporary file, opens the editor process, and loads the
+            modified content back into the tab on exit.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.9 [skip ci] ([67cf285](https://github.com/nospor/dbx/commit/67cf285098d15a38bcb3e52eed3f5f2747b3b490))
+- Update CHANGELOG.md for v1.0.10 [skip ci] ([f16ecf3](https://github.com/nospor/dbx/commit/f16ecf3e2603fa13e8956cdddf83eac5039d3fbf))
+
 ## [1.0.10] - 2026-06-15
 
 ### Bug Fixes
