@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -291,6 +292,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+	case editExternalMsg:
+		if len(m.editor.OpenTabKeys()) == 0 {
+			return m, m.setStatus("No active tab to edit.")
+		}
+		return m, m.openExternalEditor()
+
+	case externalEditorFinishedMsg:
+		if msg.err != nil {
+			os.Remove(msg.tempPath)
+			return m, m.setStatus("External editor failed: " + msg.err.Error())
+		}
+		contentBytes, readErr := os.ReadFile(msg.tempPath)
+		os.Remove(msg.tempPath)
+		if readErr != nil {
+			return m, m.setStatus("Failed to read external editor content: " + readErr.Error())
+		}
+		text := strings.TrimSuffix(string(contentBytes), "\n")
+		text = strings.TrimSuffix(text, "\r")
+		m.editor.SetContent(text)
+		m.persistEditorDraft()
+		return m, m.setStatus("Query updated from external editor.")
 
 	case tea.KeyMsg:
 		// Route to connection form if active
@@ -337,6 +359,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.palette, cmd = m.palette.Update(msg)
 			cmds = append(cmds, cmd)
 			return m, tea.Batch(cmds...)
+		}
+
+		if m.focus == PanelEditor && msg.String() == "ctrl+g" {
+			if !m.editor.HistoryPopupVisible() {
+				if len(m.editor.OpenTabKeys()) == 0 {
+					return m, m.setStatus("No active tab to edit.")
+				}
+				return m, m.openExternalEditor()
+			}
 		}
 
 		// Global keys — suppressed in insert mode, history popup, explorer filtering, and AI input mode.
@@ -1367,6 +1398,7 @@ func (m *Model) openPalette() {
 			{Key: "n", Description: "New tab", Action: func() tea.Msg { return newTabMsg{} }},
 			{Key: "r", Description: "Rename tab", Action: func() tea.Msg { return renameTabPromptMsg{} }},
 			{Key: "D", Description: "Close tab (confirm)", Action: func() tea.Msg { return closeTabPromptMsg{} }},
+			{Key: "g", Description: "Edit in external editor", Action: func() tea.Msg { return editExternalMsg{} }},
 			{Key: "t", Description: "Toggle explorer", Action: func() tea.Msg { return toggleExplorerMsg{} }},
 			{Key: "a", Description: "Toggle AI Pane", Action: func() tea.Msg { return toggleAIPaneMsg{} }},
 			{Key: "f", Description: "Fullscreen", Action: func() tea.Msg { return toggleFullscreenMsg{} }},
@@ -2058,6 +2090,8 @@ const helpScreenText = `
     space+n     New query tab next to current tab
     space+r     Rename active tab (input popup)
     space+D     Close active tab (confirm popup)
+    space+g     Edit in external editor
+    ctrl+g      Edit in external editor (also in Insert mode)
     i/o         Enter insert mode
     enter       Execute query under cursor (batch: only DELETE/UPDATE split by ; → run in order)
     u           Undo edit (whole insert session until esc; normal edits undo separately)
@@ -2085,6 +2119,7 @@ const helpScreenText = `
     tab         Trigger autocomplete
     ctrl+enter  Execute query
     ctrl+r      Execute query
+    ctrl+g      Edit in external editor
 
   RESULTS
     j/k         Navigate rows
@@ -2511,6 +2546,38 @@ func quickSelectQuery(driver, database, table string) string {
 	default: // postgres and anything else
 		return "SELECT * FROM " + table + " LIMIT 100"
 	}
+}
+
+func (m *Model) openExternalEditor() tea.Cmd {
+	tempFile, err := os.CreateTemp("", "dbx-editor-*.sql")
+	if err != nil {
+		return m.setStatus("Failed to create temporary file: " + err.Error())
+	}
+	tempName := tempFile.Name()
+	if _, err := tempFile.WriteString(m.editor.TabText()); err != nil {
+		tempFile.Close()
+		os.Remove(tempName)
+		return m.setStatus("Failed to write to temporary file: " + err.Error())
+	}
+	tempFile.Close()
+
+	editorCmd := os.Getenv("EDITOR")
+	if editorCmd == "" {
+		editorCmd = os.Getenv("VISUAL")
+	}
+	if editorCmd == "" {
+		editorCmd = "nano"
+	}
+	parts := strings.Fields(editorCmd)
+	if len(parts) == 0 {
+		parts = []string{"nano"}
+	}
+	args := append(parts[1:], tempName)
+	c := exec.Command(parts[0], args...)
+
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return externalEditorFinishedMsg{tempPath: tempName, err: err}
+	})
 }
 
 func (m *Model) setStatus(msg string) tea.Cmd {

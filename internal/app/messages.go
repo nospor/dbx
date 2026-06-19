@@ -133,3 +133,12 @@ type newTabMsg struct{}
 
 // renameTabPromptMsg triggers the rename tab input popup.
 type renameTabPromptMsg struct{}
+
+// editExternalMsg triggers editing the current tab content in an external editor.
+type editExternalMsg struct{}
+
+// externalEditorFinishedMsg is returned when the external editor exits.
+type externalEditorFinishedMsg struct {
+	tempPath string
+	err      error
+}

@@ -14,6 +14,7 @@ A terminal-based database client written in Go with vim-mode editing, multi-data
 - **Query history** per connection/database — `ctrl+p` / `ctrl+n` replace the buffer with older/newer entries; `backspace` (normal mode) opens a **filterable** popup — stored in `history.json`
 - **Per-database editor drafts** — the query pane is remembered per connection/database; drafts save when you leave Insert mode (`esc`) and when switching databases; stored in `query-contents.json` (separate from history)
 - **Query tabs** — each connection/database opens as a tab in the query editor (`tab` / `shift+tab` to cycle; command palette `n` opens a new tab next to the current tab; command palette `r` renames the active tab; command palette `D` opens a **centered confirm popup** — `y` or `enter` to close, `n` / `esc` / `q` to cancel). Open tabs and custom tab labels are restored on startup (`open-tabs.json`)
+- **External editor integration** — edit the current tab in your system's command-line editor (determined by `$EDITOR`, `$VISUAL`, or falling back to `nano`). Hit `ctrl+g` (Normal or Insert mode) or open the command palette (`space`) and press `g` to launch. When you exit the editor, the tab's contents are updated with the changes.
 - **Folder-scoped tabs and drafts** (optional) — set **`folder_based`** to **`true`** in `config.json` so open tabs and query drafts are grouped by the **directory you start dbx from** (`cd` into project A vs project B). Data still lives under `~/.cache/dbx` (or `$XDG_CACHE_HOME/dbx`); nothing is written inside your project folders
 - **Command palette** (**space**, then a letter) with context-aware commands per panel (`n` add connection in explorer; `a` toggles AI pane from explorer / editor / results / AI)
 - **Fullscreen** any panel with space+f
@@ -146,6 +147,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `enter`                         | Execute query under cursor. If the block is **only** multiple `DELETE` and/or `UPDATE` statements separated by `;`, they run **one after another**; the results grid shows `#` and `rows_affected` per statement. |
 | `u`                             | Undo last edit (per tab; up to 200 steps). One undo step covers a whole insert session (from `i`/`a`/… until `esc`), plus normal-mode edits                                                                       |
 | `ctrl+r`                        | Redo (normal mode only; see insert mode for run-query)                                                                                                                                                            |
+| `ctrl+g`                        | Edit the current tab in an external editor (uses `$EDITOR`, `$VISUAL`, or defaults to `nano`)                                                                                                                    |
 | `ctrl+p` / `ctrl+n`             | Browse history (replace buffer)                                                                                                                                                                                   |
 | `backspace`                     | Open **history popup** — filter and pick a query to append (see **History** below)                                                                                                                                |
 | `dd`                            | Delete line                                                                                                                                                                                                       |
@@ -176,6 +178,7 @@ Each pane’s **top border** shows its name and focus key: `[e] Explorer`, `[q] 
 | `ctrl+enter`              | Execute query                                                                                                                                 |
 | `ctrl+r`                  | Execute query                                                                                                                                 |
 | `ctrl+v` / `ctrl+shift+v` | Paste clipboard contents at cursor                                                                                                            |
+| `ctrl+g`                  | Edit the current tab in an external editor (uses `$EDITOR`, `$VISUAL`, or defaults to `nano`)                                                 |
 
 ### Results
 | Key             | Action                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -224,7 +227,7 @@ Press **space** to open the palette, then the **second** key (e.g. **space** the
 | Panel    | Commands                                                                                                              |
 | -------- | --------------------------------------------------------------------------------------------------------------------- |
 | Explorer | `n` add connection, `e` edit, `d` delete, `v` show DDL, `V` export all DDLs, `R` refresh, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen        |
-| Editor   | `x` execute, `e` explain, `c` clear, `n` new tab, `r` rename tab, `D` close tab (confirm), `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
+| Editor   | `x` execute, `e` explain, `c` clear, `n` new tab, `r` rename tab, `D` close tab (confirm), `g` edit in external editor, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | Results  | `y` copy cell, `Y` copy row, `c` copy all rows (headers), `e` export CSV, `j` export JSON, `t` toggle explorer, `a` toggle AI pane, `f` fullscreen |
 | AI       | `t` toggle explorer, `a` toggle AI pane, `f` fullscreen                                                               |
 
