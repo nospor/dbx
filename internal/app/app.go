@@ -2316,7 +2316,11 @@ func (m *Model) execQueryCmd(query string) tea.Cmd {
 	tabID := m.editor.EditorConnKey()
 	return func() tea.Msg {
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		timeout := 30 * time.Second
+		if m.cfg != nil && m.cfg.QueryTimeoutSeconds > 0 {
+			timeout = time.Duration(m.cfg.QueryTimeoutSeconds) * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		driver, err := m.getOrCreateDriver(ctx, connID)
 		if err != nil {

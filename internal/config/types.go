@@ -34,6 +34,7 @@ type Config struct {
 	Layout               Layout       `json:"layout"`
 	Theme                string       `json:"theme"`                  // terminal, dark, light, catppuccin-mocha, catppuccin-latte, nord, gruvbox-dark
 	StatusMessageSeconds int          `json:"status_message_seconds"` // default 5
+	QueryTimeoutSeconds  int          `json:"query_timeout_seconds"`  // default 30
 	// FolderBased, when true, scopes restored query tabs and per-tab editor drafts to the
 	// process working directory at startup (still stored under the XDG cache path, not in the project folder).
 	FolderBased bool      `json:"folder_based"`

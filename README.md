@@ -56,6 +56,7 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
   },
   "theme": "catppuccin-mocha",
   "status_message_seconds": 5,
+  "query_timeout_seconds": 30,
   "folder_based": false,
   "ai": {
     "selected_app": "cursor-agent",
@@ -79,6 +80,7 @@ Config is stored in `~/.config/dbx/config.json` (UI settings only):
 
 Omit `ai` to keep defaults. The `apps` map defines named profiles; `selected_app` must match one key. Each profile supplies shell commands and flags dbx uses when spawning the CLI.
 
+- **`query_timeout_seconds`** — default **`30`**. The timeout in seconds for executing database queries. If a query takes longer than this limit, the execution is canceled and a timeout error is displayed in the results pane.
 - **`folder_based`** — default **`false`**. When **`false`**, open query tabs and editor drafts use a single global set (see **Data files**). When **`true`**, tabs and drafts are stored **per startup working directory** (absolute path), so running `dbx` from `/path/to/project-a` restores a different tab set than from `/path/to/project-b`. On-disk files use a `global` entry plus a `by_folder` map of paths; legacy flat files are upgraded when saved. If the key is missing from an older `config.json`, dbx rewrites the file with **`"folder_based": false`**.
 
 Within `ai`:

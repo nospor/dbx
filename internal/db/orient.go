@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/robertn/dbx/internal/config"
 	"gopkg.in/istreamdata/orientgo.v2"
@@ -421,7 +420,7 @@ func (d *orientDriver) doRequest(ctx context.Context, method, url string, body i
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(d.conn.User, d.conn.Password)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{}
 	return client.Do(req)
 }
 

@@ -132,6 +132,7 @@ func Load() (*Config, error) {
 		Layout               Layout       `json:"layout"`
 		Theme                string       `json:"theme"`
 		StatusMessageSeconds int          `json:"status_message_seconds"`
+		QueryTimeoutSeconds  *int         `json:"query_timeout_seconds,omitempty"`
 		FolderBased          *bool        `json:"folder_based,omitempty"`
 		AI                   *AIConfig    `json:"ai,omitempty"`
 	}
@@ -147,12 +148,16 @@ func Load() (*Config, error) {
 
 	needPersistAI := legacy.AI == nil || legacy.AI.Apps == nil
 	needPersistFolderBased := legacy.FolderBased == nil
+	needPersistQueryTimeout := legacy.QueryTimeoutSeconds == nil
 	cfg := Config{
 		Connections:          legacy.Connections,
 		Layout:               legacy.Layout,
 		Theme:                legacy.Theme,
 		StatusMessageSeconds: legacy.StatusMessageSeconds,
 		AI:                   legacy.AI,
+	}
+	if legacy.QueryTimeoutSeconds != nil {
+		cfg.QueryTimeoutSeconds = *legacy.QueryTimeoutSeconds
 	}
 	if legacy.FolderBased != nil {
 		cfg.FolderBased = *legacy.FolderBased
@@ -171,7 +176,7 @@ func Load() (*Config, error) {
 			}
 		}
 	}
-	if needPersistAI || needPersistAIAgentWD || needPersistFolderBased {
+	if needPersistAI || needPersistAIAgentWD || needPersistFolderBased || needPersistQueryTimeout {
 		if err := Save(&cfg); err != nil {
 			return nil, fmt.Errorf("persist config defaults: %w", err)
 		}
@@ -192,6 +197,7 @@ func Save(cfg *Config) error {
 		Layout               Layout    `json:"layout"`
 		Theme                string    `json:"theme"`
 		StatusMessageSeconds int       `json:"status_message_seconds"`
+		QueryTimeoutSeconds  int       `json:"query_timeout_seconds"`
 		FolderBased          bool      `json:"folder_based"`
 		AI                   *AIConfig `json:"ai,omitempty"`
 	}
@@ -199,6 +205,7 @@ func Save(cfg *Config) error {
 		Layout:               cfg.Layout,
 		Theme:                cfg.Theme,
 		StatusMessageSeconds: cfg.StatusMessageSeconds,
+		QueryTimeoutSeconds:  cfg.QueryTimeoutSeconds,
 		FolderBased:          cfg.FolderBased,
 		AI:                   cfg.AI,
 	}
@@ -241,6 +248,7 @@ func defaults() *Config {
 		},
 		Theme:                "terminal",
 		StatusMessageSeconds: 5,
+		QueryTimeoutSeconds:  30,
 		AI:                   aiCfg,
 	}
 }
@@ -308,6 +316,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.StatusMessageSeconds <= 0 {
 		cfg.StatusMessageSeconds = 5
+	}
+	if cfg.QueryTimeoutSeconds <= 0 {
+		cfg.QueryTimeoutSeconds = 30
 	}
 	if cfg.Layout.AIPaneWidthPct == 0 {
 		cfg.Layout.AIPaneWidthPct = 25
