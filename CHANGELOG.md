@@ -1,4 +1,21 @@
 
+## [1.0.12] - 2026-06-23
+
+### Features
+
+- *(ai)* Pass prompt via temp file and lift /results context limits ([a808920](https://github.com/nospor/dbx/commit/a808920232dc7d9e58b8a747498e035c6f071d5d))
+
+            - Writes prompt content to a temporary file inside the AI agent work
+            directory and passes an instructional prompt pointing to it, preventing
+            'argument list too long' errors.
+            - Sets the default `max_results_context_kb` to 0 (unlimited) and updates
+            the truncation logic in `app.go` to respect unlimited context size when
+            negative or zero.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.11 [skip ci] ([c2e475e](https://github.com/nospor/dbx/commit/c2e475ef14fa3cf760ecfd1df3e7e7339d75048c))
+
 ## [1.0.11] - 2026-06-19
 
 ### Features
