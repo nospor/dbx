@@ -240,8 +240,33 @@ func (s *Store) Ask(connKey, prompt string) (string, error) {
 		args = append(args, chat.SessionID)
 	}
 
-	// Append user prompt as the final argument
-	args = append(args, prompt)
+	// Determine where to create the temporary file (prefer the agent's workdir to avoid sandbox issues)
+	var tempDir string
+	if s.Cfg != nil {
+		if dir, ok, err := s.Cfg.ResolveAIAgentWorkDir(); err == nil && ok && dir != "" {
+			tempDir = dir
+			_ = os.MkdirAll(tempDir, 0o755)
+		}
+	}
+
+	// Write prompt to a temporary file to avoid "argument list too long" errors when prompt is large
+	tmpFile, err := os.CreateTemp(tempDir, "dbx-ai-prompt-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("create temp file for AI prompt: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.WriteString(prompt); err != nil {
+		tmpFile.Close()
+		return "", fmt.Errorf("write AI prompt to temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
+
+	// Pass instructional text pointing to the file instead of the raw prompt string
+	instructionalPrompt := fmt.Sprintf("In file %s there are instructions to do with needed informations.", tmpPath)
+	args = append(args, instructionalPrompt)
 
 	cmd := exec.Command(baseCmd, args...)
 	if err := s.applyAIProcessDir(cmd); err != nil {
@@ -253,7 +278,7 @@ func (s *Store) Ask(connKey, prompt string) (string, error) {
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		if errBuf.Len() > 0 {
 			return "", errors.New(errBuf.String())

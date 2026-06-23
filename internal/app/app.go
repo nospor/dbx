@@ -1186,6 +1186,7 @@ func sanitizeAIResultRow(row []string, wantCols int) []string {
 }
 
 // formatAIResultsContextBlock builds query + TSV rows for the AI, capped at maxBytes (UTF-8 length).
+// If maxBytes is negative, no limit is enforced.
 func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 	if r == nil {
 		return ""
@@ -1200,7 +1201,7 @@ func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 		fence = "json"
 	}
 	hdr := "## Results pane context\n\n### Query\n\n```" + fence + "\n" + sqlPart + "\n```\n\n### Rows (tab-separated)\n\n"
-	if len(hdr) >= maxBytes {
+	if maxBytes >= 0 && len(hdr) >= maxBytes {
 		return "## Results pane context\n\n(Context limit too small for query + rows.)\n\n"
 	}
 	sb.WriteString(hdr)
@@ -1210,7 +1211,7 @@ func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 	}
 	if nc > 0 && len(r.Columns) > 0 {
 		line := strings.Join(sanitizeAIResultRow(r.Columns, nc), "\t") + "\n"
-		if sb.Len()+len(line) > maxBytes {
+		if maxBytes >= 0 && sb.Len()+len(line) > maxBytes {
 			sb.WriteString("(header row omitted — context limit exceeded)\n\n")
 			return sb.String()
 		}
@@ -1219,7 +1220,7 @@ func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 	included := 0
 	for _, row := range r.Rows {
 		line := strings.Join(sanitizeAIResultRow(row, nc), "\t") + "\n"
-		if sb.Len()+len(line) > maxBytes {
+		if maxBytes >= 0 && sb.Len()+len(line) > maxBytes {
 			fmt.Fprintf(&sb, "\n… truncated: showing %d of %d rows (max ~%d KB for this block).\n", included, len(r.Rows), max(1, maxBytes/1024))
 			break
 		}
@@ -1245,7 +1246,7 @@ func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) te
 	connKey := msg.ConnKey
 	prefix := systemPrefix
 
-	maxResultsBytes := 256 * 1024
+	maxResultsBytes := -1 // <= 0 means unlimited
 	if m.cfg != nil && m.cfg.AI != nil && m.cfg.AI.MaxResultsContextKB > 0 {
 		maxResultsBytes = m.cfg.AI.MaxResultsContextKB * 1024
 	}

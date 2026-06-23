@@ -53,7 +53,7 @@ type AIAppConfig struct {
 type AIConfig struct {
 	SelectedApp         string                 `json:"selected_app"`
 	MaxHistorySizeKB    int                    `json:"max_history_size_kb"`
-	MaxResultsContextKB int                    `json:"max_results_context_kb,omitempty"` // cap for /results query+grid sent to AI; default 256
+	MaxResultsContextKB int                    `json:"max_results_context_kb,omitempty"` // cap for /results query+grid sent to AI; <= 0 means unlimited
 	Apps                map[string]AIAppConfig `json:"apps"`
 	// DisableAgentWorkdir, when true, runs the AI CLI with the process default cwd (same as dbx).
 	// When false, dbx sets cmd.Dir to AgentWorkdir (or the default cache path if AgentWorkdir is empty).
