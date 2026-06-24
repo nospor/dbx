@@ -1,4 +1,14 @@
 
+## [1.0.13] - 2026-06-24
+
+### Features
+
+- *(results)* Copy formatted cell values in results viewer ([e91d7a6](https://github.com/nospor/dbx/commit/e91d7a659ccfa3f7d9c734438a272e5ec60f2d11))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.12 [skip ci] ([1baaf22](https://github.com/nospor/dbx/commit/1baaf22dc4abb35e39b9aef0c15b116c974dde79))
+
 ## [1.0.12] - 2026-06-23
 
 ### Features
