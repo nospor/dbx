@@ -344,8 +344,10 @@ func (m *Model) handleCellPopupKey(msg tea.KeyMsg) {
 		m.cellPopupMsg = ""
 		m.cellPopupJSONFormatted = false
 	case "y":
-		if err := util.Copy(m.SelectedCell()); err != nil {
+		if err := util.Copy(m.cellPopupSourceText()); err != nil {
 			m.cellPopupMsg = "Clipboard unavailable: " + err.Error()
+		} else {
+			m.cellPopupMsg = "Copied to clipboard."
 		}
 	case "f":
 		if m.cellPopupJSONFormatted {
@@ -1200,7 +1202,7 @@ func (m Model) renderCellPopup() string {
 	}
 	if m.cellPopupMsg != "" {
 		msgStyle := m.theme.Success
-		if m.cellPopupMsg == "Not valid JSON" {
+		if m.cellPopupMsg == "Not valid JSON" || strings.HasPrefix(m.cellPopupMsg, "Clipboard unavailable") {
 			msgStyle = m.theme.Error
 		}
 		rows = append(rows, msgStyle.Render(truncate(m.cellPopupMsg, innerW)))
