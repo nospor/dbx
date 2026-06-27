@@ -1,4 +1,14 @@
 
+## [1.0.14] - 2026-06-27
+
+### Bug Fixes
+
+- *(ai)* Always prepend database system instructions to prompts ([1c92b22](https://github.com/nospor/dbx/commit/1c92b22e42369ef3d96251e9fd31d2f3d73e8307))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.13 [skip ci] ([4076467](https://github.com/nospor/dbx/commit/4076467acf54c27f3cd79b5cd8c94e5ae4adb8d3))
+
 ## [1.0.13] - 2026-06-24
 
 ### Features
