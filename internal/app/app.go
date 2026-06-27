@@ -930,15 +930,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var sysPrefix string
 		if m.aiStore != nil {
-			chat := m.aiStore.GetSession(msg.ConnKey)
-			// Only before AppendUserMessageAt: after append, len would always be ≥ 1.
-			if len(chat.Messages) == 0 {
-				connID, _ := splitConnKey(msg.ConnKey)
-				if conn := m.findConn(connID); conn != nil && conn.Driver == "mongodb" {
-					sysPrefix = aiOutboundMongoSystemPrefix
-				} else {
-					sysPrefix = aiOutboundSystemPrefix
-				}
+			connID, _ := splitConnKey(msg.ConnKey)
+			if conn := m.findConn(connID); conn != nil && conn.Driver == "mongodb" {
+				sysPrefix = aiOutboundMongoSystemPrefix
+			} else {
+				sysPrefix = aiOutboundSystemPrefix
 			}
 		}
 		m.aiPane.AppendUserMessageAt(msg.ConnKey, transcript) // chat shows what the user sent (/results line or plain prompt)
@@ -1107,9 +1103,8 @@ func tableColsKey(connID, dbName, table string) string {
 	return connID + ":" + dbName + ":" + table
 }
 
-// aiOutboundSystemPrefix is prepended only to the first outbound prompt after the transcript
-// is empty (new chat or /clear), before optional @-mention DDL blocks and the user’s text.
-// It is not shown in the transcript — only the raw user line is.
+// aiOutboundSystemPrefix is prepended to every outbound prompt, before optional @-mention DDL
+// blocks and the user’s text. It is not shown in the transcript — only the raw user line is.
 const aiOutboundSystemPrefix = "You are a database assistant. This conversation is about SQL and database data — " +
 	"NOT about source code or files. Do not search the filesystem or codebase. " +
 	"Answer questions about queries, data, and database structure.\n\n" +
