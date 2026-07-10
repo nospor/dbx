@@ -1,4 +1,15 @@
 
+## [1.1.0] - 2026-07-10
+
+### Features
+
+- Add Elasticsearch engine support ([c22f7d2](https://github.com/nospor/dbx/commit/c22f7d2da57f3f6e3c310f0a25fcf79cb66ed1f2))
+- *(elastic)* Group indices as tables under a single virtual database ([99b7ffd](https://github.com/nospor/dbx/commit/99b7ffda92a214a96b25f9096b5fbaf41c8e58af))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.0.14 [skip ci] ([6f9c309](https://github.com/nospor/dbx/commit/6f9c3094b83b23f42026b9ed1eaa28c396b5a66e))
+
 ## [1.0.14] - 2026-06-27
 
 ### Bug Fixes
