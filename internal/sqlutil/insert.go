@@ -1,6 +1,7 @@
 package sqlutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -26,6 +27,36 @@ func InsertForRows(driver, tableExpr string, columns []string, rows [][]string) 
 			docs = append(docs, "    "+q)
 		}
 		return fmt.Sprintf("{\n  \"insert\": %q,\n  \"documents\": [\n%s\n  ]\n}", tbl, strings.Join(docs, ",\n")), nil
+	}
+	if strings.ToLower(driver) == "elasticsearch" {
+		// Generate ndjson bulk index payload
+		var sb strings.Builder
+		for _, row := range rows {
+			// Build the document map from columns/row
+			docMap := make(map[string]interface{}, len(columns))
+			id := ""
+			for i, col := range columns {
+				val := ""
+				if i < len(row) {
+					val = row[i]
+				}
+				if col == "_id" {
+					id = val
+					continue
+				}
+				docMap[col] = val
+			}
+			// Action line
+			if id != "" {
+				sb.WriteString(fmt.Sprintf("{\"index\":{\"_index\":%q,\"_id\":%q}}\n", tableExpr, id))
+			} else {
+				sb.WriteString(fmt.Sprintf("{\"index\":{\"_index\":%q}}\n", tableExpr))
+			}
+			docJSON, _ := json.Marshal(docMap)
+			sb.Write(docJSON)
+			sb.WriteByte('\n')
+		}
+		return strings.TrimSpace(sb.String()), nil
 	}
 	var colList strings.Builder
 	colList.WriteString("(")

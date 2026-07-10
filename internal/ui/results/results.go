@@ -714,15 +714,25 @@ func (m *Model) deleteDraftCmd() tea.Cmd {
 	}
 	var table string
 	var ok bool
-	if strings.ToLower(m.result.Driver) == "mongodb" {
+	switch strings.ToLower(m.result.Driver) {
+	case "mongodb":
 		table, ok = sqlutil.CollectionFromMongoCommand(m.result.SourceSQL)
-	} else {
+	case "elasticsearch":
+		table, ok = sqlutil.IndexFromElasticCommand(m.result.SourceSQL)
+		if !ok || table == "" {
+			// For bare JSON search bodies the index comes from the active database.
+			table, ok = m.result.Database, m.result.Database != ""
+		}
+	default:
 		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
 	}
 	if !ok || table == "" {
 		errMsg := "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."
-		if strings.ToLower(m.result.Driver) == "mongodb" {
+		switch strings.ToLower(m.result.Driver) {
+		case "mongodb":
 			errMsg = "Can't infer collection name from JSON command."
+		case "elasticsearch":
+			errMsg = "Can't infer index name from Elasticsearch command."
 		}
 		return func() tea.Msg {
 			return DeleteDraftMsg{Err: errMsg}
@@ -765,15 +775,24 @@ func (m *Model) insertDraftCmd() tea.Cmd {
 	}
 	var table string
 	var ok bool
-	if strings.ToLower(m.result.Driver) == "mongodb" {
+	switch strings.ToLower(m.result.Driver) {
+	case "mongodb":
 		table, ok = sqlutil.CollectionFromMongoCommand(m.result.SourceSQL)
-	} else {
+	case "elasticsearch":
+		table, ok = sqlutil.IndexFromElasticCommand(m.result.SourceSQL)
+		if !ok || table == "" {
+			table, ok = m.result.Database, m.result.Database != ""
+		}
+	default:
 		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
 	}
 	if !ok || table == "" {
 		errMsg := "Can't infer table name — use a simple SELECT from one table (no WITH, JOIN, or subquery in FROM)."
-		if strings.ToLower(m.result.Driver) == "mongodb" {
+		switch strings.ToLower(m.result.Driver) {
+		case "mongodb":
 			errMsg = "Can't infer collection name from JSON command."
+		case "elasticsearch":
+			errMsg = "Can't infer index name from Elasticsearch command."
 		}
 		return func() tea.Msg {
 			return InsertDraftMsg{Err: errMsg}
@@ -873,15 +892,24 @@ func (m *Model) updateDraftCmd() tea.Cmd {
 	}
 	var table string
 	var ok bool
-	if strings.ToLower(m.result.Driver) == "mongodb" {
+	switch strings.ToLower(m.result.Driver) {
+	case "mongodb":
 		table, ok = sqlutil.CollectionFromMongoCommand(m.result.SourceSQL)
-	} else {
+	case "elasticsearch":
+		table, ok = sqlutil.IndexFromElasticCommand(m.result.SourceSQL)
+		if !ok || table == "" {
+			table, ok = m.result.Database, m.result.Database != ""
+		}
+	default:
 		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
 	}
 	if !ok || table == "" {
 		errMsg := "Can't infer table name — use a simple SELECT from one table."
-		if strings.ToLower(m.result.Driver) == "mongodb" {
+		switch strings.ToLower(m.result.Driver) {
+		case "mongodb":
 			errMsg = "Can't infer collection name from JSON command."
+		case "elasticsearch":
+			errMsg = "Can't infer index name from Elasticsearch command."
 		}
 		return func() tea.Msg {
 			return UpdateDraftMsg{Err: errMsg}

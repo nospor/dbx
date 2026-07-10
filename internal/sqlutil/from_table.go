@@ -284,3 +284,34 @@ func CollectionFromMongoCommand(cmd string) (string, bool) {
 	}
 	return "", false
 }
+
+// IndexFromElasticCommand extracts the index name from an Elasticsearch command.
+//
+// It supports:
+//   - Shorthand verb lines: GET /index/_search, POST /index/_doc, etc.
+//   - Bare JSON objects (returns "" because no index is embedded in the body).
+func IndexFromElasticCommand(cmd string) (string, bool) {
+	trimmed := strings.TrimSpace(cmd)
+	upper := strings.ToUpper(trimmed)
+	for _, verb := range []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"} {
+		if strings.HasPrefix(upper, verb+" ") || strings.HasPrefix(upper, verb+"\t") {
+			rest := strings.TrimSpace(trimmed[len(verb):])
+			// rest starts with /index/... or index/...
+			if len(rest) == 0 {
+				return "", false
+			}
+			// Strip leading slash
+			if rest[0] == '/' {
+				rest = rest[1:]
+			}
+			// Take the first path segment as index
+			end := strings.IndexAny(rest, "/ \t\n")
+			if end < 0 {
+				return rest, rest != ""
+			}
+			idx := rest[:end]
+			return idx, idx != ""
+		}
+	}
+	return "", false
+}

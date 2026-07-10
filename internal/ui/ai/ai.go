@@ -652,7 +652,7 @@ func (m Model) wrapPlainMarkdown(paragraph string, width int) string {
 
 func findNextQueryBlock(s string) (int, string) {
 	lower := strings.ToLower(s)
-	markers := []string{"```sql", "```json", "```javascript", "```js", "```mongo", "```mongodb"}
+	markers := []string{"```sql", "```json", "```javascript", "```js", "```mongo", "```mongodb", "```elasticsearch", "```esql"}
 	bestIdx := -1
 	bestMarker := ""
 	for _, m := range markers {

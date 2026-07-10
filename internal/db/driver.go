@@ -85,6 +85,8 @@ func New(conn config.Connection) (Driver, error) {
 		return &orientDriver{}, nil
 	case "oracle":
 		return &oracleDriver{}, nil
+	case "elasticsearch":
+		return &elasticDriver{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported driver: %q", conn.Driver)
 	}

@@ -39,6 +39,21 @@ func DeleteForRows(driver, tableExpr string, columns []string, rows [][]string, 
 		}
 		return fmt.Sprintf("{\n  \"delete\": %q,\n  \"deletes\": [\n%s\n  ]\n}", tbl, strings.Join(deletes, ",\n")), nil
 	}
+	if strings.ToLower(driver) == "elasticsearch" {
+		wc := whereColumns
+		if len(wc) == 0 {
+			wc = columns
+		}
+		var parts []string
+		for _, row := range rows {
+			id := elasticIDFromRow(columns, row, wc)
+			if id == "" {
+				id = "<id>"
+			}
+			parts = append(parts, fmt.Sprintf("DELETE /%s/_doc/%s", tableExpr, id))
+		}
+		return strings.Join(parts, "\n"), nil
+	}
 	wc := whereColumns
 	if len(wc) == 0 {
 		wc = columns
@@ -152,6 +167,18 @@ func UpdateForRow(driver, tableExpr string, columns []string, row []string, colN
 		u := fmt.Sprintf("{\"$set\": {%q: %s}}", colName, mongoFormatValue(newValue))
 		return fmt.Sprintf("{\n  \"update\": %q,\n  \"updates\": [\n    {\"q\": %s, \"u\": %s}\n  ]\n}", tbl, q, u), nil
 	}
+	if strings.ToLower(driver) == "elasticsearch" {
+		wc := whereColumns
+		if len(wc) == 0 {
+			wc = columns
+		}
+		id := elasticIDFromRow(columns, row, wc)
+		if id == "" {
+			id = "<id>"
+		}
+		b, _ := json.Marshal(newValue)
+		return fmt.Sprintf("POST /%s/_update/%s\n{\"doc\": {%q: %s}}", tableExpr, id, colName, string(b)), nil
+	}
 	qcol, err := quoteIdent(driver, colName)
 	if err != nil {
 		return "", err
@@ -229,4 +256,24 @@ func mongoRowQuery(columns []string, row []string, whereNames []string) (string,
 		parts = append(parts, fmt.Sprintf("%q: %s", columns[i], mongoFormatValue(val)))
 	}
 	return "{" + strings.Join(parts, ", ") + "}", nil
+}
+
+// elasticIDFromRow extracts the _id value from a result row.
+// It prefers the _id column; if not present it falls back to the first whereNames column.
+func elasticIDFromRow(columns []string, row []string, whereNames []string) string {
+	idx := make(map[string]int, len(columns))
+	for i, c := range columns {
+		idx[strings.ToLower(c)] = i
+	}
+	// Prefer _id
+	if i, ok := idx["_id"]; ok && i < len(row) {
+		return row[i]
+	}
+	// Fallback: first whereNames column
+	for _, col := range whereNames {
+		if i, ok := idx[strings.ToLower(col)]; ok && i < len(row) {
+			return row[i]
+		}
+	}
+	return ""
 }

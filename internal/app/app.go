@@ -931,8 +931,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var sysPrefix string
 		if m.aiStore != nil {
 			connID, _ := splitConnKey(msg.ConnKey)
-			if conn := m.findConn(connID); conn != nil && conn.Driver == "mongodb" {
-				sysPrefix = aiOutboundMongoSystemPrefix
+			if conn := m.findConn(connID); conn != nil {
+				switch conn.Driver {
+				case "mongodb":
+					sysPrefix = aiOutboundMongoSystemPrefix
+				case "elasticsearch":
+					sysPrefix = aiOutboundElasticSystemPrefix
+				default:
+					sysPrefix = aiOutboundSystemPrefix
+				}
 			} else {
 				sysPrefix = aiOutboundSystemPrefix
 			}
@@ -1127,6 +1134,24 @@ const aiOutboundMongoSystemPrefix = "You are a database assistant. This conversa
 	"}\n" +
 	"```\n\n"
 
+const aiOutboundElasticSystemPrefix = "You are a database assistant. This conversation is about Elasticsearch and its data — " +
+	"NOT about source code or files. Do not search the filesystem or codebase. " +
+	"Answer questions about queries, mappings, indices, and Elasticsearch concepts.\n\n" +
+	"When you include Elasticsearch queries or commands, wrap each one in a fenced code block like this:\n```json\n" +
+	"...your JSON query/command here...\n```\n\n" +
+	"Use the REST API shorthand format. For example, a search against the 'logs' index:\n" +
+	"```json\n" +
+	"GET /logs/_search\n" +
+	"{\n" +
+	"  \"query\": {\"match\": {\"message\": \"error\"}},\n" +
+	"  \"size\": 100\n" +
+	"}\n" +
+	"```\n\n" +
+	"A bare JSON object is also accepted and will be sent as the _search body against the active index:\n" +
+	"```json\n" +
+	"{\"query\":{\"match_all\":{}},\"size\":100}\n" +
+	"```\n\n"
+
 // collectAIMentionedTables returns unique table/view names from @tokens in the prompt.
 // @all expands to every table and view in the schema for connID:dbName.
 func (m *Model) collectAIMentionedTables(connID, dbName, userPrompt string) []string {
@@ -1193,6 +1218,8 @@ func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 	var sb strings.Builder
 	fence := "sql"
 	if r != nil && r.Driver == "mongodb" {
+		fence = "json"
+	} else if r != nil && r.Driver == "elasticsearch" {
 		fence = "json"
 	}
 	hdr := "## Results pane context\n\n### Query\n\n```" + fence + "\n" + sqlPart + "\n```\n\n### Rows (tab-separated)\n\n"
@@ -1286,7 +1313,7 @@ func (m *Model) prepareAISendCmd(msg ai.AISendPromptMsg, systemPrefix string) te
 								continue
 							}
 							fence := "sql"
-							if conn != nil && conn.Driver == "mongodb" {
+							if conn != nil && (conn.Driver == "mongodb" || conn.Driver == "elasticsearch") {
 								fence = "json"
 							}
 							sb.WriteString("### `" + tbl + "`\n```" + fence + "\n" + strings.TrimSpace(ddl) + "\n```\n\n")
@@ -2534,6 +2561,9 @@ func quickSelectQuery(driver, database, table string) string {
 		return fmt.Sprintf(`{"find": "%s", "limit": 100}`, table)
 	case "orientdb":
 		return "SELECT FROM " + table + " LIMIT 100"
+	case "elasticsearch":
+		return fmt.Sprintf(`GET /%s/_search
+{"query":{"match_all":{}},"size":100}`, table)
 	case "oracle":
 		if database != "" {
 			return "SELECT * FROM \"" + database + "\".\"" + table + "\" WHERE ROWNUM <= 100"

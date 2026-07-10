@@ -4,7 +4,7 @@ package config
 type Connection struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
-	Driver   string `json:"driver"` // postgres, mysql, sqlite, mssql, mongodb, orientdb
+	Driver   string `json:"driver"` // postgres, mysql, sqlite, mssql, mongodb, orientdb, elasticsearch
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
