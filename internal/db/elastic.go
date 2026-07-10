@@ -77,28 +77,14 @@ func (d *elasticDriver) Ping(ctx context.Context) error {
 
 // ---------- schema ----------
 
-// Databases returns the list of indices (non-system).
+// Databases returns a single "default" database name since Elasticsearch has no databases.
 func (d *elasticDriver) Databases(ctx context.Context) ([]string, error) {
-	return d.listIndices(ctx)
+	return []string{"default"}, nil
 }
 
-// Tables returns the list of indices — for Elasticsearch "database" == index,
-// so when the user picks an index in the explorer we show the same index as the
-// only "table".
+// Tables returns the list of all indices (non-system) as "tables".
 func (d *elasticDriver) Tables(ctx context.Context, database string) ([]string, error) {
-	if database == "" {
-		return d.listIndices(ctx)
-	}
-	// Confirm the index exists.
-	resp, err := d.doRequest(ctx, "HEAD", "/"+url.PathEscape(database), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body.Close()
-	if resp.StatusCode == 404 {
-		return []string{}, nil
-	}
-	return []string{database}, nil
+	return d.listIndices(ctx)
 }
 
 func (d *elasticDriver) Views(ctx context.Context, database string) ([]string, error) {
@@ -106,17 +92,53 @@ func (d *elasticDriver) Views(ctx context.Context, database string) ([]string, e
 }
 
 func (d *elasticDriver) Columns(ctx context.Context, database, table string) ([]ColumnInfo, error) {
-	return d.mappingColumns(ctx, database)
+	return d.mappingColumns(ctx, table)
 }
 
 func (d *elasticDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
-	cols, err := d.mappingColumns(ctx, database)
+	resp, err := d.doRequest(ctx, "GET", "/_mapping", nil)
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("mapping request failed (HTTP %d): %s", resp.StatusCode, body)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse mapping: %v", err)
+	}
+
 	var out []TableColumn
-	for _, c := range cols {
-		out = append(out, TableColumn{Table: database, Name: c.Name, DataType: c.DataType})
+	for indexName, indexData := range raw {
+		// Skip system indices
+		if strings.HasPrefix(indexName, ".") {
+			continue
+		}
+		idxMap, ok := indexData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		mappings, ok := idxMap["mappings"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		var cols []ColumnInfo
+		cols = append(cols, ColumnInfo{Name: "_id", DataType: "keyword"})
+
+		if props, ok := mappings["properties"].(map[string]interface{}); ok {
+			flattenMappingProperties("", props, &cols)
+		}
+
+		for _, c := range cols {
+			out = append(out, TableColumn{Table: indexName, Name: c.Name, DataType: c.DataType})
+		}
 	}
 	return out, nil
 }
@@ -127,11 +149,11 @@ func (d *elasticDriver) PrimaryKeyColumns(ctx context.Context, database, schema,
 
 // TableDDL returns the mapping definition for the index as formatted JSON.
 func (d *elasticDriver) TableDDL(ctx context.Context, database, table string, isView bool) (string, error) {
-	index := database
-	if table != "" && table != database {
-		index = table
-	}
+	index := table
 	if index == "" {
+		index = database
+	}
+	if index == "" || index == "default" {
 		return "", fmt.Errorf("no index specified")
 	}
 	resp, err := d.doRequest(ctx, "GET", "/"+url.PathEscape(index)+"/_mapping", nil)
@@ -279,6 +301,9 @@ func (d *elasticDriver) parseElasticCommand(text, database string) (method, path
 	// Bare JSON → search body
 	if strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
 		path = "/" + url.PathEscape(database) + "/_search"
+		if database == "default" {
+			path = "/_search"
+		}
 		return "POST", path, []byte(text), nil
 	}
 

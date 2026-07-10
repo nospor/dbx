@@ -720,8 +720,20 @@ func (m *Model) deleteDraftCmd() tea.Cmd {
 	case "elasticsearch":
 		table, ok = sqlutil.IndexFromElasticCommand(m.result.SourceSQL)
 		if !ok || table == "" {
-			// For bare JSON search bodies the index comes from the active database.
-			table, ok = m.result.Database, m.result.Database != ""
+			idxCol := -1
+			for idx, col := range m.result.Columns {
+				if col == "_index" {
+					idxCol = idx
+					break
+				}
+			}
+			if idxCol != -1 && len(rowsIdx) > 0 && idxCol < len(m.result.Rows[rowsIdx[0]]) {
+				table = m.result.Rows[rowsIdx[0]][idxCol]
+				ok = table != ""
+			}
+		}
+		if !ok || table == "" {
+			table, ok = m.result.Database, m.result.Database != "" && m.result.Database != "default"
 		}
 	default:
 		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
@@ -781,7 +793,20 @@ func (m *Model) insertDraftCmd() tea.Cmd {
 	case "elasticsearch":
 		table, ok = sqlutil.IndexFromElasticCommand(m.result.SourceSQL)
 		if !ok || table == "" {
-			table, ok = m.result.Database, m.result.Database != ""
+			idxCol := -1
+			for idx, col := range m.result.Columns {
+				if col == "_index" {
+					idxCol = idx
+					break
+				}
+			}
+			if idxCol != -1 && len(rowsIdx) > 0 && idxCol < len(m.result.Rows[rowsIdx[0]]) {
+				table = m.result.Rows[rowsIdx[0]][idxCol]
+				ok = table != ""
+			}
+		}
+		if !ok || table == "" {
+			table, ok = m.result.Database, m.result.Database != "" && m.result.Database != "default"
 		}
 	default:
 		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
@@ -898,7 +923,20 @@ func (m *Model) updateDraftCmd() tea.Cmd {
 	case "elasticsearch":
 		table, ok = sqlutil.IndexFromElasticCommand(m.result.SourceSQL)
 		if !ok || table == "" {
-			table, ok = m.result.Database, m.result.Database != ""
+			idxCol := -1
+			for idx, col := range m.result.Columns {
+				if col == "_index" {
+					idxCol = idx
+					break
+				}
+			}
+			if idxCol != -1 && m.cursorRow >= 0 && m.cursorRow < len(m.result.Rows) && idxCol < len(m.result.Rows[m.cursorRow]) {
+				table = m.result.Rows[m.cursorRow][idxCol]
+				ok = table != ""
+			}
+		}
+		if !ok || table == "" {
+			table, ok = m.result.Database, m.result.Database != "" && m.result.Database != "default"
 		}
 	default:
 		table, ok = sqlutil.TableFromSimpleSelect(m.result.SourceSQL)
