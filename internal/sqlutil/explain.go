@@ -19,6 +19,8 @@ func WrapQueryForExplain(driver, query string) (wrapped string, ok bool) {
 		return "EXPLAIN QUERY PLAN " + query, true
 	case "mssql", "sqlserver":
 		return "SET SHOWPLAN_ALL ON;\n" + query + "\nSET SHOWPLAN_ALL OFF", true
+	case "dbf":
+		return "", false
 	default:
 		// postgres, mysql, and unknown drivers
 		return "EXPLAIN " + query, true

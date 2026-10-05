@@ -1221,6 +1221,8 @@ func formatAIResultsContextBlock(r *results.QueryResult, maxBytes int) string {
 		fence = "json"
 	} else if r != nil && r.Driver == "elasticsearch" {
 		fence = "json"
+	} else if r != nil && r.Driver == "dbf" {
+		fence = "json"
 	}
 	hdr := "## Results pane context\n\n### Query\n\n```" + fence + "\n" + sqlPart + "\n```\n\n### Rows (tab-separated)\n\n"
 	if maxBytes >= 0 && len(hdr) >= maxBytes {
@@ -2102,7 +2104,7 @@ const helpScreenText = `
     j/k         Navigate up/down
     enter/l     Expand/collapse node (incl. table columns)
     h           Collapse current branch
-    s           Append SELECT * … LIMIT/TOP 100, run it (keeps existing editor text)
+    s           Append SELECT * … LIMIT/TOP 100, run it (dbf: browse 100 rows; no SQL yet)
     v           DDL popup for table/view (CREATE + indexes; driver-specific)
     V           Export all DDLs for database to file
     f           Set filter for tables
@@ -2557,6 +2559,8 @@ func quickSelectQuery(driver, database, table string) string {
 		return "SELECT * FROM `" + table + "` LIMIT 100"
 	case "sqlite", "sqlite3":
 		return "SELECT * FROM \"" + table + "\" LIMIT 100"
+	case "dbf":
+		return fmt.Sprintf(`{"browse": %q, "limit": 100}`, table)
 	case "mongodb":
 		return fmt.Sprintf(`{"find": "%s", "limit": 100}`, table)
 	case "orientdb":

@@ -1,3 +1,8 @@
+## [Unreleased]
+
+### Features
+
+- Add read-only dBase/FoxPro (`.dbf`) support: connect to a file or a directory, list tables in the explorer, and browse the first 100 rows with `s`. Typed SQL is not supported yet.
 
 ## [1.1.0] - 2026-07-10
 

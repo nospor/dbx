@@ -48,7 +48,7 @@ const (
 )
 
 var fieldLabels = []string{
-	"Name", "Driver", "Host", "Port", "User", "Password", "Database", "SSL Mode", "File Path (sqlite)", "Protocol (orientdb)",
+	"Name", "Driver", "Host", "Port", "User", "Password", "Database", "SSL Mode", "File Path", "Protocol (orientdb)",
 }
 
 var protocols = []string{"http", "binary"}
@@ -62,7 +62,7 @@ func protocolIndex(name string) int {
 	return 0
 }
 
-var drivers = []string{"postgres", "mysql", "sqlite", "mssql", "mongodb", "orientdb", "oracle", "elasticsearch"}
+var drivers = []string{"postgres", "mysql", "sqlite", "dbf", "mssql", "mongodb", "orientdb", "oracle", "elasticsearch"}
 
 func driverIndex(name string) int {
 	for i, d := range drivers {
@@ -315,18 +315,28 @@ func defaultPort(driver string) int {
 	}
 }
 
-// isSQLite returns true when the currently selected driver is sqlite.
-func (f ConnForm) isSQLite() bool {
-	return drivers[f.driverIdx] == "sqlite"
+func (f ConnForm) selectedDriver() string {
+	return drivers[f.driverIdx]
+}
+
+func (f ConnForm) isFileBased() bool {
+	d := f.selectedDriver()
+	return d == "sqlite" || d == "dbf"
+}
+
+func (f ConnForm) isDBF() bool {
+	return f.selectedDriver() == "dbf"
 }
 
 // fieldVisible returns false for fields that are not relevant to the current driver.
 func (f ConnForm) fieldVisible(i int) bool {
 	switch i {
 	case fieldHost, fieldPort, fieldUser, fieldPassword, fieldSSLMode:
-		return !f.isSQLite()
+		return !f.isFileBased()
 	case fieldFilePath:
-		return f.isSQLite()
+		return f.isFileBased()
+	case fieldDatabase:
+		return !f.isDBF()
 	case fieldProtocol:
 		return f.fields[fieldDriver] == "orientdb"
 	}

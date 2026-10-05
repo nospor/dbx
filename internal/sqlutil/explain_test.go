@@ -14,6 +14,7 @@ func TestWrapQueryForExplain(t *testing.T) {
 		{"mysql", "SELECT 1", "EXPLAIN SELECT 1", true, false},
 		{"sqlite", "SELECT 1", "EXPLAIN QUERY PLAN SELECT 1", true, false},
 		{"mssql", "SELECT 1", "SET SHOWPLAN_ALL ON;\nSELECT 1\nSET SHOWPLAN_ALL OFF", true, false},
+		{"dbf", `{"browse":"people","limit":100}`, "", false, true},
 		{"postgres", "  SELECT 1  ", "EXPLAIN SELECT 1", true, false},
 		{"postgres", "", "", false, true},
 		{"postgres", "   \n\t  ", "", false, true},

@@ -77,6 +77,8 @@ func New(conn config.Connection) (Driver, error) {
 		return &mysqlDriver{}, nil
 	case "sqlite", "sqlite3":
 		return &sqliteDriver{}, nil
+	case "dbf":
+		return &dbfDriver{}, nil
 	case "mssql", "sqlserver":
 		return &mssqlDriver{}, nil
 	case "mongodb":

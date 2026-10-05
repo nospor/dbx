@@ -712,6 +712,11 @@ func (m *Model) deleteDraftCmd() tea.Cmd {
 			return DeleteDraftMsg{Err: "No source query recorded — run a SELECT first, then use d."}
 		}
 	}
+	if strings.EqualFold(m.result.Driver, "dbf") {
+		return func() tea.Msg {
+			return DeleteDraftMsg{Err: "dbf: insert/delete/update drafts are not supported yet"}
+		}
+	}
 	var table string
 	var ok bool
 	switch strings.ToLower(m.result.Driver) {
@@ -783,6 +788,11 @@ func (m *Model) insertDraftCmd() tea.Cmd {
 	if strings.TrimSpace(m.result.SourceSQL) == "" {
 		return func() tea.Msg {
 			return InsertDraftMsg{Err: "No source query recorded — run a SELECT first, then use i."}
+		}
+	}
+	if strings.EqualFold(m.result.Driver, "dbf") {
+		return func() tea.Msg {
+			return InsertDraftMsg{Err: "dbf: insert/delete/update drafts are not supported yet"}
 		}
 	}
 	var table string
@@ -913,6 +923,11 @@ func (m *Model) updateDraftCmd() tea.Cmd {
 	if strings.TrimSpace(m.result.SourceSQL) == "" {
 		return func() tea.Msg {
 			return UpdateDraftMsg{Err: "No source query — run a SELECT first, then use u."}
+		}
+	}
+	if strings.EqualFold(m.result.Driver, "dbf") {
+		return func() tea.Msg {
+			return UpdateDraftMsg{Err: "dbf: insert/delete/update drafts are not supported yet"}
 		}
 	}
 	var table string

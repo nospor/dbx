@@ -4,14 +4,14 @@ package config
 type Connection struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
-	Driver   string `json:"driver"` // postgres, mysql, sqlite, mssql, mongodb, orientdb, elasticsearch
+	Driver   string `json:"driver"` // postgres, mysql, sqlite, dbf, mssql, mongodb, orientdb, elasticsearch
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
 	Password string `json:"password"`
 	Database string `json:"database"` // comma-separated; empty = all databases
 	SSLMode  string `json:"ssl_mode,omitempty"`
-	FilePath string `json:"file_path,omitempty"` // for sqlite
+	FilePath string `json:"file_path,omitempty"` // for sqlite and dbf (file or directory)
 	Protocol string `json:"protocol,omitempty"`  // for orientdb: "http" or "binary"
 }
 

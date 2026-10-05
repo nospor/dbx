@@ -15,8 +15,9 @@ require (
 	github.com/microsoft/go-mssqldb v1.9.8
 	github.com/sijms/go-ora/v2 v2.9.0
 	github.com/spf13/cobra v1.10.2
+	github.com/valentin-kaiser/go-dbase v1.14.3
 	go.mongodb.org/mongo-driver/v2 v2.6.0
-	golang.org/x/text v0.34.0
+	golang.org/x/text v0.37.0
 	gopkg.in/istreamdata/orientgo.v2 v2.0.0-20181018100136-625dcbcc6aa9
 	modernc.org/sqlite v1.47.0
 )
@@ -62,8 +63,8 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
