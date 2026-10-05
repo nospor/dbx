@@ -1,8 +1,17 @@
-## [Unreleased]
+
+## [1.1.1] - 2026-10-05
 
 ### Features
 
-- Add read-only dBase/FoxPro (`.dbf`) support: connect to a file or a directory, list tables in the explorer, and browse the first 100 rows with `s`. Typed SQL is not supported yet.
+- Add read-only dbf driver for browsing dBase/FoxPro tables ([80a86aa](https://github.com/nospor/dbx/commit/80a86aa2651a841c3258c25f492f874b40d6de8e))
+
+            Connect to a .dbf file or a directory of them, list each file as a
+            table, and let explorer s load the first 100 rows. Typed SQL is not
+            supported yet.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.1.0 [skip ci] ([fb62fe1](https://github.com/nospor/dbx/commit/fb62fe1819f0776777fab6ad91b20d42b95b843b))
 
 ## [1.1.0] - 2026-07-10
 
