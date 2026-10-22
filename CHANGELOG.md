@@ -1,4 +1,14 @@
 
+## [1.1.2] - 2026-10-22
+
+### Bug Fixes
+
+- *(mssql)* Allow legacy TLS 1.0 connections via SSL mode ([a361e3f](https://github.com/nospor/dbx/commit/a361e3f499409a1629e7ac87e05cd19fe8301ad9))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.1.1 [skip ci] ([c805145](https://github.com/nospor/dbx/commit/c805145dd8eed18a724c579b17a2213dc36b1b3d))
+
 ## [1.1.1] - 2026-10-05
 
 ### Features
