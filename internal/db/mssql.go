@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strings"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -44,8 +45,49 @@ func buildMSSQLDSN(conn config.Connection) string {
 	if strings.Contains(db, ",") {
 		db = strings.SplitN(db, ",", 2)[0]
 	}
-	return fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s",
-		conn.User, conn.Password, host, port, db)
+	params := mssqlTLSParams(conn.SSLMode)
+	params.Set("database", db)
+	return (&url.URL{
+		Scheme:   "sqlserver",
+		User:     url.UserPassword(conn.User, conn.Password),
+		Host:     fmt.Sprintf("%s:%d", host, port),
+		RawQuery: params.Encode(),
+	}).String()
+}
+
+// mssqlTLSParams maps SSL Mode values to go-mssqldb DSN parameters.
+// Supported values:
+//   - prefer (default): keep driver defaults
+//   - disable: encrypt=disable
+//   - require: encrypt=true
+//   - verify-ca / verify-full: encrypt=true + TrustServerCertificate=false
+//   - legacy: encrypt=true + TrustServerCertificate=true + tlsmin=1.0
+//
+// Any unrecognized value is treated as a raw query string, e.g.
+// "encrypt=true&TrustServerCertificate=true&tlsmin=1.0".
+func mssqlTLSParams(sslMode string) url.Values {
+	mode := strings.ToLower(strings.TrimSpace(sslMode))
+	params := url.Values{}
+	switch mode {
+	case "", "prefer", "optional":
+		// Keep go-mssqldb defaults.
+	case "disable":
+		params.Set("encrypt", "disable")
+	case "require":
+		params.Set("encrypt", "true")
+	case "verify-ca", "verify-full":
+		params.Set("encrypt", "true")
+		params.Set("TrustServerCertificate", "false")
+	case "legacy":
+		params.Set("encrypt", "true")
+		params.Set("TrustServerCertificate", "true")
+		params.Set("tlsmin", "1.0")
+	default:
+		if raw, err := url.ParseQuery(sslMode); err == nil {
+			params = raw
+		}
+	}
+	return params
 }
 
 func (d *mssqlDriver) Close() error {

@@ -53,6 +53,8 @@ var fieldLabels = []string{
 
 var protocols = []string{"http", "binary"}
 
+var mssqlSSLModes = []string{"prefer", "disable", "require", "verify-ca", "verify-full", "legacy"}
+
 func protocolIndex(name string) int {
 	for i, p := range protocols {
 		if strings.ToLower(p) == strings.ToLower(name) {
@@ -79,6 +81,7 @@ type ConnForm struct {
 	fields      [fieldCount]string
 	driverIdx   int // index into drivers slice
 	protocolIdx int // index into protocols slice
+	sslModeIdx  int // index into SSL mode selector options (MSSQL only)
 	cursor      int
 	isEdit      bool
 	origID      string
@@ -95,6 +98,7 @@ func NewConnForm(t theme.Theme) ConnForm {
 	f.syncProtocol()
 	f.fields[fieldHost] = "localhost"
 	f.fields[fieldSSLMode] = "prefer"
+	f.syncSSLMode()
 	return f
 }
 
@@ -114,6 +118,7 @@ func NewEditConnForm(t theme.Theme, conn config.Connection) ConnForm {
 	f.fields[fieldSSLMode] = conn.SSLMode
 	f.fields[fieldFilePath] = conn.FilePath
 	f.fields[fieldProtocol] = conn.Protocol
+	f.syncSSLMode()
 	return f
 }
 
@@ -131,6 +136,7 @@ func (f *ConnForm) syncDriver() {
 			f.fields[fieldPort] = ""
 		}
 	}
+	f.syncSSLMode()
 }
 
 func (f *ConnForm) syncProtocol() {
@@ -146,6 +152,66 @@ func (f *ConnForm) syncProtocol() {
 			}
 		}
 	}
+}
+
+func mssqlSSLModeIndex(mode string) int {
+	for i, m := range mssqlSSLModes {
+		if strings.EqualFold(strings.TrimSpace(mode), m) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (f ConnForm) usesMSSQLSSLModeSelector() bool {
+	return strings.EqualFold(f.fields[fieldDriver], "mssql")
+}
+
+func (f ConnForm) sslModeOptions() []string {
+	if !f.usesMSSQLSSLModeSelector() {
+		return nil
+	}
+	opts := append([]string(nil), mssqlSSLModes...)
+	current := strings.TrimSpace(f.fields[fieldSSLMode])
+	if current != "" && mssqlSSLModeIndex(current) < 0 {
+		opts = append([]string{current}, opts...)
+	}
+	return opts
+}
+
+func (f *ConnForm) syncSSLMode() {
+	if !f.usesMSSQLSSLModeSelector() {
+		f.sslModeIdx = 0
+		return
+	}
+	opts := f.sslModeOptions()
+	if len(opts) == 0 {
+		return
+	}
+	mode := strings.TrimSpace(f.fields[fieldSSLMode])
+	if mode == "" {
+		f.sslModeIdx = 0
+		f.fields[fieldSSLMode] = opts[0]
+		return
+	}
+	for i, v := range opts {
+		if strings.EqualFold(v, mode) {
+			f.sslModeIdx = i
+			f.fields[fieldSSLMode] = opts[i]
+			return
+		}
+	}
+	f.sslModeIdx = 0
+	f.fields[fieldSSLMode] = opts[0]
+}
+
+func (f *ConnForm) cycleSSLMode(delta int) {
+	opts := f.sslModeOptions()
+	if len(opts) == 0 {
+		return
+	}
+	f.sslModeIdx = (f.sslModeIdx + delta + len(opts)) % len(opts)
+	f.fields[fieldSSLMode] = opts[f.sslModeIdx]
 }
 
 func (f *ConnForm) SetSize(w, h int) {
@@ -198,6 +264,8 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			if f.cursor == fieldDriver {
 				f.driverIdx = (f.driverIdx + 1) % len(drivers)
 				f.syncDriver()
+			} else if f.cursor == fieldSSLMode && f.usesMSSQLSSLModeSelector() {
+				f.cycleSSLMode(1)
 			} else if f.cursor == fieldProtocol {
 				f.protocolIdx = (f.protocolIdx + 1) % len(protocols)
 				f.syncProtocol()
@@ -210,6 +278,8 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			if f.cursor == fieldDriver {
 				f.driverIdx = (f.driverIdx - 1 + len(drivers)) % len(drivers)
 				f.syncDriver()
+			} else if f.cursor == fieldSSLMode && f.usesMSSQLSSLModeSelector() {
+				f.cycleSSLMode(-1)
 			} else if f.cursor == fieldProtocol {
 				f.protocolIdx = (f.protocolIdx - 1 + len(protocols)) % len(protocols)
 				f.syncProtocol()
@@ -218,6 +288,8 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			if f.cursor == fieldDriver {
 				f.driverIdx = (f.driverIdx + 1) % len(drivers)
 				f.syncDriver()
+			} else if f.cursor == fieldSSLMode && f.usesMSSQLSSLModeSelector() {
+				f.cycleSSLMode(1)
 			} else if f.cursor == fieldProtocol {
 				f.protocolIdx = (f.protocolIdx + 1) % len(protocols)
 				f.syncProtocol()
@@ -233,19 +305,19 @@ func (f ConnForm) Update(msg tea.Msg) (ConnForm, tea.Cmd) {
 			conn := f.toConnection()
 			return f, func() tea.Msg { return ConnTestRequestMsg{Conn: conn} }
 		case "ctrl+v", "ctrl+shift+v", "ctrl+V":
-			if f.cursor != fieldDriver {
+			if f.cursor != fieldDriver && !(f.cursor == fieldSSLMode && f.usesMSSQLSSLModeSelector()) {
 				if text, err := util.Paste(); err == nil {
 					text = strings.NewReplacer("\n", "", "\r", "").Replace(text)
 					f.fields[f.cursor] += text
 				}
 			}
 		case "backspace":
-			if f.cursor != fieldDriver && len(f.fields[f.cursor]) > 0 {
+			if f.cursor != fieldDriver && !(f.cursor == fieldSSLMode && f.usesMSSQLSSLModeSelector()) && len(f.fields[f.cursor]) > 0 {
 				runes := []rune(f.fields[f.cursor])
 				f.fields[f.cursor] = string(runes[:len(runes)-1])
 			}
 		default:
-			if f.cursor != fieldDriver {
+			if f.cursor != fieldDriver && !(f.cursor == fieldSSLMode && f.usesMSSQLSSLModeSelector()) {
 				if msg.Paste || len(msg.Runes) > 1 {
 					for _, r := range msg.Runes {
 						if r != '\n' && r != '\r' {
@@ -384,6 +456,24 @@ func (f ConnForm) View() string {
 					f.theme.Dimmed.Render(" "+next+" ›")
 			} else {
 				valueStr = f.theme.Bold.Render(cur)
+			}
+		} else if i == fieldSSLMode && f.usesMSSQLSSLModeSelector() {
+			// Render MSSQL SSL mode as a selector to avoid free-text mistakes.
+			opts := f.sslModeOptions()
+			if len(opts) == 0 {
+				valueStr = f.fields[i]
+			} else {
+				idx := f.sslModeIdx % len(opts)
+				prev := opts[(idx-1+len(opts))%len(opts)]
+				next := opts[(idx+1)%len(opts)]
+				cur := opts[idx]
+				if focused {
+					valueStr = f.theme.Dimmed.Render("‹ "+prev+" ") +
+						f.theme.TreeSelected.Render(" "+cur+" ") +
+						f.theme.Dimmed.Render(" "+next+" ›")
+				} else {
+					valueStr = f.theme.Bold.Render(cur)
+				}
 			}
 		} else {
 			val := f.fields[i]
