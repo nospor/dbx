@@ -8,6 +8,25 @@ import (
 	"testing"
 )
 
+func TestFormatDocCount(t *testing.T) {
+	cases := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0 docs"},
+		{1, "1 doc"},
+		{125, "125 docs"},
+		{1200, "1,200 docs"},
+		{1234567, "1,234,567 docs"},
+		{-1, ""},
+	}
+	for _, tc := range cases {
+		if got := formatDocCount(tc.n); got != tc.want {
+			t.Errorf("formatDocCount(%d) = %q; want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
 func TestFormatByteSize(t *testing.T) {
 	cases := []struct {
 		n    int64
@@ -56,11 +75,16 @@ func TestElasticTablesIncludesDataStreams(t *testing.T) {
 			if r.URL.Query().Get("bytes") != "b" {
 				t.Errorf("indices bytes = %q", r.URL.Query().Get("bytes"))
 			}
+			if r.URL.Query().Get("expand_wildcards") != "open,hidden" {
+				t.Errorf("expand_wildcards = %q", r.URL.Query().Get("expand_wildcards"))
+			}
 			_, _ = w.Write([]byte(`[
-				{"index":"srds-records","store.size":"891289600"},
-				{"index":"srds-also-viewed","store.size":"12345"},
-				{"index":".ds-logs-srds.usage.otel-default-2026.11.11-000001","store.size":"10"},
-				{"index":".kibana","store.size":"10"}
+				{"index":"srds-records","store.size":"891289600","docs.count":"1200"},
+				{"index":"srds-also-viewed","store.size":"12345","docs.count":"3"},
+				{"index":".ds-logs-srds.usage.otel-default-2026.11.11-000001","store.size":"10","docs.count":"100"},
+				{"index":".ds-logs-srds.usage.otel-default-2026.11.11-000002","store.size":"10","docs.count":"25"},
+				{"index":".ds-traces-srds.usage.otel-default-2026.11.11-000001","store.size":"0","docs.count":"1"},
+				{"index":".kibana","store.size":"10","docs.count":"9"}
 			]`))
 		case "/_data_stream":
 			_, _ = w.Write([]byte(`{
@@ -103,10 +127,10 @@ func TestElasticTablesIncludesDataStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantDetailed := []TableEntry{
-		{Name: "logs-srds.usage.otel-default", Detail: "1.2 GB"},
-		{Name: "srds-also-viewed", Detail: "12.1 KB"},
-		{Name: "srds-records", Detail: "850 MB"},
-		{Name: "traces-srds.usage.otel-default", Detail: "0 B"},
+		{Name: "logs-srds.usage.otel-default", Detail: "1.2 GB, 125 docs"},
+		{Name: "srds-also-viewed", Detail: "12.1 KB, 3 docs"},
+		{Name: "srds-records", Detail: "850 MB, 1,200 docs"},
+		{Name: "traces-srds.usage.otel-default", Detail: "0 B, 1 doc"},
 	}
 	if !reflect.DeepEqual(detailed, wantDetailed) {
 		t.Fatalf("DetailedTables() = %#v; want %#v", detailed, wantDetailed)
@@ -118,7 +142,11 @@ func TestElasticDataStreamsListedWhenStatsFails(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/_cat/indices":
-			_, _ = w.Write([]byte(`[{"index":"srds-records","store.size":"1024"},{"index":"aaa-index","store.size":"2048"}]`))
+			_, _ = w.Write([]byte(`[
+				{"index":"srds-records","store.size":"1024","docs.count":"10"},
+				{"index":"aaa-index","store.size":"2048","docs.count":"1"},
+				{"index":".ds-logs-srds.usage.otel-default-2026.11.11-000001","store.size":"1","docs.count":"40"}
+			]`))
 		case "/_data_stream":
 			_, _ = w.Write([]byte(`{"data_streams":[{"name":"logs-srds.usage.otel-default"}]}`))
 		case "/_data_stream/_stats":
@@ -135,9 +163,9 @@ func TestElasticDataStreamsListedWhenStatsFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []TableEntry{
-		{Name: "aaa-index", Detail: "2 KB"},
-		{Name: "logs-srds.usage.otel-default"},
-		{Name: "srds-records", Detail: "1 KB"},
+		{Name: "aaa-index", Detail: "2 KB, 1 doc"},
+		{Name: "logs-srds.usage.otel-default", Detail: "40 docs"},
+		{Name: "srds-records", Detail: "1 KB, 10 docs"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("DetailedTables() = %#v; want %#v", got, want)

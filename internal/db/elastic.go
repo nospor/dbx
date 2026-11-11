@@ -100,10 +100,10 @@ func (d *elasticDriver) Tables(ctx context.Context, database string) ([]string, 
 	return names, nil
 }
 
-// DetailedTables returns the same names as Tables, with store size as the explorer detail.
-// store.size is the on-disk size of every shard copy.
+// DetailedTables returns the same names as Tables. Detail is the on-disk size
+// (store.size, every shard copy) and the live document count.
 func (d *elasticDriver) DetailedTables(ctx context.Context, database string) ([]TableEntry, error) {
-	indices, err := d.listIndices(ctx)
+	listed, err := d.listIndices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,14 +111,16 @@ func (d *elasticDriver) DetailedTables(ctx context.Context, database string) ([]
 	if streamErr != nil {
 		streams = nil
 	}
-	items := mergeNamedSizes(indices, streams)
+	for i := range streams {
+		if n, ok := listed.streamDocs[streams[i].name]; ok {
+			streams[i].docs = n
+			streams[i].hasDocs = true
+		}
+	}
+	items := mergeNamedSizes(listed.indices, streams)
 	out := make([]TableEntry, len(items))
 	for i, item := range items {
-		detail := ""
-		if item.hasSize {
-			detail = formatByteSize(item.bytes)
-		}
-		out[i] = TableEntry{Name: item.name, Detail: detail}
+		out[i] = TableEntry{Name: item.name, Detail: formatTableDetail(item)}
 	}
 	return out, nil
 }
@@ -520,23 +522,33 @@ func formatElasticValue(v interface{}) string {
 	}
 }
 
-// namedSize is an index or data stream and its store.size in bytes.
+// namedSize is an index or data stream plus its store size and live document count.
 type namedSize struct {
 	name    string
 	bytes   int64
 	hasSize bool
+	docs    int64
+	hasDocs bool
 }
 
-// listIndices returns non-system indices and their on-disk size.
-func (d *elasticDriver) listIndices(ctx context.Context) ([]namedSize, error) {
-	body, status, err := d.getBody(ctx, "/_cat/indices?h=index,store.size&format=json&bytes=b")
+// indexList is the visible indices plus document counts summed from hidden
+// data-stream backing indices (.ds-*).
+type indexList struct {
+	indices    []namedSize
+	streamDocs map[string]int64
+}
+
+// listIndices returns non-system indices with size and document count.
+// Hidden .ds-* backing indices are not listed; their docs.count is summed onto the stream name.
+func (d *elasticDriver) listIndices(ctx context.Context) (indexList, error) {
+	body, status, err := d.getBody(ctx, "/_cat/indices?h=index,store.size,docs.count&format=json&bytes=b&expand_wildcards=open,hidden")
 	if err != nil {
-		return nil, err
+		return indexList{}, err
 	}
 	if status >= 400 {
-		return nil, fmt.Errorf("failed to list indices (HTTP %d): %s", status, body)
+		return indexList{}, fmt.Errorf("failed to list indices (HTTP %d): %s", status, body)
 	}
-	return parseCatNamedSizes(body, "index")
+	return parseCatIndices(body)
 }
 
 // listDataStreams returns data stream names and their store size. These are the targets
@@ -612,7 +624,7 @@ func (d *elasticDriver) dataStreamSizes(ctx context.Context) map[string]int64 {
 		if ds.Name == "" {
 			continue
 		}
-		if n, ok := parseStoreBytes(ds.Bytes); ok {
+		if n, ok := parseJSONInt(ds.Bytes); ok {
 			out[ds.Name] = n
 		}
 	}
@@ -632,28 +644,42 @@ func (d *elasticDriver) getBody(ctx context.Context, path string) ([]byte, int, 
 	return body, resp.StatusCode, nil
 }
 
-func parseCatNamedSizes(body []byte, nameField string) ([]namedSize, error) {
+func parseCatIndices(body []byte) (indexList, error) {
 	var arr []map[string]interface{}
 	if err := json.Unmarshal(body, &arr); err != nil {
-		return nil, fmt.Errorf("failed to parse %s list: %v", nameField, err)
+		return indexList{}, fmt.Errorf("failed to parse index list: %v", err)
 	}
-	out := make([]namedSize, 0, len(arr))
+	listed := indexList{streamDocs: make(map[string]int64)}
 	for _, entry := range arr {
-		name, _ := entry[nameField].(string)
-		if name == "" || strings.HasPrefix(name, ".") {
+		name, _ := entry["index"].(string)
+		if name == "" {
+			continue
+		}
+		docs, hasDocs := parseJSONInt(entry["docs.count"])
+		if stream, ok := dataStreamNameFromBackingIndex(name); ok {
+			if hasDocs {
+				listed.streamDocs[stream] += docs
+			}
+			continue
+		}
+		if strings.HasPrefix(name, ".") {
 			continue
 		}
 		item := namedSize{name: name}
-		if n, ok := parseStoreBytes(entry["store.size"]); ok {
+		if n, ok := parseJSONInt(entry["store.size"]); ok {
 			item.bytes = n
 			item.hasSize = true
 		}
-		out = append(out, item)
+		if hasDocs {
+			item.docs = docs
+			item.hasDocs = true
+		}
+		listed.indices = append(listed.indices, item)
 	}
-	return out, nil
+	return listed, nil
 }
 
-func parseStoreBytes(v interface{}) (int64, bool) {
+func parseJSONInt(v interface{}) (int64, bool) {
 	switch n := v.(type) {
 	case string:
 		n = strings.TrimSpace(n)
@@ -697,6 +723,40 @@ func formatByteSize(n int64) string {
 	return fmt.Sprintf("%.1f %s", rounded, units[unit])
 }
 
+// formatDocCount renders a live document count, for example "1 doc" or "12,345 docs".
+func formatDocCount(n int64) string {
+	if n < 0 {
+		return ""
+	}
+	raw := strconv.FormatInt(n, 10)
+	var b strings.Builder
+	for i := range raw {
+		if i > 0 && (len(raw)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte(raw[i])
+	}
+	if n == 1 {
+		return b.String() + " doc"
+	}
+	return b.String() + " docs"
+}
+
+func formatTableDetail(item namedSize) string {
+	var parts []string
+	if item.hasSize {
+		if size := formatByteSize(item.bytes); size != "" {
+			parts = append(parts, size)
+		}
+	}
+	if item.hasDocs {
+		if docs := formatDocCount(item.docs); docs != "" {
+			parts = append(parts, docs)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
 func mergeNamedSizes(groups ...[]namedSize) []namedSize {
 	byName := make(map[string]namedSize)
 	var names []string
@@ -712,8 +772,14 @@ func mergeNamedSizes(groups ...[]namedSize) []namedSize {
 				continue
 			}
 			if !prev.hasSize && item.hasSize {
-				byName[item.name] = item
+				prev.bytes = item.bytes
+				prev.hasSize = true
 			}
+			if !prev.hasDocs && item.hasDocs {
+				prev.docs = item.docs
+				prev.hasDocs = true
+			}
+			byName[item.name] = prev
 		}
 	}
 	sort.Strings(names)
