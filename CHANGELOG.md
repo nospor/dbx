@@ -1,4 +1,25 @@
 
+## [1.1.3] - 2026-11-11
+
+### Features
+
+- *(elastic)* List data streams alongside indices ([55cf715](https://github.com/nospor/dbx/commit/55cf7159e068a0b549255866e4970334b9b7247f))
+- *(elastic)* Show store size next to indices and data streams ([383d61d](https://github.com/nospor/dbx/commit/383d61da1a76876852be42fd4ca616c8a2e94de0))
+- *(elastic)* Show document count next to index and data stream size ([8da30a4](https://github.com/nospor/dbx/commit/8da30a4fc5f4f711128be37ea56f28f199d61ef8))
+
+### Bug Fixes
+
+- *(explorer)* Keep the filter cursor in the current database ([536f2f6](https://github.com/nospor/dbx/commit/536f2f6382ec212c9736630dc4502e5fde97a983))
+
+            Filtering shrank the flat list while the cursor stayed a raw index, so a
+            selection at the end of one database landed on the next. Follow the
+            selected node and, if it disappears, the nearest remaining row in that
+            same list.
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.1.2 [skip ci] ([eae5a7c](https://github.com/nospor/dbx/commit/eae5a7c0d346cf8880916477c8f9faf51772d9b4))
+
 ## [1.1.2] - 2026-10-22
 
 ### Bug Fixes
