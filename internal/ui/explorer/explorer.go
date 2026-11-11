@@ -97,6 +97,75 @@ func (m *Model) flatten() {
 	}
 }
 
+// applyFilterText rebuilds the visible tree and keeps the cursor inside the
+// database (or table, for a column list) that was selected when filtering started.
+func (m *Model) applyFilterText(newFilterText string) {
+	var anchor *Node
+	if m.cursor >= 0 && m.cursor < len(m.flat) {
+		anchor = m.flat[m.cursor]
+	}
+	m.filterText = newFilterText
+	m.flatten()
+	m.refocusAfterFilter(anchor)
+}
+
+// refocusAfterFilter moves the cursor onto anchor when it is still visible.
+// Otherwise it stays on the nearest remaining sibling, searching backward first
+// so a cursor on the last row lands on the last remaining match in that list.
+// If nothing in the list matches, the cursor sits on the parent node.
+func (m *Model) refocusAfterFilter(anchor *Node) {
+	if len(m.flat) == 0 {
+		m.cursor = 0
+		return
+	}
+	if anchor == nil {
+		if m.cursor >= len(m.flat) {
+			m.cursor = len(m.flat) - 1
+		}
+		return
+	}
+	visible := make(map[*Node]int, len(m.flat))
+	for i, n := range m.flat {
+		visible[n] = i
+	}
+	if pos, ok := visible[anchor]; ok {
+		m.cursor = pos
+		return
+	}
+
+	parent := anchor.parent
+	if parent != nil {
+		idx := -1
+		for i, c := range parent.Children {
+			if c == anchor {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			for i := idx - 1; i >= 0; i-- {
+				if pos, ok := visible[parent.Children[i]]; ok {
+					m.cursor = pos
+					return
+				}
+			}
+			for i := idx + 1; i < len(parent.Children); i++ {
+				if pos, ok := visible[parent.Children[i]]; ok {
+					m.cursor = pos
+					return
+				}
+			}
+		}
+		for p := parent; p != nil; p = p.parent {
+			if pos, ok := visible[p]; ok {
+				m.cursor = pos
+				return
+			}
+		}
+	}
+	m.cursor = 0
+}
+
 func (m *Model) flattenNode(n *Node) {
 	if m.filterText != "" && (n.Kind == NodeTable || n.Kind == NodeView || n.Kind == NodeColumn) {
 		if !strings.Contains(strings.ToLower(n.Label), m.filterText) {
@@ -174,11 +243,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.filterInput, cmd = m.filterInput.Update(msg)
 		newFilterText := strings.ToLower(m.filterInput.Value())
 		if newFilterText != m.filterText {
-			m.filterText = newFilterText
-			m.flatten()
-			if m.cursor >= len(m.flat) {
-				m.cursor = max(0, len(m.flat)-1)
-			}
+			m.applyFilterText(newFilterText)
 		}
 		return m, cmd
 	}
