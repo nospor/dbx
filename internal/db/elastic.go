@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -16,8 +17,9 @@ import (
 )
 
 // elasticDriver implements Driver for Elasticsearch via the HTTP REST API.
-// "Databases" map to indices, "Tables" to index names (same as database in this context),
-// and "Columns" are derived from the index mapping.
+// "Databases" map to a single default entry. "Tables" are ordinary indices plus data
+// stream names (the names you query). Hidden .ds-* backing indices stay out of the tree.
+// "Columns" are derived from the index or data stream mapping.
 //
 // Query language: the user writes a JSON object that is sent as-is to the
 // Elasticsearch Search API.  A few convenience shorthands are also supported:
@@ -82,9 +84,18 @@ func (d *elasticDriver) Databases(ctx context.Context) ([]string, error) {
 	return []string{"default"}, nil
 }
 
-// Tables returns the list of all indices (non-system) as "tables".
+// Tables returns ordinary indices and data stream names. Backing indices (.ds-*) stay hidden.
+// A data-stream listing failure still returns the indices so the tree is not empty.
 func (d *elasticDriver) Tables(ctx context.Context, database string) ([]string, error) {
-	return d.listIndices(ctx)
+	indices, err := d.listIndices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	streams, err := d.listDataStreams(ctx)
+	if err != nil {
+		return indices, nil
+	}
+	return mergeSortedUnique(indices, streams), nil
 }
 
 func (d *elasticDriver) Views(ctx context.Context, database string) ([]string, error) {
@@ -96,7 +107,9 @@ func (d *elasticDriver) Columns(ctx context.Context, database, table string) ([]
 }
 
 func (d *elasticDriver) AllTableColumns(ctx context.Context, database string) ([]TableColumn, error) {
-	resp, err := d.doRequest(ctx, "GET", "/_mapping", nil)
+	// expand_wildcards includes hidden backing indices (.ds-*) so data stream fields
+	// can be attributed to the stream name. Other dot-prefixed system indices are skipped below.
+	resp, err := d.doRequest(ctx, "GET", "/_mapping?expand_wildcards=open,hidden", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +128,13 @@ func (d *elasticDriver) AllTableColumns(ctx context.Context, database string) ([
 	}
 
 	var out []TableColumn
+	seen := make(map[string]struct{})
 	for indexName, indexData := range raw {
-		// Skip system indices
-		if strings.HasPrefix(indexName, ".") {
+		tableName := indexName
+		if stream, ok := dataStreamNameFromBackingIndex(indexName); ok {
+			tableName = stream
+		} else if strings.HasPrefix(indexName, ".") {
+			// Skip system indices. Data-stream backing indices are handled above.
 			continue
 		}
 		idxMap, ok := indexData.(map[string]interface{})
@@ -137,7 +154,12 @@ func (d *elasticDriver) AllTableColumns(ctx context.Context, database string) ([
 		}
 
 		for _, c := range cols {
-			out = append(out, TableColumn{Table: indexName, Name: c.Name, DataType: c.DataType})
+			key := tableName + "\x00" + c.Name
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, TableColumn{Table: tableName, Name: c.Name, DataType: c.DataType})
 		}
 	}
 	return out, nil
@@ -507,6 +529,83 @@ func (d *elasticDriver) listIndices(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// listDataStreams returns data stream names. These are the targets you query
+// (for example logs-srds.usage.otel-default). Their documents live in hidden
+// .ds-* backing indices, which _cat/indices omits and which listIndices skips.
+func (d *elasticDriver) listDataStreams(ctx context.Context) ([]string, error) {
+	resp, err := d.doRequest(ctx, "GET", "/_data_stream", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	// Older clusters have no data stream API.
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to list data streams (HTTP %d): %s", resp.StatusCode, body)
+	}
+
+	var parsed struct {
+		DataStreams []struct {
+			Name string `json:"name"`
+		} `json:"data_streams"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse data stream list: %v", err)
+	}
+
+	names := make([]string, 0, len(parsed.DataStreams))
+	for _, ds := range parsed.DataStreams {
+		if ds.Name == "" || strings.HasPrefix(ds.Name, ".") {
+			continue
+		}
+		names = append(names, ds.Name)
+	}
+	return names, nil
+}
+
+// backingIndexDateGen is the rollover suffix Elasticsearch appends to a data stream
+// backing index: .ds-<stream>-<yyyy.MM.dd>-<generation>.
+var backingIndexDateGen = regexp.MustCompile(`-\d{4}\.\d{2}\.\d{2}-\d+$`)
+
+// dataStreamNameFromBackingIndex extracts the stream name from a hidden backing index.
+// .ds-logs-srds.usage.otel-default-2026.11.11-000001 → logs-srds.usage.otel-default.
+func dataStreamNameFromBackingIndex(index string) (string, bool) {
+	if !strings.HasPrefix(index, ".ds-") {
+		return "", false
+	}
+	rest := strings.TrimPrefix(index, ".ds-")
+	loc := backingIndexDateGen.FindStringIndex(rest)
+	if loc == nil || loc[0] == 0 {
+		return "", false
+	}
+	return rest[:loc[0]], true
+}
+
+func mergeSortedUnique(groups ...[]string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, group := range groups {
+		for _, name := range group {
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // mappingColumns extracts field names + types from the index mapping.
