@@ -27,6 +27,18 @@ type QueryResult struct {
 	Error   string
 }
 
+// TableEntry is a table name plus optional explorer detail, such as an on-disk size.
+type TableEntry struct {
+	Name   string
+	Detail string
+}
+
+// DetailedTableLister is implemented by drivers that can attach display metadata to table names.
+// Schema loading uses it instead of Tables so the extra field is fetched once.
+type DetailedTableLister interface {
+	DetailedTables(ctx context.Context, database string) ([]TableEntry, error)
+}
+
 // Driver is the interface all database backends must implement.
 type Driver interface {
 	// Connect establishes a connection using the provided config.

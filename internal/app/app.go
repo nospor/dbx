@@ -572,7 +572,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		nodes := make([]*explorer.Node, 0, len(msg.tables)+len(msg.views))
 		for _, t := range msg.tables {
-			nodes = append(nodes, explorer.NewTableNode(t, msg.connID, msg.dbName))
+			n := explorer.NewTableNode(t, msg.connID, msg.dbName)
+			if detail := msg.tableDetails[t]; detail != "" {
+				n.Detail = detail
+			}
+			nodes = append(nodes, n)
 		}
 		for _, v := range msg.views {
 			nodes = append(nodes, explorer.NewViewNode(v, msg.connID, msg.dbName))
@@ -1682,16 +1686,34 @@ func (m *Model) fetchSchemaCmd(connID, dbName string) tea.Cmd {
 		if err != nil {
 			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
 		}
-		tables, err := driver.Tables(ctx, dbName)
-		if err != nil {
-			return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
+		var tables []string
+		var tableDetails map[string]string
+		if detailed, ok := driver.(db.DetailedTableLister); ok {
+			entries, err := detailed.DetailedTables(ctx, dbName)
+			if err != nil {
+				return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
+			}
+			tables = make([]string, 0, len(entries))
+			tableDetails = make(map[string]string, len(entries))
+			for _, e := range entries {
+				tables = append(tables, e.Name)
+				if e.Detail != "" {
+					tableDetails[e.Name] = e.Detail
+				}
+			}
+		} else {
+			var err error
+			tables, err = driver.Tables(ctx, dbName)
+			if err != nil {
+				return dbSchemaMsg{connID: connID, dbName: dbName, err: err}
+			}
 		}
 		views, _ := driver.Views(ctx, dbName)
 		var allCols []db.TableColumn
 		if ac, err := driver.AllTableColumns(ctx, dbName); err == nil {
 			allCols = ac
 		}
-		return dbSchemaMsg{connID: connID, dbName: dbName, tables: tables, views: views, allColumns: allCols}
+		return dbSchemaMsg{connID: connID, dbName: dbName, tables: tables, tableDetails: tableDetails, views: views, allColumns: allCols}
 	}
 }
 

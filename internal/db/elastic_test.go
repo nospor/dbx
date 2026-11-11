@@ -8,6 +8,25 @@ import (
 	"testing"
 )
 
+func TestFormatByteSize(t *testing.T) {
+	cases := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0 B"},
+		{512, "512 B"},
+		{12345, "12.1 KB"},
+		{891289600, "850 MB"},
+		{1288490189, "1.2 GB"},
+		{-1, ""},
+	}
+	for _, tc := range cases {
+		if got := formatByteSize(tc.n); got != tc.want {
+			t.Errorf("formatByteSize(%d) = %q; want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
 func TestDataStreamNameFromBackingIndex(t *testing.T) {
 	cases := []struct {
 		index string
@@ -34,11 +53,14 @@ func TestElasticTablesIncludesDataStreams(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/_cat/indices":
+			if r.URL.Query().Get("bytes") != "b" {
+				t.Errorf("indices bytes = %q", r.URL.Query().Get("bytes"))
+			}
 			_, _ = w.Write([]byte(`[
-				{"index":"srds-records"},
-				{"index":"srds-also-viewed"},
-				{"index":".ds-logs-srds.usage.otel-default-2026.11.11-000001"},
-				{"index":".kibana"}
+				{"index":"srds-records","store.size":"891289600"},
+				{"index":"srds-also-viewed","store.size":"12345"},
+				{"index":".ds-logs-srds.usage.otel-default-2026.11.11-000001","store.size":"10"},
+				{"index":".kibana","store.size":"10"}
 			]`))
 		case "/_data_stream":
 			_, _ = w.Write([]byte(`{
@@ -46,6 +68,13 @@ func TestElasticTablesIncludesDataStreams(t *testing.T) {
 					{"name":"logs-srds.usage.otel-default"},
 					{"name":"traces-srds.usage.otel-default"},
 					{"name":".monitoring-es"}
+				]
+			}`))
+		case "/_data_stream/_stats":
+			_, _ = w.Write([]byte(`{
+				"data_streams": [
+					{"data_stream":"logs-srds.usage.otel-default","store_size_bytes":1288490189},
+					{"data_stream":"traces-srds.usage.otel-default","store_size_bytes":0}
 				]
 			}`))
 		default:
@@ -68,16 +97,61 @@ func TestElasticTablesIncludesDataStreams(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Tables() = %#v; want %#v", got, want)
 	}
+
+	detailed, err := d.DetailedTables(context.Background(), "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDetailed := []TableEntry{
+		{Name: "logs-srds.usage.otel-default", Detail: "1.2 GB"},
+		{Name: "srds-also-viewed", Detail: "12.1 KB"},
+		{Name: "srds-records", Detail: "850 MB"},
+		{Name: "traces-srds.usage.otel-default", Detail: "0 B"},
+	}
+	if !reflect.DeepEqual(detailed, wantDetailed) {
+		t.Fatalf("DetailedTables() = %#v; want %#v", detailed, wantDetailed)
+	}
+}
+
+func TestElasticDataStreamsListedWhenStatsFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/_cat/indices":
+			_, _ = w.Write([]byte(`[{"index":"srds-records","store.size":"1024"},{"index":"aaa-index","store.size":"2048"}]`))
+		case "/_data_stream":
+			_, _ = w.Write([]byte(`{"data_streams":[{"name":"logs-srds.usage.otel-default"}]}`))
+		case "/_data_stream/_stats":
+			http.Error(w, "no stats", http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	d := &elasticDriver{baseURL: srv.URL, client: srv.Client()}
+	got, err := d.DetailedTables(context.Background(), "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []TableEntry{
+		{Name: "aaa-index", Detail: "2 KB"},
+		{Name: "logs-srds.usage.otel-default"},
+		{Name: "srds-records", Detail: "1 KB"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DetailedTables() = %#v; want %#v", got, want)
+	}
 }
 
 func TestElasticTablesKeepsIndicesWhenDataStreamsUnavailable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/_data_stream" {
+		if r.URL.Path == "/_data_stream" || r.URL.Path == "/_data_stream/_stats" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"index":"srds-records"},{"index":".kibana"}]`))
+		_, _ = w.Write([]byte(`[{"index":"srds-records","store.size":"10"},{"index":"aaa-index","store.size":"20"},{"index":".kibana"}]`))
 	}))
 	defer srv.Close()
 
@@ -86,7 +160,7 @@ func TestElasticTablesKeepsIndicesWhenDataStreamsUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"srds-records"}
+	want := []string{"aaa-index", "srds-records"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Tables() = %#v; want %#v", got, want)
 	}

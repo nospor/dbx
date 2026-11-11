@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,15 +89,38 @@ func (d *elasticDriver) Databases(ctx context.Context) ([]string, error) {
 // Tables returns ordinary indices and data stream names. Backing indices (.ds-*) stay hidden.
 // A data-stream listing failure still returns the indices so the tree is not empty.
 func (d *elasticDriver) Tables(ctx context.Context, database string) ([]string, error) {
+	entries, err := d.DetailedTables(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name
+	}
+	return names, nil
+}
+
+// DetailedTables returns the same names as Tables, with store size as the explorer detail.
+// store.size is the on-disk size of every shard copy.
+func (d *elasticDriver) DetailedTables(ctx context.Context, database string) ([]TableEntry, error) {
 	indices, err := d.listIndices(ctx)
 	if err != nil {
 		return nil, err
 	}
-	streams, err := d.listDataStreams(ctx)
-	if err != nil {
-		return indices, nil
+	streams, streamErr := d.listDataStreams(ctx)
+	if streamErr != nil {
+		streams = nil
 	}
-	return mergeSortedUnique(indices, streams), nil
+	items := mergeNamedSizes(indices, streams)
+	out := make([]TableEntry, len(items))
+	for i, item := range items {
+		detail := ""
+		if item.hasSize {
+			detail = formatByteSize(item.bytes)
+		}
+		out[i] = TableEntry{Name: item.name, Detail: detail}
+	}
+	return out, nil
 }
 
 func (d *elasticDriver) Views(ctx context.Context, database string) ([]string, error) {
@@ -495,63 +520,59 @@ func formatElasticValue(v interface{}) string {
 	}
 }
 
-// listIndices returns all non-system index names.
-func (d *elasticDriver) listIndices(ctx context.Context) ([]string, error) {
-	resp, err := d.doRequest(ctx, "GET", "/_cat/indices?h=index&format=json", nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list indices (HTTP %d): %s", resp.StatusCode, body)
-	}
-
-	var arr []map[string]interface{}
-	if err := json.Unmarshal(body, &arr); err != nil {
-		return nil, fmt.Errorf("failed to parse index list: %v", err)
-	}
-
-	var names []string
-	for _, entry := range arr {
-		name, ok := entry["index"].(string)
-		if !ok {
-			continue
-		}
-		// Skip system indices
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names, nil
+// namedSize is an index or data stream and its store.size in bytes.
+type namedSize struct {
+	name    string
+	bytes   int64
+	hasSize bool
 }
 
-// listDataStreams returns data stream names. These are the targets you query
-// (for example logs-srds.usage.otel-default). Their documents live in hidden
-// .ds-* backing indices, which _cat/indices omits and which listIndices skips.
-func (d *elasticDriver) listDataStreams(ctx context.Context) ([]string, error) {
-	resp, err := d.doRequest(ctx, "GET", "/_data_stream", nil)
+// listIndices returns non-system indices and their on-disk size.
+func (d *elasticDriver) listIndices(ctx context.Context) ([]namedSize, error) {
+	body, status, err := d.getBody(ctx, "/_cat/indices?h=index,store.size&format=json&bytes=b")
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	if status >= 400 {
+		return nil, fmt.Errorf("failed to list indices (HTTP %d): %s", status, body)
+	}
+	return parseCatNamedSizes(body, "index")
+}
+
+// listDataStreams returns data stream names and their store size. These are the targets
+// you query (for example logs-srds.usage.otel-default). Their documents live in hidden
+// .ds-* backing indices, which _cat/indices omits and which listIndices skips.
+// Names come from GET /_data_stream. Sizes come from /_data_stream/_stats and are omitted
+// when that call fails, so the names still appear.
+func (d *elasticDriver) listDataStreams(ctx context.Context) ([]namedSize, error) {
+	body, status, err := d.getBody(ctx, "/_data_stream")
 	if err != nil {
 		return nil, err
 	}
 	// Older clusters have no data stream API.
-	if resp.StatusCode == http.StatusNotFound {
+	if status == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list data streams (HTTP %d): %s", resp.StatusCode, body)
+	if status >= 400 {
+		return nil, fmt.Errorf("failed to list data streams (HTTP %d): %s", status, body)
 	}
+	items, err := parseDataStreamNames(body)
+	if err != nil {
+		return nil, err
+	}
+	for name, n := range d.dataStreamSizes(ctx) {
+		for i := range items {
+			if items[i].name == name {
+				items[i].bytes = n
+				items[i].hasSize = true
+				break
+			}
+		}
+	}
+	return items, nil
+}
 
+func parseDataStreamNames(body []byte) ([]namedSize, error) {
 	var parsed struct {
 		DataStreams []struct {
 			Name string `json:"name"`
@@ -560,15 +581,147 @@ func (d *elasticDriver) listDataStreams(ctx context.Context) ([]string, error) {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse data stream list: %v", err)
 	}
-
-	names := make([]string, 0, len(parsed.DataStreams))
+	out := make([]namedSize, 0, len(parsed.DataStreams))
 	for _, ds := range parsed.DataStreams {
 		if ds.Name == "" || strings.HasPrefix(ds.Name, ".") {
 			continue
 		}
-		names = append(names, ds.Name)
+		out = append(out, namedSize{name: ds.Name})
 	}
-	return names, nil
+	return out, nil
+}
+
+// dataStreamSizes maps a data stream name to store_size_bytes. A failed stats call
+// returns nil so the stream names can still be listed.
+func (d *elasticDriver) dataStreamSizes(ctx context.Context) map[string]int64 {
+	body, status, err := d.getBody(ctx, "/_data_stream/_stats")
+	if err != nil || status >= 400 {
+		return nil
+	}
+	var parsed struct {
+		DataStreams []struct {
+			Name  string      `json:"data_stream"`
+			Bytes interface{} `json:"store_size_bytes"`
+		} `json:"data_streams"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil
+	}
+	out := make(map[string]int64, len(parsed.DataStreams))
+	for _, ds := range parsed.DataStreams {
+		if ds.Name == "" {
+			continue
+		}
+		if n, ok := parseStoreBytes(ds.Bytes); ok {
+			out[ds.Name] = n
+		}
+	}
+	return out
+}
+
+func (d *elasticDriver) getBody(ctx context.Context, path string) ([]byte, int, error) {
+	resp, err := d.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return body, resp.StatusCode, nil
+}
+
+func parseCatNamedSizes(body []byte, nameField string) ([]namedSize, error) {
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(body, &arr); err != nil {
+		return nil, fmt.Errorf("failed to parse %s list: %v", nameField, err)
+	}
+	out := make([]namedSize, 0, len(arr))
+	for _, entry := range arr {
+		name, _ := entry[nameField].(string)
+		if name == "" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		item := namedSize{name: name}
+		if n, ok := parseStoreBytes(entry["store.size"]); ok {
+			item.bytes = n
+			item.hasSize = true
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func parseStoreBytes(v interface{}) (int64, bool) {
+	switch n := v.(type) {
+	case string:
+		n = strings.TrimSpace(n)
+		if n == "" || n == "null" {
+			return 0, false
+		}
+		if i, err := strconv.ParseInt(n, 10, 64); err == nil {
+			return i, true
+		}
+		f, err := strconv.ParseFloat(n, 64)
+		if err != nil {
+			return 0, false
+		}
+		return int64(f), true
+	case float64:
+		return int64(n), true
+	default:
+		return 0, false
+	}
+}
+
+// formatByteSize renders a byte count as B, KB, MB, GB, TB, or PB (1024-based).
+func formatByteSize(n int64) string {
+	if n < 0 {
+		return ""
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	val := float64(n)
+	unit := 0
+	for val >= 1024 && unit < len(units)-1 {
+		val /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%d B", n)
+	}
+	rounded := math.Round(val*10) / 10
+	if rounded == math.Trunc(rounded) {
+		return fmt.Sprintf("%.0f %s", rounded, units[unit])
+	}
+	return fmt.Sprintf("%.1f %s", rounded, units[unit])
+}
+
+func mergeNamedSizes(groups ...[]namedSize) []namedSize {
+	byName := make(map[string]namedSize)
+	var names []string
+	for _, group := range groups {
+		for _, item := range group {
+			if item.name == "" {
+				continue
+			}
+			prev, ok := byName[item.name]
+			if !ok {
+				byName[item.name] = item
+				names = append(names, item.name)
+				continue
+			}
+			if !prev.hasSize && item.hasSize {
+				byName[item.name] = item
+			}
+		}
+	}
+	sort.Strings(names)
+	out := make([]namedSize, len(names))
+	for i, name := range names {
+		out[i] = byName[name]
+	}
+	return out
 }
 
 // backingIndexDateGen is the rollover suffix Elasticsearch appends to a data stream
@@ -587,25 +740,6 @@ func dataStreamNameFromBackingIndex(index string) (string, bool) {
 		return "", false
 	}
 	return rest[:loc[0]], true
-}
-
-func mergeSortedUnique(groups ...[]string) []string {
-	seen := make(map[string]struct{})
-	var out []string
-	for _, group := range groups {
-		for _, name := range group {
-			if name == "" {
-				continue
-			}
-			if _, ok := seen[name]; ok {
-				continue
-			}
-			seen[name] = struct{}{}
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // mappingColumns extracts field names + types from the index mapping.

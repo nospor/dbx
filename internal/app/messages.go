@@ -29,7 +29,9 @@ type dbSchemaMsg struct {
 	connID string
 	dbName string
 	tables []string
-	views  []string
+	// tableDetails is optional explorer text keyed by table name, such as "1.2 GB".
+	tableDetails map[string]string
+	views        []string
 	// allColumns is loaded in the same fetch for editor autocomplete (no need to expand each table).
 	allColumns []db.TableColumn
 	err        error
