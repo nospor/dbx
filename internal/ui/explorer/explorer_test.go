@@ -98,3 +98,34 @@ func TestApplyFilterTextKeepsCursorInCurrentDatabase(t *testing.T) {
 		}
 	})
 }
+
+func TestFilterTablesOnlyShowsAllColumnsWhenExpanded(t *testing.T) {
+	t.Parallel()
+
+	conn := &Node{Kind: NodeConnection, Label: "c", ConnID: "c1", Expanded: true}
+	db := &Node{Kind: NodeDatabase, Label: "db", ConnID: "c1", DBName: "db", Expanded: true, parent: conn}
+	conn.Children = []*Node{db}
+
+	tbl := &Node{
+		Kind: NodeTable, Label: "users", ConnID: "c1", DBName: "db", Expanded: true, parent: db,
+	}
+	tbl.Children = []*Node{
+		{Kind: NodeColumn, Label: "id", parent: tbl},
+		{Kind: NodeColumn, Label: "email", parent: tbl},
+		{Kind: NodeColumn, Label: "created_at", parent: tbl},
+	}
+	db.Children = []*Node{tbl}
+
+	m := Model{nodes: []*Node{conn}}
+	m.applyFilterText("users")
+
+	var cols int
+	for _, n := range m.flat {
+		if n.Kind == NodeColumn {
+			cols++
+		}
+	}
+	if cols != 3 {
+		t.Fatalf("got %d columns in flat list, want 3 (filter must not hide columns)", cols)
+	}
+}

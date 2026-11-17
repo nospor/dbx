@@ -167,7 +167,7 @@ func (m *Model) refocusAfterFilter(anchor *Node) {
 }
 
 func (m *Model) flattenNode(n *Node) {
-	if m.filterText != "" && (n.Kind == NodeTable || n.Kind == NodeView || n.Kind == NodeColumn) {
+	if m.filterText != "" && (n.Kind == NodeTable || n.Kind == NodeView) {
 		if !strings.Contains(strings.ToLower(n.Label), m.filterText) {
 			return
 		}
