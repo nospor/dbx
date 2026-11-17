@@ -1,4 +1,14 @@
 
+## [1.1.4] - 2026-11-17
+
+### Bug Fixes
+
+- *(explorer)* Apply table filter only to tables and views ([ea1b5cd](https://github.com/nospor/dbx/commit/ea1b5cd99859e2a95fe408e203b186feacde278d))
+
+### Miscellaneous Tasks
+
+- Update CHANGELOG.md for v1.1.3 [skip ci] ([492bc96](https://github.com/nospor/dbx/commit/492bc966e7df9bb406135d5fb3588ac56931aa9c))
+
 ## [1.1.3] - 2026-11-11
 
 ### Features
